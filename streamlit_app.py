@@ -4,6 +4,8 @@ import numpy as np
 from prediction_engine.league_manager import LEAGUE_CONFIGS
 from prediction_engine.data_processor import prepare_match_data
 from prediction_engine.statistical_model import predict_match
+from prediction_engine.confidence_calculator import calculate_confidence
+import plotly.graph_objects as go
 
 # Page configuration
 st.set_page_config(
@@ -12,182 +14,324 @@ st.set_page_config(
     layout="wide"
 )
 
-# Title and description
-st.title("⚽ Football Prediction Engine")
-st.markdown("Predict match outcomes using expected goals (xG) data")
+# Custom CSS
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .prediction-card {
+        background-color: #f0f2f6;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+    }
+    .confidence-high { color: #00a650; font-weight: bold; }
+    .confidence-medium { color: #ffa500; font-weight: bold; }
+    .confidence-low { color: #ff4b4b; font-weight: bold; }
+</style>
+""", unsafe_allow_html=True)
 
-# Initialize session state for team data
-if 'team_data' not in st.session_state:
-    st.session_state.team_data = {}
-
-# League and team selection
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    league = st.selectbox(
-        "Select League",
-        list(LEAGUE_CONFIGS.keys())
-    )
-
-with col2:
-    home_team = st.selectbox(
-        "Home Team",
-        LEAGUE_CONFIGS[league]["teams"]
-    )
-
-with col3:
-    away_team = st.selectbox(
-        "Away Team", 
-        LEAGUE_CONFIGS[league]["teams"]
-    )
-
-# Display league context
-league_info = LEAGUE_CONFIGS[league]["baselines"]
-st.info(
-    f"**{league} Context** | "
-    f"Avg Goals: {league_info['avg_goals']} | "
-    f"Home Advantage: +{int((league_info['home_advantage']-1)*100)}% | "
-    f"BTTS Frequency: {int(league_info['avg_btts_prob']*100)}%"
-)
-
-# Team data input section
-st.header("📊 Team Statistics Input")
-
-# Create tabs for home and away teams
-tab1, tab2 = st.tabs([f"🏠 {home_team} Data", f"✈️ {away_team} Data"])
-
-with tab1:
-    st.subheader(f"{home_team} - Current Season Data")
+def main():
+    st.markdown('<div class="main-header">⚽ Football Prediction Engine</div>', unsafe_allow_html=True)
     
+    # Initialize session state
+    if 'predictions_log' not in st.session_state:
+        st.session_state.predictions_log = []
+    
+    # Main layout
+    col1, col2, col3 = st.columns([1, 1, 1])
+    
+    with col1:
+        st.subheader("🎯 Match Configuration")
+        
+        # League selection
+        league = st.selectbox(
+            "Select League",
+            list(LEAGUE_CONFIGS.keys()),
+            index=0
+        )
+        
+        # Team selection based on league
+        teams = LEAGUE_CONFIGS[league]["teams"]
+        home_team = st.selectbox("Home Team", teams, index=0)
+        away_team = st.selectbox("Away Team", teams, index=1 if len(teams) > 1 else 0)
+        
+        if home_team == away_team:
+            st.error("Home and Away teams cannot be the same!")
+            return
+    
+    with col2:
+        st.subheader("📊 Team Statistics - Home")
+        
+        # Home team stats
+        with st.expander("Home Team Data", expanded=True):
+            st.write("**Overall Stats**")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                home_matches = st.number_input("Matches", min_value=1, max_value=50, value=10, key="home_m")
+            with col2:
+                home_goals = st.number_input("Goals", min_value=0, max_value=100, value=18, key="home_g")
+            with col3:
+                home_goals_against = st.number_input("GA", min_value=0, max_value=100, value=3, key="home_ga")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                home_xg = st.number_input("xG", min_value=0.0, max_value=50.0, value=18.7, key="home_xg")
+            with col2:
+                home_xga = st.number_input("xGA", min_value=0.0, max_value=50.0, value=6.6, key="home_xga")
+            
+            st.write("**Home Stats Only**")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                home_home_matches = st.number_input("Home Matches", min_value=1, max_value=25, value=5, key="home_hm")
+            with col2:
+                home_home_goals = st.number_input("Home Goals", min_value=0, max_value=50, value=12, key="home_hg")
+            with col3:
+                home_home_ga = st.number_input("Home GA", min_value=0, max_value=50, value=2, key="home_hga")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                home_home_xg = st.number_input("Home xG", min_value=0.0, max_value=25.0, value=8.1, key="home_hxg")
+            with col2:
+                home_home_xga = st.number_input("Home xGA", min_value=0.0, max_value=25.0, value=3.2, key="home_hxga")
+            
+            st.write("**Last 5 Matches**")
+            home_last5_xg = st.number_input("Last 5 xG Total", min_value=0.0, max_value=25.0, value=10.25, key="home_l5xg")
+            home_last5_points = st.number_input("Last 5 Points", min_value=0, max_value=15, value=13, key="home_l5p")
+    
+    with col3:
+        st.subheader("📊 Team Statistics - Away")
+        
+        # Away team stats
+        with st.expander("Away Team Data", expanded=True):
+            st.write("**Overall Stats**")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                away_matches = st.number_input("Matches", min_value=1, max_value=50, value=10, key="away_m")
+            with col2:
+                away_goals = st.number_input("Goals", min_value=0, max_value=100, value=20, key="away_g")
+            with col3:
+                away_goals_against = st.number_input("GA", min_value=0, max_value=100, value=8, key="away_ga")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                away_xg = st.number_input("xG", min_value=0.0, max_value=50.0, value=19.5, key="away_xg")
+            with col2:
+                away_xga = st.number_input("xGA", min_value=0.0, max_value=50.0, value=10.0, key="away_xga")
+            
+            st.write("**Away Stats Only**")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                away_away_matches = st.number_input("Away Matches", min_value=1, max_value=25, value=5, key="away_am")
+            with col2:
+                away_away_goals = st.number_input("Away Goals", min_value=0, max_value=50, value=8, key="away_ag")
+            with col3:
+                away_away_ga = st.number_input("Away GA", min_value=0, max_value=50, value=6, key="away_aga")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                away_away_xg = st.number_input("Away xG", min_value=0.0, max_value=25.0, value=7.9, key="away_axg")
+            with col2:
+                away_away_xga = st.number_input("Away xGA", min_value=0.0, max_value=25.0, value=5.1, key="away_axga")
+            
+            st.write("**Last 5 Matches**")
+            away_last5_xg = st.number_input("Last 5 xG Total", min_value=0.0, max_value=25.0, value=11.44, key="away_l5xg")
+            away_last5_points = st.number_input("Last 5 Points", min_value=0, max_value=15, value=12, key="away_l5p")
+    
+    # Contextual factors
+    st.subheader("🎭 Contextual Factors")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("**Overall Stats**")
-        home_overall_m = st.number_input("Matches", min_value=1, value=10, key="home_overall_m")
-        home_overall_g = st.number_input("Goals Scored", min_value=0, value=18, key="home_overall_g")
-        home_overall_ga = st.number_input("Goals Conceded", min_value=0, value=3, key="home_overall_ga")
-        home_overall_xg = st.number_input("xG", min_value=0.0, value=18.7, key="home_overall_xg")
-        home_overall_xga = st.number_input("xGA", min_value=0.0, value=6.6, key="home_overall_xga")
+        home_injuries = st.text_input("Home Team Key Injuries", placeholder="e.g., Saliba, Saka")
+        away_injuries = st.text_input("Away Team Key Injuries", placeholder="e.g., De Bruyne")
     
     with col2:
-        st.markdown("**Home Stats**")
-        home_home_m = st.number_input("Matches", min_value=1, value=5, key="home_home_m")
-        home_home_g = st.number_input("Goals Scored", min_value=0, value=12, key="home_home_g")
-        home_home_ga = st.number_input("Goals Conceded", min_value=0, value=2, key="home_home_ga")
-        home_home_xg = st.number_input("xG", min_value=0.0, value=8.1, key="home_home_xg")
-        home_home_xga = st.number_input("xGA", min_value=0.0, value=3.2, key="home_home_xga")
+        home_days_rest = st.number_input("Home Days Since Last Match", min_value=2, max_value=14, value=4)
+        away_days_rest = st.number_input("Away Days Since Last Match", min_value=2, max_value=14, value=6)
     
     with col3:
-        st.markdown("**Last 5 Matches (Overall)**")
-        home_last5_xg = st.number_input("xG Total", min_value=0.0, value=10.25, key="home_last5_xg")
-        home_last5_points = st.number_input("Points", min_value=0, value=13, key="home_last5_points")
-        home_last5_goals = st.number_input("Goals Scored", min_value=0, value=12, key="home_last5_goals")
-
-with tab2:
-    st.subheader(f"{away_team} - Current Season Data")
+        match_importance = st.slider("Match Importance", 0.0, 1.0, 0.7, 0.1,
+                                   format="%.1f (Friendly - Cup Final)")
     
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("**Overall Stats**")
-        away_overall_m = st.number_input("Matches", min_value=1, value=10, key="away_overall_m")
-        away_overall_g = st.number_input("Goals Scored", min_value=0, value=20, key="away_overall_g")
-        away_overall_ga = st.number_input("Goals Conceded", min_value=0, value=8, key="away_overall_ga")
-        away_overall_xg = st.number_input("xG", min_value=0.0, value=19.5, key="away_overall_xg")
-        away_overall_xga = st.number_input("xGA", min_value=0.0, value=10.0, key="away_overall_xga")
-    
-    with col2:
-        st.markdown("**Away Stats**")
-        away_away_m = st.number_input("Matches", min_value=1, value=5, key="away_away_m")
-        away_away_g = st.number_input("Goals Scored", min_value=0, value=8, key="away_away_g")
-        away_away_ga = st.number_input("Goals Conceded", min_value=0, value=6, key="away_away_ga")
-        away_away_xg = st.number_input("xG", min_value=0.0, value=7.9, key="away_away_xg")
-        away_away_xga = st.number_input("xGA", min_value=0.0, value=5.1, key="away_away_xga")
-    
-    with col3:
-        st.markdown("**Last 5 Matches (Overall)**")
-        away_last5_xg = st.number_input("xG Total", min_value=0.0, value=11.44, key="away_last5_xg")
-        away_last5_points = st.number_input("Points", min_value=0, value=12, key="away_last5_points")
-        away_last5_goals = st.number_input("Goals Scored", min_value=0, value=13, key="away_last5_goals")
-
-# Contextual factors
-st.header("🎯 Contextual Factors")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("Team Context")
-    home_injuries = st.text_input(f"{home_team} Key Injuries/Suspensions", placeholder="e.g., Saliba, Saka")
-    away_injuries = st.text_input(f"{away_team} Key Injuries/Suspensions", placeholder="e.g., De Bruyne")
-    
-    home_days_rest = st.number_input(f"{home_team} Days Rest", min_value=2, max_value=14, value=4)
-    away_days_rest = st.number_input(f"{away_team} Days Rest", min_value=2, max_value=14, value=6)
-
-with col2:
-    st.subheader("Match Context")
-    match_importance = st.slider(
-        "Match Importance",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.7,
-        help="0.0 = Friendly, 1.0 = Cup Final/Title Decider"
-    )
-    
-    # Recent form arrays (simplified)
-    st.markdown("**Recent Form (Last 5 xG - Optional)**")
-    home_recent_xg = st.text_input(f"{home_team} Last 5 xG", placeholder="2.1,1.8,2.3,1.5,2.0")
-    away_recent_xg = st.text_input(f"{away_team} Last 5 xG", placeholder="1.4,1.9,1.2,2.1,1.6")
-
-# Prediction button
-if st.button("🎯 Generate Prediction", type="primary"):
-    st.header("📊 Prediction Results")
-    
-    # Display loading while processing
-    with st.spinner("Calculating predictions..."):
-        # Prepare data structures
-        home_data = {
-            'name': home_team,
-            'overall': {'matches': home_overall_m, 'goals_scored': home_overall_g, 
-                       'goals_conceded': home_overall_ga, 'xG': home_overall_xg, 'xGA': home_overall_xga},
-            'home': {'matches': home_home_m, 'goals_scored': home_home_g, 
-                    'goals_conceded': home_home_ga, 'xG': home_home_xg, 'xGA': home_home_xga},
-            'last5': {'xG_total': home_last5_xg, 'points': home_last5_points, 'goals_scored': home_last5_goals},
-            'context': {'injuries': home_injuries, 'days_rest': home_days_rest}
-        }
-        
-        away_data = {
-            'name': away_team,
-            'overall': {'matches': away_overall_m, 'goals_scored': away_overall_g, 
-                       'goals_conceded': away_overall_ga, 'xG': away_overall_xg, 'xGA': away_overall_xga},
-            'away': {'matches': away_away_m, 'goals_scored': away_away_g, 
-                    'goals_conceded': away_away_ga, 'xG': away_away_xg, 'xGA': away_away_xga},
-            'last5': {'xG_total': away_last5_xg, 'points': away_last5_points, 'goals_scored': away_last5_goals},
-            'context': {'injuries': away_injuries, 'days_rest': away_days_rest}
-        }
-        
-        match_context = {
-            'importance': match_importance,
-            'home_recent_xg_array': [float(x) for x in home_recent_xg.split(',')] if home_recent_xg else None,
-            'away_recent_xg_array': [float(x) for x in away_recent_xg.split(',')] if away_recent_xg else None
-        }
-        
-        # Generate prediction
-        try:
-            prediction = predict_match(home_data, away_data, league, match_context)
+    # Prediction button
+    if st.button("🎯 Generate Prediction", type="primary", use_container_width=True):
+        with st.spinner("Calculating predictions..."):
+            # Prepare data
+            home_data = {
+                'name': home_team,
+                'overall': {
+                    'matches': home_matches,
+                    'goals_scored': home_goals,
+                    'goals_conceded': home_goals_against,
+                    'xG': home_xg,
+                    'xGA': home_xga
+                },
+                'home': {
+                    'matches': home_home_matches,
+                    'goals_scored': home_home_goals,
+                    'goals_conceded': home_home_ga,
+                    'xG': home_home_xg,
+                    'xGA': home_home_xga
+                },
+                'last_5': {
+                    'xG_total': home_last5_xg,
+                    'points': home_last5_points
+                }
+            }
+            
+            away_data = {
+                'name': away_team,
+                'overall': {
+                    'matches': away_matches,
+                    'goals_scored': away_goals,
+                    'goals_conceded': away_goals_against,
+                    'xG': away_xg,
+                    'xGA': away_xga
+                },
+                'away': {
+                    'matches': away_away_matches,
+                    'goals_scored': away_away_goals,
+                    'goals_conceded': away_away_ga,
+                    'xG': away_away_xg,
+                    'xGA': away_away_xga
+                },
+                'last_5': {
+                    'xG_total': away_last5_xg,
+                    'points': away_last5_points
+                }
+            }
+            
+            context = {
+                'home_injuries': [inj.strip() for inj in home_injuries.split(',')] if home_injuries else [],
+                'away_injuries': [inj.strip() for inj in away_injuries.split(',')] if away_injuries else [],
+                'home_days_rest': home_days_rest,
+                'away_days_rest': away_days_rest,
+                'match_importance': match_importance
+            }
+            
+            # Generate prediction
+            prediction = predict_match(home_data, away_data, context, league)
             
             # Display results
-            display_prediction_results(prediction, home_team, away_team)
+            display_prediction_results(prediction, home_team, away_team, league)
             
-        except Exception as e:
-            st.error(f"Error generating prediction: {str(e)}")
-            st.info("Please check your input data and try again.")
+            # Log prediction
+            st.session_state.predictions_log.append({
+                'home_team': home_team,
+                'away_team': away_team,
+                'league': league,
+                'prediction': prediction,
+                'timestamp': pd.Timestamp.now()
+            })
 
-def display_prediction_results(prediction, home_team, away_team):
-    # This will be implemented in Phase 2
-    st.success("Prediction engine connected successfully!")
-    st.write("Full prediction results will be displayed here in Phase 2")
-    st.json(prediction)  # Temporary to see the data structure
+def display_prediction_results(prediction, home_team, away_team, league):
+    st.markdown("---")
+    st.markdown('<div class="main-header">🎯 Prediction Results</div>', unsafe_allow_html=True)
+    
+    # Main predictions in columns
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.subheader("🏆 Match Outcome")
+        outcome = prediction['match_outcome']
+        display_confidence(outcome['confidence'])
+        
+        # Create bar chart for outcome probabilities
+        fig_outcome = go.Figure(data=[
+            go.Bar(x=['Home', 'Draw', 'Away'],
+                  y=[outcome['home_win'], outcome['draw'], outcome['away_win']],
+                  marker_color=['#1f77b4', '#ff7f0e', '#2ca02c'])
+        ])
+        fig_outcome.update_layout(
+            height=300,
+            showlegend=False,
+            yaxis_title="Probability",
+            yaxis_tickformat=".0%"
+        )
+        st.plotly_chart(fig_outcome, use_container_width=True)
+        
+        # Display percentages
+        st.write(f"**{home_team}**: {outcome['home_win']:.1%}")
+        st.write(f"**Draw**: {outcome['draw']:.1%}")
+        st.write(f"**{away_team}**: {outcome['away_win']:.1%}")
+    
+    with col2:
+        st.subheader("📊 Over/Under 2.5")
+        over_under = prediction['over_under']
+        display_confidence(over_under['confidence'])
+        
+        fig_ou = go.Figure(data=[
+            go.Bar(x=['Over 2.5', 'Under 2.5'],
+                  y=[over_under['over_2.5'], over_under['under_2.5']],
+                  marker_color=['#ff6b6b', '#4ecdc4'])
+        ])
+        fig_ou.update_layout(
+            height=300,
+            showlegend=False,
+            yaxis_title="Probability",
+            yaxis_tickformat=".0%"
+        )
+        st.plotly_chart(fig_ou, use_container_width=True)
+        
+        st.write(f"**Over 2.5**: {over_under['over_2.5']:.1%}")
+        st.write(f"**Under 2.5**: {over_under['under_2.5']:.1%}")
+    
+    with col3:
+        st.subheader("⚽ Both Teams to Score")
+        btts = prediction['both_teams_score']
+        display_confidence(btts['confidence'])
+        
+        fig_btts = go.Figure(data=[
+            go.Bar(x=['Yes', 'No'],
+                  y=[btts['yes'], btts['no']],
+                  marker_color=['#a05195', '#f95d6a'])
+        ])
+        fig_btts.update_layout(
+            height=300,
+            showlegend=False,
+            yaxis_title="Probability",
+            yaxis_tickformat=".0%"
+        )
+        st.plotly_chart(fig_btts, use_container_width=True)
+        
+        st.write(f"**Yes**: {btts['yes']:.1%}")
+        st.write(f"**No**: {btts['no']:.1%}")
+    
+    # Additional insights
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📈 Expected Score")
+        expected_score = prediction['expected_score']
+        st.metric(
+            label="Expected Goals",
+            value=f"{expected_score['home']:.1f} - {expected_score['away']:.1f}",
+            delta=f"Total: {expected_score['home'] + expected_score['away']:.1f} goals"
+        )
+        
+        st.subheader("🎯 Most Likely Scores")
+        for score in prediction['most_likely_scores'][:3]:
+            st.write(f"**{score['score']}**: {score['probability']:.1%}")
+    
+    with col2:
+        st.subheader("🔍 Key Factors")
+        for factor in prediction['key_factors']:
+            emoji = "✅" if factor['impact'] == 'positive' else "⚠️" if factor['impact'] == 'negative' else "➖"
+            st.write(f"{emoji} {factor['factor']}")
 
-# Footer
-st.markdown("---")
-st.markdown("*Data sources: Understat.com | Model: Bivariate Poisson with league-specific baselines*")
+def display_confidence(confidence_level):
+    if confidence_level == "HIGH":
+        st.markdown('<p class="confidence-high">🟢 High Confidence</p>', unsafe_allow_html=True)
+    elif confidence_level == "MEDIUM":
+        st.markdown('<p class="confidence-medium">🟡 Medium Confidence</p>', unsafe_allow_html=True)
+    else:
+        st.markdown('<p class="confidence-low">🔴 Low Confidence</p>', unsafe_allow_html=True)
+
+if __name__ == "__main__":
+    main()
