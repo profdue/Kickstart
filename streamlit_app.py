@@ -744,6 +744,13 @@ def main():
         .confidence-high { color: #00a650; font-weight: bold; }
         .confidence-medium { color: #ffa500; font-weight: bold; }
         .confidence-low { color: #ff4b4b; font-weight: bold; }
+        .team-section {
+            background-color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 10px;
+            border-left: 4px solid #1f77b4;
+            margin-bottom: 1rem;
+        }
     </style>
     """, unsafe_allow_html=True)
     
@@ -753,12 +760,11 @@ def main():
     if 'predictions_log' not in st.session_state:
         st.session_state.predictions_log = []
     
-    # Main layout
-    col1, col2, col3 = st.columns([1, 1, 1])
+    # Main layout - Match Configuration
+    st.subheader("🎯 Match Configuration")
+    config_col1, config_col2, config_col3 = st.columns([2, 2, 3])
     
-    with col1:
-        st.subheader("🎯 Match Configuration")
-        
+    with config_col1:
         # League selection
         league = st.selectbox(
             "Select League",
@@ -766,9 +772,12 @@ def main():
             index=0
         )
         
+    with config_col2:
         # Team selection based on league
         teams = LEAGUE_CONFIGS[league]["teams"]
         home_team = st.selectbox("Home Team", teams, index=0)
+        
+    with config_col3:
         away_team = st.selectbox("Away Team", teams, index=1 if len(teams) > 1 else 0)
         
         if home_team == away_team:
@@ -779,104 +788,118 @@ def main():
         baseline = LEAGUE_CONFIGS[league]["baselines"]
         st.info(f"🇩🇪 **{league} Context** | Avg Goals: {baseline['avg_goals']} | Home Advantage: +{int((baseline['home_advantage']-1)*100)}%")
     
-    with col2:
-        st.subheader("📊 Team Statistics - Home")
+    # Team Statistics - BALANCED LAYOUT
+    st.subheader("📊 Team Statistics")
+    home_col, away_col = st.columns(2)
+    
+    # HOME TEAM SECTION - COMPLETE AND BALANCED
+    with home_col:
+        st.markdown('<div class="team-section">🏠 Home Team: ' + home_team + '</div>', unsafe_allow_html=True)
         
-        # Home team stats
-        with st.expander("Home Team Data", expanded=True):
-            st.write("**Overall Stats**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                home_matches = st.number_input("Matches", min_value=1, max_value=50, value=10, key="home_m")
-            with col2:
-                home_goals = st.number_input("Goals", min_value=0, max_value=100, value=18, key="home_g")
-            with col3:
-                home_goals_against = st.number_input("GA", min_value=0, max_value=100, value=3, key="home_ga")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                home_xg = st.number_input("xG", min_value=0.0, max_value=50.0, value=18.7, key="home_xg")
-            with col2:
-                home_xga = st.number_input("xGA", min_value=0.0, max_value=50.0, value=6.6, key="home_xga")
-            
-            st.write("**Home Stats Only**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                home_home_matches = st.number_input("Home Matches", min_value=1, max_value=25, value=5, key="home_hm")
-            with col2:
-                home_home_goals = st.number_input("Home Goals", min_value=0, max_value=50, value=12, key="home_hg")
-            with col3:
-                home_home_ga = st.number_input("Home GA", min_value=0, max_value=50, value=2, key="home_hga")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                home_home_xg = st.number_input("Home xG", min_value=0.0, max_value=25.0, value=8.1, key="home_hxg")
-            with col2:
-                home_home_xga = st.number_input("Home xGA", min_value=0.0, max_value=25.0, value=3.2, key="home_hxga")
-            
-            st.write("**Last 5 Matches**")
+        # Overall Stats
+        st.write("**Overall Stats**")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            home_matches = st.number_input("Matches", min_value=1, max_value=50, value=10, key="home_m")
+        with col2:
+            home_goals = st.number_input("Goals", min_value=0, max_value=100, value=18, key="home_g")
+        with col3:
+            home_goals_against = st.number_input("GA", min_value=0, max_value=100, value=3, key="home_ga")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            home_xg = st.number_input("xG", min_value=0.0, max_value=50.0, value=18.7, key="home_xg")
+        with col2:
+            home_xga = st.number_input("xGA", min_value=0.0, max_value=50.0, value=6.6, key="home_xga")
+        
+        # Home Stats Only
+        st.write("**Home Stats Only**")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            home_home_matches = st.number_input("Home Matches", min_value=1, max_value=25, value=5, key="home_hm")
+        with col2:
+            home_home_goals = st.number_input("Home Goals", min_value=0, max_value=50, value=12, key="home_hg")
+        with col3:
+            home_home_ga = st.number_input("Home GA", min_value=0, max_value=50, value=2, key="home_hga")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            home_home_xg = st.number_input("Home xG", min_value=0.0, max_value=25.0, value=8.1, key="home_hxg")
+        with col2:
+            home_home_xga = st.number_input("Home xGA", min_value=0.0, max_value=25.0, value=3.2, key="home_hxga")
+        
+        # Last 5 Matches
+        st.write("**Last 5 Matches**")
+        col1, col2 = st.columns(2)
+        with col1:
             home_last5_xg = st.number_input("Last 5 xG Total", min_value=0.0, max_value=25.0, value=10.25, key="home_l5xg")
+        with col2:
             home_last5_points = st.number_input("Last 5 Points", min_value=0, max_value=15, value=13, key="home_l5p")
     
-    with col3:
-        st.subheader("📊 Team Statistics - Away")
+    # AWAY TEAM SECTION - COMPLETE AND BALANCED (FIXED)
+    with away_col:
+        st.markdown('<div class="team-section">✈️ Away Team: ' + away_team + '</div>', unsafe_allow_html=True)
         
-        # Away team stats
-        with st.expander("Away Team Data", expanded=True):
-            st.write("**Overall Stats**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                away_matches = st.number_input("Matches", min_value=1, max_value=50, value=10, key="away_m")
-            with col2:
-                away_goals = st.number_input("Goals", min_value=0, max_value=100, value=20, key="away_g")
-            with col3:
-                away_goals_against = st.number_input("GA", min_value=0, max_value=100, value=8, key="away_ga")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                away_xg = st.number_input("xG", min_value=0.0, max_value=50.0, value=19.5, key="away_xg")
-            with col2:
-                away_xga = st.number_input("xGA", min_value=0.0, max_value=50.0, value=10.0, key="away_xga")
-            
-            st.write("**Away Stats Only**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                away_away_matches = st.number_input("Away Matches", min_value=1, max_value=25, value=5, key="away_am")
-            with col2:
-                away_away_goals = st.number_input("Away Goals", min_value=0, max_value=50, value=8, key="away_ag")
-            with col3:
-                away_away_ga = st.number_input("Away GA", min_value=0, max_value=50, value=6, key="away_aga")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                away_away_xg = st.number_input("Away xG", min_value=0.0, max_value=25.0, value=7.9, key="away_axg")
-            with col2:
-                away_away_xga = st.number_input("Away xGA", min_value=0.0, max_value=25.0, value=5.1, key="away_axga")
-            
-            st.write("**Last 5 Matches**")
+        # Overall Stats (ADDED - was missing)
+        st.write("**Overall Stats**")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            away_matches = st.number_input("Matches", min_value=1, max_value=50, value=10, key="away_m")
+        with col2:
+            away_goals = st.number_input("Goals", min_value=0, max_value=100, value=20, key="away_g")
+        with col3:
+            away_goals_against = st.number_input("GA", min_value=0, max_value=100, value=8, key="away_ga")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            away_xg = st.number_input("xG", min_value=0.0, max_value=50.0, value=19.5, key="away_xg")
+        with col2:
+            away_xga = st.number_input("xGA", min_value=0.0, max_value=50.0, value=10.0, key="away_xga")
+        
+        # Away Stats Only (RENAMED - was incorrectly "Home Stats")
+        st.write("**Away Stats Only**")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            away_away_matches = st.number_input("Away Matches", min_value=1, max_value=25, value=5, key="away_am")
+        with col2:
+            away_away_goals = st.number_input("Away Goals", min_value=0, max_value=50, value=8, key="away_ag")
+        with col3:
+            away_away_ga = st.number_input("Away GA", min_value=0, max_value=50, value=6, key="away_aga")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            away_away_xg = st.number_input("Away xG", min_value=0.0, max_value=25.0, value=7.9, key="away_axg")
+        with col2:
+            away_away_xga = st.number_input("Away xGA", min_value=0.0, max_value=25.0, value=5.1, key="away_axga")
+        
+        # Last 5 Matches (ADDED - was missing)
+        st.write("**Last 5 Matches**")
+        col1, col2 = st.columns(2)
+        with col1:
             away_last5_xg = st.number_input("Last 5 xG Total", min_value=0.0, max_value=25.0, value=11.44, key="away_l5xg")
+        with col2:
             away_last5_points = st.number_input("Last 5 Points", min_value=0, max_value=15, value=12, key="away_l5p")
     
     # Contextual factors
     st.subheader("🎭 Contextual Factors")
-    col1, col2, col3 = st.columns(3)
+    context_col1, context_col2, context_col3 = st.columns(3)
     
-    with col1:
+    with context_col1:
         home_injuries = st.text_input("Home Team Key Injuries", placeholder="e.g., Saliba, Saka")
         away_injuries = st.text_input("Away Team Key Injuries", placeholder="e.g., De Bruyne")
     
-    with col2:
+    with context_col2:
         home_days_rest = st.number_input("Home Days Since Last Match", min_value=2, max_value=14, value=4)
         away_days_rest = st.number_input("Away Days Since Last Match", min_value=2, max_value=14, value=6)
     
-    with col3:
+    with context_col3:
         match_importance = st.slider("Match Importance", 0.0, 1.0, 0.7, 0.1,
                                    format="%.1f (Friendly - Cup Final)")
     
     # Prediction button
     if st.button("🎯 Generate Prediction", type="primary", use_container_width=True):
         with st.spinner("Calculating predictions..."):
-            # Prepare data
+            # Prepare data - NOW WITH COMPLETE BALANCED DATA
             home_data = {
                 'name': home_team,
                 'overall': {
