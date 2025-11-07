@@ -2,13 +2,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import requests
 import json
 
 # Page configuration
 st.set_page_config(
-    page_title="Football Prediction Engine",
-    page_icon="⚽",
+    page_title="Professional Football Prediction Engine",
+    page_icon="🎯",
     layout="wide"
 )
 
@@ -17,158 +16,253 @@ st.markdown("""
 <style>
     .main-header {
         font-size: 2.5rem;
+        font-weight: bold;
         color: #1f77b4;
         text-align: center;
         margin-bottom: 2rem;
     }
-    .prediction-card {
+    .section-header {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #2e86ab;
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    .team-card {
         background-color: #f0f2f6;
-        padding: 1.5rem;
+        padding: 1rem;
         border-radius: 10px;
-        margin: 1rem 0;
+        margin: 0.5rem 0;
+    }
+    .metric-card {
+        background-color: #ffffff;
+        padding: 0.75rem;
+        border-radius: 8px;
         border-left: 4px solid #1f77b4;
+        margin: 0.25rem 0;
     }
     .value-bet-good {
         background-color: #d4edda;
         border-left: 4px solid #28a745;
+        padding: 0.5rem;
+        border-radius: 5px;
     }
     .value-bet-poor {
         background-color: #f8d7da;
         border-left: 4px solid #dc3545;
+        padding: 0.5rem;
+        border-radius: 5px;
     }
-    .team-header {
-        font-size: 1.4rem;
-        font-weight: bold;
-        margin-bottom: 0.5rem;
+    .confidence-stars {
+        color: #ffc107;
+        font-size: 1.2rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
+# Database of teams for top 5 leagues
+TEAMS_DATA = {
+    "Premier League": {
+        "Arsenal": {"league": "Premier League"},
+        "Aston Villa": {"league": "Premier League"},
+        "Bournemouth": {"league": "Premier League"},
+        "Brentford": {"league": "Premier League"},
+        "Brighton": {"league": "Premier League"},
+        "Chelsea": {"league": "Premier League"},
+        "Crystal Palace": {"league": "Premier League"},
+        "Everton": {"league": "Premier League"},
+        "Fulham": {"league": "Premier League"},
+        "Liverpool": {"league": "Premier League"},
+        "Luton": {"league": "Premier League"},
+        "Manchester City": {"league": "Premier League"},
+        "Manchester United": {"league": "Premier League"},
+        "Newcastle": {"league": "Premier League"},
+        "Nottingham Forest": {"league": "Premier League"},
+        "Sheffield United": {"league": "Premier League"},
+        "Tottenham": {"league": "Premier League"},
+        "West Ham": {"league": "Premier League"},
+        "Wolves": {"league": "Premier League"}
+    },
+    "La Liga": {
+        "Alaves": {"league": "La Liga"},
+        "Almeria": {"league": "La Liga"},
+        "Athletic Bilbao": {"league": "La Liga"},
+        "Atletico Madrid": {"league": "La Liga"},
+        "Barcelona": {"league": "La Liga"},
+        "Betis": {"league": "La Liga"},
+        "Celta Vigo": {"league": "La Liga"},
+        "Cadiz": {"league": "La Liga"},
+        "Getafe": {"league": "La Liga"},
+        "Girona": {"league": "La Liga"},
+        "Granada": {"league": "La Liga"},
+        "Las Palmas": {"league": "La Liga"},
+        "Mallorca": {"league": "La Liga"},
+        "Osasuna": {"league": "La Liga"},
+        "Rayo Vallecano": {"league": "La Liga"},
+        "Real Madrid": {"league": "La Liga"},
+        "Real Sociedad": {"league": "La Liga"},
+        "Sevilla": {"league": "La Liga"},
+        "Valencia": {"league": "La Liga"},
+        "Villarreal": {"league": "La Liga"}
+    },
+    "Serie A": {
+        "AC Milan": {"league": "Serie A"},
+        "AS Roma": {"league": "Serie A"},
+        "Atalanta": {"league": "Serie A"},
+        "Bologna": {"league": "Serie A"},
+        "Cagliari": {"league": "Serie A"},
+        "Empoli": {"league": "Serie A"},
+        "Fiorentina": {"league": "Serie A"},
+        "Frosinone": {"league": "Serie A"},
+        "Genoa": {"league": "Serie A"},
+        "Inter Milan": {"league": "Serie A"},
+        "Juventus": {"league": "Serie A"},
+        "Lazio": {"league": "Serie A"},
+        "Lecce": {"league": "Serie A"},
+        "Monza": {"league": "Serie A"},
+        "Napoli": {"league": "Serie A"},
+        "Salernitana": {"league": "Serie A"},
+        "Sassuolo": {"league": "Serie A"},
+        "Torino": {"league": "Serie A"},
+        "Udinese": {"league": "Serie A"},
+        "Verona": {"league": "Serie A"}
+    },
+    "Bundesliga": {
+        "Augsburg": {"league": "Bundesliga"},
+        "Bayer Leverkusen": {"league": "Bundesliga"},
+        "Bayern Munich": {"league": "Bundesliga"},
+        "Bochum": {"league": "Bundesliga"},
+        "Borussia Dortmund": {"league": "Bundesliga"},
+        "Borussia M'gladbach": {"league": "Bundesliga"},
+        "Darmstadt": {"league": "Bundesliga"},
+        "Eintracht Frankfurt": {"league": "Bundesliga"},
+        "Freiburg": {"league": "Bundesliga"},
+        "Heidenheim": {"league": "Bundesliga"},
+        "Hoffenheim": {"league": "Bundesliga"},
+        "Koln": {"league": "Bundesliga"},
+        "Mainz": {"league": "Bundesliga"},
+        "RB Leipzig": {"league": "Bundesliga"},
+        "Stuttgart": {"league": "Bundesliga"},
+        "Union Berlin": {"league": "Bundesliga"},
+        "Werder Bremen": {"league": "Bundesliga"},
+        "Wolfsburg": {"league": "Bundesliga"}
+    },
+    "Ligue 1": {
+        "AS Monaco": {"league": "Ligue 1"},
+        "Lens": {"league": "Ligue 1"},
+        "Lille": {"league": "Ligue 1"},
+        "Marseille": {"league": "Ligue 1"},
+        "Paris Saint-Germain": {"league": "Ligue 1"},
+        "Brest": {"league": "Ligue 1"},
+        "Nice": {"league": "Ligue 1"},
+        "Lorient": {"league": "Ligue 1"},
+        "Reims": {"league": "Ligue 1"},
+        "Montpellier": {"league": "Ligue 1"},
+        "Toulouse": {"league": "Ligue 1"},
+        "Clermont": {"league": "Ligue 1"},
+        "Strasbourg": {"league": "Ligue 1"},
+        "Nantes": {"league": "Ligue 1"},
+        "Le Havre": {"league": "Ligue 1"},
+        "Metz": {"league": "Ligue 1"},
+        "Rennes": {"league": "Ligue 1"},
+        "Lyon": {"league": "Ligue 1"}
+    }
+}
+
+# Database averages for xG and xGA
+LEAGUE_AVERAGES = {
+    "Premier League": {"xG": 1.43, "xGA": 1.43},
+    "La Liga": {"xG": 1.38, "xGA": 1.38},
+    "Serie A": {"xG": 1.41, "xGA": 1.41},
+    "Bundesliga": {"xG": 1.52, "xGA": 1.52},
+    "Ligue 1": {"xG": 1.39, "xGA": 1.39}
+}
+
 class FootballPredictionEngine:
     def __init__(self):
-        self.leagues = {
-            'Premier League': self._get_premier_league_teams(),
-            'La Liga': self._get_la_liga_teams(),
-            'Serie A': self._get_serie_a_teams(),
-            'Bundesliga': self._get_bundesliga_teams(),
-            'Ligue 1': self._get_ligue_1_teams()
-        }
-        
-        # Database averages for xG analysis
-        self.league_averages = {
-            'Premier League': {'xG': 1.45, 'xGA': 1.42},
-            'La Liga': {'xG': 1.38, 'xGA': 1.35},
-            'Serie A': {'xG': 1.41, 'xGA': 1.39},
-            'Bundesliga': {'xG': 1.52, 'xGA': 1.48},
-            'Ligue 1': {'xG': 1.36, 'xGA': 1.33}
-        }
+        self.teams_data = TEAMS_DATA
+        self.league_averages = LEAGUE_AVERAGES
     
-    def _get_premier_league_teams(self):
-        return [
-            'Arsenal', 'Aston Villa', 'Bournemouth', 'Brentford', 'Brighton',
-            'Chelsea', 'Crystal Palace', 'Everton', 'Fulham', 'Liverpool',
-            'Luton Town', 'Manchester City', 'Manchester United', 'Newcastle',
-            'Nottingham Forest', 'Sheffield United', 'Tottenham', 'West Ham', 'Wolves'
-        ]
-    
-    def _get_la_liga_teams(self):
-        return [
-            'Alaves', 'Almeria', 'Athletic Bilbao', 'Atletico Madrid', 'Barcelona',
-            'Betis', 'Celta Vigo', 'Cadiz', 'Getafe', 'Girona',
-            'Granada', 'Las Palmas', 'Mallorca', 'Osasuna', 'Rayo Vallecano',
-            'Real Madrid', 'Real Sociedad', 'Sevilla', 'Valencia', 'Villarreal'
-        ]
-    
-    def _get_serie_a_teams(self):
-        return [
-            'AC Milan', 'AS Roma', 'Atalanta', 'Bologna', 'Cagliari',
-            'Empoli', 'Fiorentina', 'Frosinone', 'Genoa', 'Inter Milan',
-            'Juventus', 'Lazio', 'Lecce', 'Monza', 'Napoli',
-            'Salernitana', 'Sassuolo', 'Torino', 'Udinese', 'Verona'
-        ]
-    
-    def _get_bundesliga_teams(self):
-        return [
-            'Bayern Munich', 'Borussia Dortmund', 'RB Leipzig', 'Bayer Leverkusen',
-            'Borussia Monchengladbach', 'Eintracht Frankfurt', 'Wolfsburg', 'Freiburg',
-            'Mainz', 'Augsburg', 'Union Berlin', 'Koln', 'Bochum', 'Werder Bremen',
-            'Stuttgart', 'Heidenheim', 'Darmstadt'
-        ]
-    
-    def _get_ligue_1_teams(self):
-        return [
-            'PSG', 'Monaco', 'Lens', 'Marseille', 'Rennes',
-            'Lille', 'Nice', 'Lorient', 'Reims', 'Montpellier',
-            'Toulouse', 'Clermont', 'Strasbourg', 'Nantes', 'Brest',
-            'Le Havre', 'Metz'
-        ]
-    
-    def calculate_xg_impact(self, team_xg, team_xga, league):
-        """Calculate impact relative to league average"""
-        avg_xg = self.league_averages[league]['xG']
-        avg_xga = self.league_averages[league]['xGA']
-        
-        xg_impact = team_xg - avg_xg
-        xga_impact = team_xga - avg_xga
-        
-        return xg_impact, xga_impact
-    
-    def calculate_injury_impact(self, injury_level):
-        """Calculate performance multiplier based on injury level"""
-        injury_multipliers = {
-            'None': 1.0,
-            'Minor': 0.95,
-            'Moderate': 0.85,
-            'Significant': 0.70,
-            'Crisis': 0.55
-        }
-        return injury_multipliers.get(injury_level, 1.0)
-    
-    def calculate_rest_advantage(self, home_rest, away_rest):
-        """Calculate rest advantage impact"""
-        rest_diff = away_rest - home_rest
-        advantage = rest_diff * 0.03  # 3% per day advantage
-        return max(min(advantage, 0.15), -0.15)  # Cap at ±15%
-    
-    def parse_understat_format(self, understat_string):
-        """Parse Understat format: '10.25-1.75' to xG and xGA"""
+    def calculate_xg_per_match(self, understat_format):
+        """Parse Understat format and calculate per match xG and xGA"""
         try:
-            xg_str, xga_str = understat_string.split('-')
-            return float(xg_str), float(xga_str)
+            xg_total, xga_total = map(float, understat_format.split('-'))
+            xg_per_match = xg_total / 5
+            xga_per_match = xga_total / 5
+            return xg_per_match, xga_per_match, xg_total, xga_total
         except:
-            return 0.0, 0.0
+            return 0, 0, 0, 0
     
-    def calculate_match_probabilities(self, home_data, away_data, league):
-        """Calculate match probabilities using multiple factors"""
+    def get_league_average(self, league):
+        """Get league average xG and xGA"""
+        return self.league_averages.get(league, {"xG": 1.4, "xGA": 1.4})
+    
+    def calculate_injury_impact(self, injury_status):
+        """Calculate performance multiplier based on injury status"""
+        injury_impact = {
+            "None": 1.0,
+            "Minor (bench players)": 0.95,
+            "Moderate (1-2 key starters)": 0.85,
+            "Significant (3-4 key players)": 0.70,
+            "Crisis (5+ players)": 0.55
+        }
+        return injury_impact.get(injury_status, 1.0)
+    
+    def calculate_rest_advantage(self, home_rest_days, away_rest_days):
+        """Calculate rest advantage multiplier"""
+        rest_difference = away_rest_days - home_rest_days
+        advantage_multiplier = 1.0 + (rest_difference * 0.05)
+        return max(0.8, min(1.2, advantage_multiplier)), rest_difference
+    
+    def calculate_team_strength(self, xg_per_match, xga_per_match, league, injury_status, rest_days, is_home=True):
+        """Calculate comprehensive team strength score"""
+        league_avg = self.get_league_average(league)
         
-        # Base probabilities from xG analysis
-        home_xg_per_match = home_data['xg_last5'] / 5
-        away_xg_per_match = away_data['xg_last5'] / 5
-        home_xga_per_match = home_data['xga_last5'] / 5
-        away_xga_per_match = away_data['xga_last5'] / 5
+        # Base strength from xG performance vs league average
+        xg_strength = xg_per_match / league_avg["xG"]
+        xga_strength = league_avg["xGA"] / xga_per_match if xga_per_match > 0 else 1.0
         
-        # Expected goals for this match
-        home_expected_goals = (home_xg_per_match + away_xga_per_match) / 2
-        away_expected_goals = (away_xg_per_match + home_xga_per_match) / 2
+        # Apply injury impact
+        injury_multiplier = self.calculate_injury_impact(injury_status)
         
-        # Apply injury impacts
-        home_injury_mult = self.calculate_injury_impact(home_data['injury_level'])
-        away_injury_mult = self.calculate_injury_impact(away_data['injury_level'])
+        # Home advantage
+        home_advantage = 1.05 if is_home else 1.0
         
-        home_expected_goals *= home_injury_mult
-        away_expected_goals *= away_injury_mult
+        # Combine factors
+        strength_score = (xg_strength * 0.6 + xga_strength * 0.4) * injury_multiplier * home_advantage
         
-        # Apply rest advantage
-        rest_advantage = self.calculate_rest_advantage(
-            home_data['rest_days'], away_data['rest_days']
+        return strength_score
+    
+    def predict_match(self, home_team, away_team, home_xg_data, away_xg_data, 
+                     home_injuries, away_injuries, home_rest_days, away_rest_days,
+                     home_odds, draw_odds, away_odds, over_odds):
+        """Main prediction function with all improvements"""
+        
+        # Calculate xG per match
+        home_xg_pm, home_xga_pm, home_xg_total, home_xga_total = self.calculate_xg_per_match(home_xg_data)
+        away_xg_pm, away_xga_pm, away_xg_total, away_xga_total = self.calculate_xg_per_match(away_xg_data)
+        
+        # Get leagues
+        home_league = self._find_team_league(home_team)
+        away_league = self._find_team_league(away_team)
+        
+        # Calculate rest advantage
+        rest_multiplier, rest_difference = self.calculate_rest_advantage(home_rest_days, away_rest_days)
+        
+        # Calculate team strengths
+        home_strength = self.calculate_team_strength(
+            home_xg_pm, home_xga_pm, home_league, home_injuries, home_rest_days, True
         )
-        away_expected_goals *= (1 + rest_advantage)
-        home_expected_goals *= (1 - rest_advantage)
         
-        # Calculate probabilities using Poisson distribution
-        home_win_prob = self._poisson_probability(home_expected_goals, away_expected_goals, 'home')
-        away_win_prob = self._poisson_probability(home_expected_goals, away_expected_goals, 'away')
-        draw_prob = 1 - home_win_prob - away_win_prob
+        away_strength = self.calculate_team_strength(
+            away_xg_pm, away_xga_pm, away_league, away_injuries, away_rest_days, False
+        ) * rest_multiplier
+        
+        # Calculate win probabilities
+        total_strength = home_strength + away_strength
+        home_win_prob = home_strength / total_strength
+        away_win_prob = away_strength / total_strength
+        draw_prob = 0.25 * (1 - abs(home_win_prob - away_win_prob))
         
         # Normalize probabilities
         total = home_win_prob + away_win_prob + draw_prob
@@ -176,359 +270,456 @@ class FootballPredictionEngine:
         away_win_prob /= total
         draw_prob /= total
         
-        # Calculate over/under probabilities
-        total_expected_goals = home_expected_goals + away_expected_goals
-        over_25_prob = self._calculate_over_under_probability(total_expected_goals, 2.5, 'over')
-        under_25_prob = 1 - over_25_prob
+        # Calculate expected goals
+        total_xg = home_xg_pm + away_xg_pm
+        total_xga = home_xga_pm + away_xga_pm
+        avg_xg = (total_xg + total_xga) / 2
+        
+        # Goal expectancy
+        goal_expectancy = (avg_xg / 1.4) * 100  # Compared to average 1.4 xG per team
+        
+        # Over/Under probability
+        over_prob = min(0.95, max(0.05, avg_xg * 0.3))
+        under_prob = 1 - over_prob
+        
+        # Expected score (simplified)
+        home_expected_goals = (home_xg_pm * 0.7 + away_xga_pm * 0.3)
+        away_expected_goals = (away_xg_pm * 0.7 + home_xga_pm * 0.3)
+        
+        # Value bets calculation
+        home_value = home_win_prob * home_odds
+        draw_value = draw_prob * draw_odds
+        away_value = away_win_prob * away_odds
+        over_value = over_prob * over_odds
+        
+        # Confidence calculation
+        confidence_factors = []
+        
+        # Data quality
+        if home_xg_total > 0 and away_xg_total > 0:
+            confidence_factors.append(0.9)
+        else:
+            confidence_factors.append(0.5)
+        
+        # Form reliability (consistency in recent performances)
+        form_confidence = min(1.0, (home_xg_total + away_xg_total) / 20)
+        confidence_factors.append(form_confidence)
+        
+        # Injury impact confidence
+        injury_confidence = 1.0
+        if home_injuries in ["Significant", "Crisis"] or away_injuries in ["Significant", "Crisis"]:
+            injury_confidence = 0.7
+        confidence_factors.append(injury_confidence)
+        
+        overall_confidence = sum(confidence_factors) / len(confidence_factors)
         
         return {
-            'home_win': home_win_prob,
-            'draw': draw_prob,
-            'away_win': away_win_prob,
-            'over_25': over_25_prob,
-            'under_25': under_25_prob,
-            'expected_home_goals': home_expected_goals,
-            'expected_away_goals': away_expected_goals,
-            'total_expected_goals': total_expected_goals
+            "home_win_prob": home_win_prob,
+            "draw_prob": draw_prob,
+            "away_win_prob": away_win_prob,
+            "over_prob": over_prob,
+            "under_prob": under_prob,
+            "home_expected_goals": home_expected_goals,
+            "away_expected_goals": away_expected_goals,
+            "total_expected_goals": avg_xg * 2,
+            "goal_expectancy": goal_expectancy,
+            "home_value": home_value,
+            "draw_value": draw_value,
+            "away_value": away_value,
+            "over_value": over_value,
+            "confidence": overall_confidence,
+            "rest_difference": rest_difference,
+            "home_xg_pm": home_xg_pm,
+            "home_xga_pm": home_xga_pm,
+            "away_xg_pm": away_xg_pm,
+            "away_xga_pm": away_xga_pm,
+            "home_league_avg": self.get_league_average(home_league),
+            "away_league_avg": self.get_league_average(away_league)
         }
     
-    def _poisson_probability(self, home_goals, away_goals, outcome):
-        """Calculate probability using Poisson distribution"""
-        home_win_prob = 0
-        away_win_prob = 0
-        
-        for i in range(10):  # Goals from 0 to 9
-            for j in range(10):
-                home_prob = (home_goals ** i) * np.exp(-home_goals) / np.math.factorial(i)
-                away_prob = (away_goals ** j) * np.exp(-away_goals) / np.math.factorial(j)
-                
-                if i > j:
-                    home_win_prob += home_prob * away_prob
-                elif j > i:
-                    away_win_prob += home_prob * away_prob
-        
-        if outcome == 'home':
-            return home_win_prob
-        elif outcome == 'away':
-            return away_win_prob
-        else:
-            return 1 - home_win_prob - away_win_prob
+    def _find_team_league(self, team_name):
+        """Find which league a team belongs to"""
+        for league, teams in self.teams_data.items():
+            if team_name in teams:
+                return league
+        return "Premier League"  # Default
     
-    def _calculate_over_under_probability(self, expected_goals, threshold, bet_type):
-        """Calculate over/under probability using Poisson distribution"""
-        under_prob = 0
-        for i in range(int(threshold * 2) + 1):  # More precise calculation
-            prob = (expected_goals ** i) * np.exp(-expected_goals) / np.math.factorial(i)
-            if i < threshold:
-                under_prob += prob
-        
-        if bet_type == 'over':
-            return 1 - under_prob
+    def get_value_bet_recommendation(self, value_ratio, threshold=1.0):
+        """Determine value bet recommendation"""
+        if value_ratio >= 1.1:
+            return "Strong Value", "good"
+        elif value_ratio >= 1.0:
+            return "Fair Value", "neutral"
         else:
-            return under_prob
-    
-    def calculate_value_bets(self, probabilities, odds):
-        """Calculate value bets based on probabilities and odds"""
-        value_bets = {}
-        
-        # Match outcome value bets
-        implied_prob_home = 1 / odds['home']
-        implied_prob_draw = 1 / odds['draw']
-        implied_prob_away = 1 / odds['away']
-        implied_prob_over = 1 / odds['over_25']
-        
-        value_home = (probabilities['home_win'] * odds['home']) - 1
-        value_draw = (probabilities['draw'] * odds['draw']) - 1
-        value_away = (probabilities['away_win'] * odds['away']) - 1
-        value_over = (probabilities['over_25'] * odds['over_25']) - 1
-        
-        value_bets = {
-            'home_win': {'value': value_home, 'implied_prob': implied_prob_home},
-            'draw': {'value': value_draw, 'implied_prob': implied_prob_draw},
-            'away_win': {'value': value_away, 'implied_prob': implied_prob_away},
-            'over_25': {'value': value_over, 'implied_prob': implied_prob_over}
-        }
-        
-        return value_bets
+            return "Poor Value", "poor"
 
 def main():
-    st.markdown('<div class="main-header">⚽ Professional Football Prediction Engine</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">🎯 Professional Football Prediction Engine</div>', unsafe_allow_html=True)
     
     # Initialize prediction engine
     engine = FootballPredictionEngine()
     
-    # Match Configuration
+    # Match Configuration Section
+    st.markdown('<div class="section-header">🏆 Match Configuration</div>', unsafe_allow_html=True)
+    
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("🏠 Home Team Configuration")
-        home_league = st.selectbox("Home Team League", list(engine.leagues.keys()), key="home_league")
-        home_team = st.selectbox("Select Home Team", engine.leagues[home_league], key="home_team")
+        st.markdown("### 🏠 Home Team")
         
-        st.subheader("📊 Home Team - Last 5 Matches")
-        home_understat = st.text_input("Understat Format (e.g., '10.25-1.75')", key="home_understat")
+        # League selection for home team
+        home_league = st.selectbox(
+            "Select Home Team League",
+            list(TEAMS_DATA.keys()),
+            key="home_league"
+        )
         
-        if home_understat:
-            home_xg, home_xga = engine.parse_understat_format(home_understat)
-            st.write(f"Total xG Scored: **{home_xg:.2f}**")
-            st.write(f"Total xGA Conceded: **{home_xga:.2f}**")
-            st.write(f"xG per match: **{home_xg/5:.2f}**")
-            st.write(f"xGA per match: **{home_xga/5:.2f}**")
-            
-            # Calculate impact vs league average
-            xg_impact, xga_impact = engine.calculate_xg_impact(home_xg/5, home_xga/5, home_league)
-            st.write(f"xG Impact: **{xg_impact:+.2f}** from league average")
-            st.write(f"xGA Impact: **{xga_impact:+.2f}** from league average")
+        home_team = st.selectbox(
+            "Select Home Team",
+            list(TEAMS_DATA[home_league].keys()),
+            key="home_team"
+        )
         
-        st.subheader("🎭 Home Team Context")
-        home_injuries = st.selectbox("Injury Status", ['None', 'Minor', 'Moderate', 'Significant', 'Crisis'], key="home_injuries")
-        home_rest = st.number_input("Rest Days", min_value=1, max_value=14, value=3, key="home_rest")
+        st.info(f"**League:** {home_league}")
+        
+        home_form = st.selectbox(
+            "Form Trend",
+            ["↗️ Improving", "➡️ Stable", "↘️ Declining"],
+            key="home_form"
+        )
+        
+        home_last_opponents = st.text_area(
+            "Last 5 Opponents",
+            "Arsenal, Chelsea, Wolves, Crystal Palace, Luton",
+            key="home_opponents"
+        )
     
     with col2:
-        st.subheader("✈️ Away Team Configuration")
-        away_league = st.selectbox("Away Team League", list(engine.leagues.keys()), key="away_league")
-        away_team = st.selectbox("Select Away Team", engine.leagues[away_league], key="away_team")
+        st.markdown("### ✈️ Away Team")
         
-        st.subheader("📊 Away Team - Last 5 Matches")
-        away_understat = st.text_input("Understat Format (e.g., '11.25-5.25')", key="away_understat")
+        # League selection for away team
+        away_league = st.selectbox(
+            "Select Away Team League",
+            list(TEAMS_DATA.keys()),
+            key="away_league"
+        )
+        
+        away_team = st.selectbox(
+            "Select Away Team",
+            list(TEAMS_DATA[away_league].keys()),
+            key="away_team"
+        )
+        
+        st.info(f"**League:** {away_league}")
+        
+        away_form = st.selectbox(
+            "Form Trend",
+            ["↗️ Improving", "➡️ Stable", "↘️ Declining"],
+            key="away_form"
+        )
+        
+        away_last_opponents = st.text_area(
+            "Last 5 Opponents",
+            "Chelsea, Liverpool, West Ham, Everton, Newcastle",
+            key="away_opponents"
+        )
+    
+    # Understat Data Section
+    st.markdown('<div class="section-header">📊 Understat Last 5 Matches Data</div>', unsafe_allow_html=True)
+    
+    st.markdown("""
+    **📝 Understat Format Guide:**
+    Enter data in the format shown on Understat.com: "10.25-1.75"
+    - First number: Total xG scored in last 5 matches
+    - Second number: Total xGA conceded in last 5 matches
+    
+    *Example: Arsenal's "10.25-1.75" means 10.25 xG scored and 1.75 xGA conceded in last 5 matches.*
+    """)
+    
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        st.markdown(f"### 📈 {home_team} - Last 5 Matches")
+        home_understat = st.text_input("Understat Format", "4.63-7.71", key="home_understat")
+        
+        if home_understat:
+            try:
+                home_xg_pm, home_xga_pm, home_xg_total, home_xga_total = engine.calculate_xg_per_match(home_understat)
+                home_league_avg = engine.get_league_average(home_league)
+                
+                col3a, col3b, col3c = st.columns(3)
+                with col3a:
+                    st.metric("Total xG Scored", f"{home_xg_total:.2f}")
+                with col3b:
+                    st.metric("Total xGA Conceded", f"{home_xga_total:.2f}")
+                with col3c:
+                    st.metric("xG per match", f"{home_xg_pm:.2f}")
+                
+                col3d, col3e = st.columns(2)
+                with col3d:
+                    xg_vs_avg = home_xg_pm - home_league_avg["xG"]
+                    st.metric("xGA per match", f"{home_xga_pm:.2f}", 
+                             delta=f"{xg_vs_avg:+.2f} from database average")
+                with col3e:
+                    xga_vs_avg = home_league_avg["xGA"] - home_xga_pm
+                    st.metric("", "", 
+                             delta=f"{xga_vs_avg:+.2f} from database average")
+            except:
+                st.error("Invalid Understat format for home team")
+    
+    with col4:
+        st.markdown(f"### 📈 {away_team} - Last 5 Matches")
+        away_understat = st.text_input("Understat Format", "8.75-10.60", key="away_understat")
         
         if away_understat:
-            away_xg, away_xga = engine.parse_understat_format(away_understat)
-            st.write(f"Total xG Scored: **{away_xg:.2f}**")
-            st.write(f"Total xGA Conceded: **{away_xga:.2f}**")
-            st.write(f"xG per match: **{away_xg/5:.2f}**")
-            st.write(f"xGA per match: **{away_xga/5:.2f}**")
-            
-            # Calculate impact vs league average
-            xg_impact, xga_impact = engine.calculate_xg_impact(away_xg/5, away_xga/5, away_league)
-            st.write(f"xG Impact: **{xg_impact:+.2f}** from league average")
-            st.write(f"xGA Impact: **{xga_impact:+.2f}** from league average")
+            try:
+                away_xg_pm, away_xga_pm, away_xg_total, away_xga_total = engine.calculate_xg_per_match(away_understat)
+                away_league_avg = engine.get_league_average(away_league)
+                
+                col4a, col4b, col4c = st.columns(3)
+                with col4a:
+                    st.metric("Total xG Scored", f"{away_xg_total:.2f}")
+                with col4b:
+                    st.metric("Total xGA Conceded", f"{away_xga_total:.2f}")
+                with col4c:
+                    st.metric("xG per match", f"{away_xg_pm:.2f}")
+                
+                col4d, col4e = st.columns(2)
+                with col4d:
+                    xg_vs_avg = away_xg_pm - away_league_avg["xG"]
+                    st.metric("xGA per match", f"{away_xga_pm:.2f}", 
+                             delta=f"{xg_vs_avg:+.2f} from database average")
+                with col4e:
+                    xga_vs_avg = away_league_avg["xGA"] - away_xga_pm
+                    st.metric("", "", 
+                             delta=f"{xga_vs_avg:+.2f} from database average")
+            except:
+                st.error("Invalid Understat format for away team")
+    
+    # Match Context Section
+    st.markdown('<div class="section-header">🎭 Match Context</div>', unsafe_allow_html=True)
+    
+    col5, col6 = st.columns(2)
+    
+    with col5:
+        st.markdown("### 🩹 Injury Status")
+        home_injuries = st.selectbox(
+            f"{home_team} Injuries",
+            ["None", "Minor (bench players)", "Moderate (1-2 key starters)", "Significant (3-4 key players)", "Crisis (5+ players)"],
+            key="home_injuries"
+        )
         
-        st.subheader("🎭 Away Team Context")
-        away_injuries = st.selectbox("Injury Status", ['None', 'Minor', 'Moderate', 'Significant', 'Crisis'], key="away_injuries")
-        away_rest = st.number_input("Rest Days", min_value=1, max_value=14, value=6, key="away_rest")
+        away_injuries = st.selectbox(
+            f"{away_team} Injuries",
+            ["None", "Minor (bench players)", "Moderate (1-2 key starters)", "Significant (3-4 key players)", "Crisis (5+ players)"],
+            key="away_injuries"
+        )
     
-    # Market Odds
-    st.subheader("💰 Market Odds")
-    odds_col1, odds_col2, odds_col3, odds_col4 = st.columns(4)
+    with col6:
+        st.markdown("### 🕐 Fatigue & Recovery")
+        home_rest = st.number_input(f"{home_team} Rest Days", min_value=1, max_value=14, value=3, key="home_rest")
+        away_rest = st.number_input(f"{away_team} Rest Days", min_value=1, max_value=14, value=6, key="away_rest")
+        
+        rest_diff = away_rest - home_rest
+        if rest_diff > 0:
+            st.info(f"✈️ {away_team} has {rest_diff} more rest days")
+        elif rest_diff < 0:
+            st.info(f"🏠 {home_team} has {abs(rest_diff)} more rest days")
+        else:
+            st.info("⚖️ Both teams have equal rest days")
     
-    with odds_col1:
-        home_odds = st.number_input("Home Win Odds", min_value=1.01, max_value=20.0, value=2.63, step=0.01)
-    with odds_col2:
-        draw_odds = st.number_input("Draw Odds", min_value=1.01, max_value=20.0, value=3.60, step=0.01)
-    with odds_col3:
-        away_odds = st.number_input("Away Win Odds", min_value=1.01, max_value=20.0, value=2.50, step=0.01)
-    with odds_col4:
-        over_odds = st.number_input("Over 2.5 Goals Odds", min_value=1.01, max_value=20.0, value=1.67, step=0.01)
+    # Market Odds Section
+    st.markdown('<div class="section-header">💰 Market Odds</div>', unsafe_allow_html=True)
+    
+    col7, col8, col9, col10 = st.columns(4)
+    
+    with col7:
+        st.markdown("### 🏠 Home Win")
+        home_odds = st.number_input("Home Odds", min_value=1.01, max_value=10.0, value=2.63, step=0.01, key="home_odds")
+    
+    with col8:
+        st.markdown("### 🤝 Draw")
+        draw_odds = st.number_input("Draw Odds", min_value=1.01, max_value=10.0, value=3.60, step=0.01, key="draw_odds")
+    
+    with col9:
+        st.markdown("### ✈️ Away Win")
+        away_odds = st.number_input("Away Odds", min_value=1.01, max_value=10.0, value=2.50, step=0.01, key="away_odds")
+    
+    with col10:
+        st.markdown("### ⚽ Over 2.5")
+        over_odds = st.number_input("Over 2.5 Odds", min_value=1.01, max_value=10.0, value=1.67, step=0.01, key="over_odds")
     
     # Prediction Button
-    if st.button("🎯 Generate Prediction", type="primary"):
+    if st.button("🎯 Generate Prediction", type="primary", use_container_width=True):
         if home_understat and away_understat:
-            # Prepare team data
-            home_xg, home_xga = engine.parse_understat_format(home_understat)
-            away_xg, away_xga = engine.parse_understat_format(away_understat)
-            
-            home_data = {
-                'xg_last5': home_xg,
-                'xga_last5': home_xga,
-                'injury_level': home_injuries,
-                'rest_days': home_rest
-            }
-            
-            away_data = {
-                'xg_last5': away_xg,
-                'xga_last5': away_xga,
-                'injury_level': away_injuries,
-                'rest_days': away_rest
-            }
-            
-            # Use home team's league for analysis
-            league = home_league
-            
-            # Calculate probabilities
-            probabilities = engine.calculate_match_probabilities(home_data, away_data, league)
-            
-            # Calculate value bets
-            odds = {
-                'home': home_odds,
-                'draw': draw_odds,
-                'away': away_odds,
-                'over_25': over_odds
-            }
-            value_bets = engine.calculate_value_bets(probabilities, odds)
-            
-            # Display Results
-            st.markdown("---")
-            st.subheader("🎯 Prediction Results")
-            
-            # Expected Score
-            home_goals = round(probabilities['expected_home_goals'], 1)
-            away_goals = round(probabilities['expected_away_goals'], 1)
-            
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                st.markdown(f"""
-                <div style='text-align: center; padding: 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; color: white;'>
-                    <h3>Expected Final Score</h3>
-                    <h1>{home_goals} - {away_goals}</h1>
-                    <p>Confidence: ★★★★☆ (81% - High)</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Match Outcome Probabilities
-            st.subheader("📊 Match Outcome Probabilities")
-            
-            outcome_col1, outcome_col2, outcome_col3 = st.columns(3)
-            
-            with outcome_col1:
-                home_prob = probabilities['home_win'] * 100
-                value_class = "value-bet-good" if value_bets['home_win']['value'] > 0.1 else "value-bet-poor"
-                st.markdown(f"""
-                <div class='prediction-card {value_class}'>
-                    <div class='team-header'>🏠 {home_team} Win</div>
-                    <h3>{home_prob:.1f}%</h3>
-                    <p>Odds: {home_odds}</p>
-                    <p>Value: {value_bets['home_win']['value']:+.1%}</p>
-                    <p>Expected Value: {value_bets['home_win']['value']*100:+.1f}%</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with outcome_col2:
-                draw_prob = probabilities['draw'] * 100
-                value_class = "value-bet-good" if value_bets['draw']['value'] > 0.1 else "value-bet-poor"
-                st.markdown(f"""
-                <div class='prediction-card {value_class}'>
-                    <div class='team-header'>🤝 Draw</div>
-                    <h3>{draw_prob:.1f}%</h3>
-                    <p>Odds: {draw_odds}</p>
-                    <p>Value: {value_bets['draw']['value']:+.1%}</p>
-                    <p>Expected Value: {value_bets['draw']['value']*100:+.1f}%</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with outcome_col3:
-                away_prob = probabilities['away_win'] * 100
-                value_class = "value-bet-good" if value_bets['away_win']['value'] > 0.1 else "value-bet-poor"
-                st.markdown(f"""
-                <div class='prediction-card {value_class}'>
-                    <div class='team-header'>✈️ {away_team} Win</div>
-                    <h3>{away_prob:.1f}%</h3>
-                    <p>Odds: {away_odds}</p>
-                    <p>Value: {value_bets['away_win']['value']:+.1%}</p>
-                    <p>Expected Value: {value_bets['away_win']['value']*100:+.1f}%</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Goals Market
-            st.subheader("⚽ Goals Market")
-            
-            goals_col1, goals_col2 = st.columns(2)
-            
-            with goals_col1:
-                over_prob = probabilities['over_25'] * 100
-                value_class = "value-bet-good" if value_bets['over_25']['value'] > 0.1 else "value-bet-poor"
-                st.markdown(f"""
-                <div class='prediction-card {value_class}'>
-                    <div class='team-header'>🔴 Over 2.5 Goals</div>
-                    <h3>{over_prob:.1f}%</h3>
-                    <p>Odds: {over_odds}</p>
-                    <p>Value: {value_bets['over_25']['value']:+.1%}</p>
-                    <p>Expected Value: {value_bets['over_25']['value']*100:+.1f}%</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with goals_col2:
-                under_prob = probabilities['under_25'] * 100
-                implied_under_odds = 1 / (under_prob / 100) if under_prob > 0 else 0
-                st.markdown(f"""
-                <div class='prediction-card'>
-                    <div class='team-header'>🟡 Under 2.5 Goals</div>
-                    <h3>{under_prob:.1f}%</h3>
-                    <p>Implied Odds: {implied_under_odds:.2f}</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Value Bets Recommendation
-            st.subheader("💰 Recommended Value Bets")
-            
-            good_value_bets = []
-            for bet_type, value_data in value_bets.items():
-                if value_data['value'] > 0.1:  # 10%+ value threshold
-                    good_value_bets.append((bet_type, value_data))
-            
-            if good_value_bets:
-                for bet_type, value_data in good_value_bets:
-                    bet_name = {
-                        'home_win': f'{home_team} Win',
-                        'draw': 'Draw',
-                        'away_win': f'{away_team} Win',
-                        'over_25': 'Over 2.5 Goals'
-                    }[bet_type]
+            try:
+                # Generate prediction
+                prediction = engine.predict_match(
+                    home_team, away_team, home_understat, away_understat,
+                    home_injuries, away_injuries, home_rest, away_rest,
+                    home_odds, draw_odds, away_odds, over_odds
+                )
+                
+                # Display Results
+                st.markdown("---")
+                st.markdown('<div class="section-header">🎯 Prediction Results</div>', unsafe_allow_html=True)
+                
+                # Expected Score
+                col11, col12, col13 = st.columns([1,2,1])
+                with col12:
+                    st.markdown(f"### {home_team} vs {away_team}")
+                    expected_score = f"{prediction['home_expected_goals']:.1f} - {prediction['away_expected_goals']:.1f}"
+                    st.markdown(f"<h2 style='text-align: center; color: #1f77b4;'>{expected_score}</h2>", unsafe_allow_html=True)
+                    st.markdown("<p style='text-align: center;'>Expected Final Score</p>", unsafe_allow_html=True)
                     
-                    st.success(f"✅ **{bet_name}** - Value: {value_data['value']:+.1%} | Odds: {odds[bet_type]}")
-            else:
-                st.info("ℹ️ No strong value bets identified. All market odds appear efficient for this match.")
-            
-            # Key Insights
-            st.subheader("🧠 Key Insights & Analysis")
-            
-            insights = []
-            
-            # Injury insights
-            if home_injuries in ['Significant', 'Crisis']:
-                insights.append(f"🩹 {home_team} affected by {home_injuries.lower()} injuries")
-            if away_injuries in ['Significant', 'Crisis']:
-                insights.append(f"🩹 {away_team} affected by {away_injuries.lower()} injuries")
-            
-            # Rest advantage
-            rest_diff = away_rest - home_rest
-            if abs(rest_diff) >= 3:
-                if rest_diff > 0:
-                    insights.append(f"🕐 {away_team} has {rest_diff} extra rest days")
+                    # Confidence stars
+                    confidence_stars = "★" * int(prediction['confidence'] * 5) + "☆" * (5 - int(prediction['confidence'] * 5))
+                    confidence_percent = int(prediction['confidence'] * 100)
+                    st.markdown(f"<p style='text-align: center;' class='confidence-stars'>Confidence: {confidence_stars} ({confidence_percent}%)</p>", unsafe_allow_html=True)
+                
+                # Match Outcome Probabilities
+                st.markdown("### 📊 Match Outcome Probabilities")
+                
+                col14, col15, col16 = st.columns(3)
+                
+                with col14:
+                    home_value_rec, home_value_class = engine.get_value_bet_recommendation(prediction['home_value'])
+                    st.markdown(f"**🟡 {home_team} Win**")
+                    st.metric("Probability", f"{prediction['home_win_prob']*100:.1f}%")
+                    st.metric("Odds", f"{home_odds:.2f}")
+                    if home_value_class == "good":
+                        st.markdown(f'<div class="value-bet-good">{home_value_rec}: {prediction["home_value"]:.2f}x</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown(f'<div class="value-bet-poor">{home_value_rec}: {prediction["home_value"]:.2f}x</div>', unsafe_allow_html=True)
+                
+                with col15:
+                    draw_value_rec, draw_value_class = engine.get_value_bet_recommendation(prediction['draw_value'])
+                    st.markdown("**🔴 Draw**")
+                    st.metric("Probability", f"{prediction['draw_prob']*100:.1f}%")
+                    st.metric("Odds", f"{draw_odds:.2f}")
+                    if draw_value_class == "good":
+                        st.markdown(f'<div class="value-bet-good">{draw_value_rec}: {prediction["draw_value"]:.2f}x</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown(f'<div class="value-bet-poor">{draw_value_rec}: {prediction["draw_value"]:.2f}x</div>', unsafe_allow_html=True)
+                
+                with col16:
+                    away_value_rec, away_value_class = engine.get_value_bet_recommendation(prediction['away_value'])
+                    st.markdown(f"**🟡 {away_team} Win**")
+                    st.metric("Probability", f"{prediction['away_win_prob']*100:.1f}%")
+                    st.metric("Odds", f"{away_odds:.2f}")
+                    if away_value_class == "good":
+                        st.markdown(f'<div class="value-bet-good">{away_value_rec}: {prediction["away_value"]:.2f}x</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown(f'<div class="value-bet-poor">{away_value_rec}: {prediction["away_value"]:.2f}x</div>', unsafe_allow_html=True)
+                
+                # Goals Market
+                st.markdown("### ⚽ Goals Market")
+                
+                col17, col18 = st.columns(2)
+                
+                with col17:
+                    over_value_rec, over_value_class = engine.get_value_bet_recommendation(prediction['over_value'])
+                    st.markdown("**🔴 Over 2.5 Goals**")
+                    st.metric("Probability", f"{prediction['over_prob']*100:.1f}%")
+                    st.metric("Odds", f"{over_odds:.2f}")
+                    if over_value_class == "good":
+                        st.markdown(f'<div class="value-bet-good">{over_value_rec}: {prediction["over_value"]:.2f}x</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown(f'<div class="value-bet-poor">{over_value_rec}: {prediction["over_value"]:.2f}x</div>', unsafe_allow_html=True)
+                
+                with col18:
+                    under_implied_odds = 1 / prediction['under_prob'] if prediction['under_prob'] > 0 else 0
+                    st.markdown("**🟡 Under 2.5 Goals**")
+                    st.metric("Probability", f"{prediction['under_prob']*100:.1f}%")
+                    st.metric("Implied Odds", f"{under_implied_odds:.2f}")
+                
+                # Value Bets Recommendation
+                st.markdown("### 💰 Recommended Value Bets")
+                
+                value_bets = []
+                if prediction['home_value'] >= 1.1:
+                    value_bets.append(f"**{home_team} Win** (Value: {prediction['home_value']:.2f}x)")
+                if prediction['draw_value'] >= 1.1:
+                    value_bets.append(f"**Draw** (Value: {prediction['draw_value']:.2f}x)")
+                if prediction['away_value'] >= 1.1:
+                    value_bets.append(f"**{away_team} Win** (Value: {prediction['away_value']:.2f}x)")
+                if prediction['over_value'] >= 1.1:
+                    value_bets.append(f"**Over 2.5 Goals** (Value: {prediction['over_value']:.2f}x)")
+                
+                if value_bets:
+                    for bet in value_bets:
+                        st.success(f"🎯 {bet}")
                 else:
-                    insights.append(f"🕐 {home_team} has {abs(rest_diff)} extra rest days")
-            
-            # Goal expectation
-            total_xg = probabilities['total_expected_goals']
-            if total_xg > 3.0:
-                insights.append("⚽ High-scoring match expected")
-            elif total_xg < 2.0:
-                insights.append("⚽ Low-scoring match expected")
-            
-            # Defensive analysis
-            home_xga_per_match = home_xga / 5
-            away_xga_per_match = away_xga / 5
-            
-            if home_xga_per_match < 1.0:
-                insights.append(f"🛡️ {home_team} showing excellent defense ({home_xga_per_match:.2f} xGA/match)")
-            elif home_xga_per_match > 1.8:
-                insights.append(f"🛡️ {home_team} showing poor defense ({home_xga_per_match:.2f} xGA/match)")
-            
-            if away_xga_per_match < 1.0:
-                insights.append(f"🛡️ {away_team} showing excellent defense ({away_xga_per_match:.2f} xGA/match)")
-            elif away_xga_per_match > 1.8:
-                insights.append(f"🛡️ {away_team} showing poor defense ({away_xga_per_match:.2f} xGA/match)")
-            
-            for insight in insights:
-                st.write(f"• {insight}")
-            
-            # Statistical Summary
-            st.subheader("📈 Statistical Summary")
-            
-            summary_col1, summary_col2, summary_col3 = st.columns(3)
-            
-            with summary_col1:
-                st.metric("Total Expected Goals", f"{probabilities['total_expected_goals']:.2f}")
-                st.metric("Goal Expectancy", f"{(probabilities['total_expected_goals'] / 2.5) * 100:.1f}% of average")
-            
-            with summary_col2:
-                st.metric(f"{home_team} Form", f"{home_xg/5:.2f} xG, {home_xga/5:.2f} xGA per match")
-            
-            with summary_col3:
-                st.metric(f"{away_team} Form", f"{away_xg/5:.2f} xG, {away_xga/5:.2f} xGA per match")
-        
+                    st.info("📊 No strong value bets identified. All market odds appear efficient for this match. Consider waiting for line movement.")
+                
+                # Key Insights & Analysis
+                st.markdown("### 🧠 Key Insights & Analysis")
+                
+                insights = []
+                
+                # Injury insights
+                if home_injuries != "None":
+                    insights.append(f"🩹 {home_team} affected by {home_injuries.lower()}")
+                if away_injuries != "None":
+                    insights.append(f"🩹 {away_team} affected by {away_injuries.lower()}")
+                
+                # Rest advantage insights
+                if prediction['rest_difference'] > 0:
+                    insights.append(f"🕐 {away_team} has {prediction['rest_difference']} extra rest days")
+                elif prediction['rest_difference'] < 0:
+                    insights.append(f"🕐 {home_team} has {abs(prediction['rest_difference'])} extra rest days")
+                
+                # Goal expectation insights
+                if prediction['total_expected_goals'] > 3.0:
+                    insights.append("⚽ High-scoring match expected")
+                elif prediction['total_expected_goals'] < 2.0:
+                    insights.append("⚽ Low-scoring match expected")
+                else:
+                    insights.append("⚽ Moderate-scoring match expected")
+                
+                # Defensive performance insights
+                if prediction['home_xga_pm'] < prediction['home_league_avg']['xGA']:
+                    insights.append(f"🛡️ {home_team} showing solid defense ({prediction['home_xga_pm']:.2f} xGA/match)")
+                else:
+                    insights.append(f"🎯 {home_team} defense vulnerable ({prediction['home_xga_pm']:.2f} xGA/match)")
+                
+                if prediction['away_xga_pm'] < prediction['away_league_avg']['xGA']:
+                    insights.append(f"🛡️ {away_team} showing solid defense ({prediction['away_xga_pm']:.2f} xGA/match)")
+                else:
+                    insights.append(f"🎯 {away_team} defense vulnerable ({prediction['away_xga_pm']:.2f} xGA/match)")
+                
+                # Display insights
+                for insight in insights:
+                    st.write(f"• {insight}")
+                
+                # Statistical Summary
+                st.markdown("### 📈 Statistical Summary")
+                
+                col19, col20, col21 = st.columns(3)
+                
+                with col19:
+                    st.metric("Total Expected Goals", f"{prediction['total_expected_goals']:.2f}")
+                
+                with col20:
+                    st.metric("Goal Expectancy", f"{prediction['goal_expectancy']:.1f}% of average match")
+                
+                with col21:
+                    st.metric("Confidence Score", f"{prediction['confidence']*100:.1f}%")
+                
+                # Team form summary
+                st.markdown("#### Team Form Analysis")
+                col22, col23 = st.columns(2)
+                
+                with col22:
+                    st.write(f"**{home_team} Form:** {prediction['home_xg_pm']:.2f} xG, {prediction['home_xga_pm']:.2f} xGA per match")
+                
+                with col23:
+                    st.write(f"**{away_team} Form:** {prediction['away_xg_pm']:.2f} xG, {prediction['away_xga_pm']:.2f} xGA per match")
+                
+            except Exception as e:
+                st.error(f"Error generating prediction: {str(e)}")
         else:
-            st.error("Please enter Understat data for both teams to generate predictions.")
+            st.error("Please enter valid Understat data for both teams")
 
 if __name__ == "__main__":
     main()
