@@ -116,6 +116,13 @@ st.markdown("""
         margin: 0.25rem 0;
         font-size: 0.9rem;
     }
+    .bankroll-advice {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1rem;
+        border-radius: 10px;
+        margin: 0.5rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -331,8 +338,8 @@ class ProfessionalPredictionEngine:
                 warnings.append(f"{field} is very high ({value}) - please verify")
         
         # Check bookmaker overround
-        if all(inputs.get(field) for field in odds_fields):
-            total_implied = sum(1/inputs[field] for field in odds_fields[:3])  # 1x2 markets
+        if all(inputs.get(field) for field in odds_fields[:3]):  # 1x2 markets only
+            total_implied = sum(1/inputs[field] for field in odds_fields[:3])
             if total_implied > 1.10:  # More than 10% overround
                 warnings.append(f"High bookmaker margin detected ({total_implied:.1%}) - value harder to find")
         
@@ -487,7 +494,7 @@ class ProfessionalPredictionEngine:
     def calculate_true_value(self, probability, odds):
         """PROPER value calculation using correct mathematics"""
         if odds <= 1.0:
-            return {'ev': -1, 'kelly_fraction': 0, 'value_ratio': 0, 'rating': 'invalid'}
+            return {'ev': -1, 'kelly_fraction': 0, 'value_ratio': 0, 'rating': 'invalid', 'implied_prob': 0, 'model_prob': probability}
         
         # Proper Expected Value calculation
         ev = (probability * (odds - 1)) - (1 - probability)
@@ -554,8 +561,12 @@ class ProfessionalPredictionEngine:
         # Check market efficiency contradictions
         if all(inputs.get(field) for field in ['home_odds', 'draw_odds', 'away_odds']):
             total_implied = sum(1/inputs[field] for field in ['home_odds', 'draw_odds', 'away_odds'])
-            if total_implied > 1.10 and any(v['rating'] == 'excellent' for v in self.calculate_value_bets(probabilities, inputs).values() if isinstance(v, dict)):
-                contradictions.append("CONTRADICTION: High bookmaker margin but excellent value bets identified - verify calculations")
+            if total_implied > 1.10:
+                # Calculate temporary value bets for contradiction check
+                temp_odds = {'home': inputs['home_odds'], 'draw': inputs['draw_odds'], 'away': inputs['away_odds'], 'over_2.5': inputs.get('over_odds', 2.0)}
+                temp_value_bets = self.calculate_value_bets(probabilities, temp_odds)
+                if any(v['rating'] == 'excellent' for v in temp_value_bets.values()):
+                    contradictions.append("CONTRADICTION: High bookmaker margin but excellent value bets identified - verify calculations")
         
         return contradictions
 
@@ -699,10 +710,19 @@ class ProfessionalPredictionEngine:
             insights.append(f"🚨 {inputs['away_team']} defensive concerns ({away_xga_per_match:.2f} xGA/match)")
         
         # Value bet insights
-        excellent_bets = [k for k, v in self.calculate_value_bets(probabilities, inputs).items() if v['rating'] == 'excellent']
+        odds = {
+            'home': inputs['home_odds'],
+            'draw': inputs['draw_odds'], 
+            'away': inputs['away_odds'],
+            'over_2.5': inputs['over_odds']
+        }
+        value_bets = self.calculate_value_bets(probabilities, odds)
+        excellent_bets = [k for k, v in value_bets.items() if v['rating'] == 'excellent']
+        good_bets = [k for k, v in value_bets.items() if v['rating'] == 'good']
+        
         if excellent_bets:
             insights.append("💰 Excellent value betting opportunities identified")
-        elif any(v['rating'] == 'good' for v in self.calculate_value_bets(probabilities, inputs).values()):
+        elif good_bets:
             insights.append("💰 Good value betting opportunities available")
         
         # Market efficiency insight
@@ -1248,13 +1268,26 @@ def display_prediction_results(engine, result, inputs):
     # Bankroll Management Advice
     st.markdown('<div class="section-header">💼 Bankroll Management</div>', unsafe_allow_html=True)
     st.markdown("""
-    <div class="warning-box">
+    <div class="bankroll-advice">
     <strong>Responsible Betting Guidelines:</strong><br>
     • <strong>Never bet more than 1-2% of your total bankroll on a single bet</strong><br>
     • Use Kelly Criterion fractions as maximum stakes, not recommendations<br>
     • Maintain detailed records of all bets and results<br>
     • Set stop-loss limits and stick to them<br>
     • Remember: Even the best models have losing streaks
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Professional Performance Expectations
+    st.markdown('<div class="section-header">📊 Realistic Performance Expectations</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="warning-box">
+    <strong>Professional Betting Reality Check:</strong><br>
+    • <strong>Realistic Accuracy:</strong> 52-57% for match outcomes<br>
+    • <strong>Sustainable Edge:</strong> 2-5% in efficient markets<br>
+    • <strong>Value Bet Frequency:</strong> 5-15% of matches<br>
+    • <strong>Long-term Success:</strong> Requires discipline and proper bankroll management<br>
+    • <strong>Variance:</strong> Even with positive EV, losing streaks of 5-10 bets are normal
     </div>
     """, unsafe_allow_html=True)
     
