@@ -4,8 +4,6 @@ import numpy as np
 from math import log
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import requests
-import json
 
 # Page configuration
 st.set_page_config(
@@ -58,6 +56,20 @@ st.markdown("""
         padding: 1.5rem;
         border-radius: 15px;
         margin: 0.5rem 0;
+    }
+    .input-section {
+        background-color: #f8f9fa;
+        padding: 2rem;
+        border-radius: 15px;
+        border: 2px solid #e9ecef;
+        margin-bottom: 2rem;
+    }
+    .prediction-section {
+        background-color: #ffffff;
+        padding: 2rem;
+        border-radius: 15px;
+        border: 2px solid #1f77b4;
+        margin-bottom: 2rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -120,7 +132,7 @@ class EnhancedPredictionEngine:
                 "possession": 59, "tactical_style": "POSSESSION", "strength_home": 7.0, "strength_away": 6.5,
                 "preferred_formation": "4-2-3-1", "press_intensity": "High"
             },
-            # Additional teams for completeness
+            # Additional teams
             "Bournemouth": {"league": "EPL", "xg": 1.45, "xga": 1.70, "possession": 46, "tactical_style": "COUNTER_ATTACK"},
             "Crystal Palace": {"league": "EPL", "xg": 1.35, "xga": 1.60, "possession": 49, "tactical_style": "DEFENSIVE"},
             "Fulham": {"league": "EPL", "xg": 1.50, "xga": 1.55, "possession": 51, "tactical_style": "BALANCED"},
@@ -131,22 +143,6 @@ class EnhancedPredictionEngine:
             "Luton": {"league": "EPL", "xg": 1.20, "xga": 2.00, "possession": 42, "tactical_style": "DEFENSIVE"},
             "Burnley": {"league": "EPL", "xg": 1.15, "xga": 2.10, "possession": 55, "tactical_style": "POSSESSION"},
             "Sheffield United": {"league": "EPL", "xg": 1.05, "xga": 2.30, "possession": 40, "tactical_style": "DEFENSIVE"},
-            
-            # La Liga top teams
-            "Real Madrid": {"league": "La Liga", "xg": 2.20, "xga": 0.90, "possession": 58, "tactical_style": "COUNTER_ATTACK"},
-            "Barcelona": {"league": "La Liga", "xg": 2.10, "xga": 1.10, "possession": 65, "tactical_style": "POSSESSION"},
-            "Atletico Madrid": {"league": "La Liga", "xg": 1.80, "xga": 1.15, "possession": 48, "tactical_style": "DEFENSIVE"},
-            "Girona": {"league": "La Liga", "xg": 1.90, "xga": 1.40, "possession": 54, "tactical_style": "ATTACKING"},
-            
-            # Bundesliga top teams
-            "Bayer Leverkusen": {"league": "Bundesliga", "xg": 2.15, "xga": 0.95, "possession": 59, "tactical_style": "POSSESSION"},
-            "Bayern Munich": {"league": "Bundesliga", "xg": 2.30, "xga": 1.05, "possession": 62, "tactical_style": "HIGH_PRESS"},
-            "Stuttgart": {"league": "Bundesliga", "xg": 1.95, "xga": 1.25, "possession": 55, "tactical_style": "ATTACKING"},
-            
-            # Serie A top teams
-            "Inter Milan": {"league": "Serie A", "xg": 1.95, "xga": 0.85, "possession": 56, "tactical_style": "DEFENSIVE"},
-            "Juventus": {"league": "Serie A", "xg": 1.65, "xga": 0.95, "possession": 52, "tactical_style": "DEFENSIVE"},
-            "AC Milan": {"league": "Serie A", "xg": 1.80, "xga": 1.20, "possession": 54, "tactical_style": "HIGH_PRESS"},
         }
         
         # Enhanced tactical style effects
@@ -250,100 +246,136 @@ class EnhancedPredictionEngine:
             return [team for team, data in self.team_database.items() if data['league'] == league]
         return list(self.team_database.keys())
 
-def main():
-    st.markdown('<h1 class="main-header">🎯 Enhanced Hybrid Precision Prediction Engine</h1>', unsafe_allow_html=True)
+def display_input_section(engine):
+    """Display the main input section"""
+    st.markdown('<div class="input-section">', unsafe_allow_html=True)
+    st.markdown('<h2 style="text-align: center; color: #1f77b4;">⚽ Match Configuration</h2>', unsafe_allow_html=True)
     
-    # Initialize prediction engine
-    engine = EnhancedPredictionEngine()
+    # League selection with team filtering
+    col1, col2 = st.columns(2)
     
-    # Sidebar for inputs
-    with st.sidebar:
-        st.header("🏆 Match Configuration")
-        
-        # League selection with team filtering
-        league = st.selectbox("SELECT LEAGUE", ["EPL", "La Liga", "Bundesliga", "Serie A", "Ligue 1", "All Leagues"])
-        
-        # Get teams based on league selection
-        if league == "All Leagues":
-            available_teams = engine.get_all_teams()
-        else:
-            available_teams = engine.get_all_teams(league)
-        
-        st.markdown("---")
+    with col1:
+        league = st.selectbox("SELECT LEAGUE", ["EPL", "La Liga", "Bundesliga", "Serie A", "Ligue 1", "All Leagues"], key="league_select")
+    
+    # Get teams based on league selection
+    if league == "All Leagues":
+        available_teams = engine.get_all_teams()
+    else:
+        available_teams = engine.get_all_teams(league)
+    
+    # Team selection
+    col1, col2 = st.columns(2)
+    
+    with col1:
         st.subheader("🏠 HOME TEAM")
-        home_team = st.selectbox("Select Home Team", available_teams, index=available_teams.index("Sunderland") if "Sunderland" in available_teams else 0)
+        home_team = st.selectbox("Select Home Team", available_teams, index=available_teams.index("Sunderland") if "Sunderland" in available_teams else 0, key="home_team_select")
         
         # Auto-fill home team data
         home_data = engine.get_team_data(home_team)
         
-        col1, col2 = st.columns(2)
-        with col1:
-            home_matches = st.number_input("Matches Played", value=20, min_value=1)
-            home_goals_scored = st.number_input("Goals Scored", value=home_data.get("goals_scored", 25), min_value=0)
-            home_xg = st.number_input("Expected Goals (xG)", value=home_data["xg"], min_value=0.0, key="home_xg")
-        with col2:
-            home_goals_conceded = st.number_input("Goals Conceded", value=home_data.get("goals_conceded", 25), min_value=0)
-            home_xga = st.number_input("Expected Goals Against (xGA)", value=home_data["xga"], min_value=0.0, key="home_xga")
-            home_possession = st.slider("Average Possession %", 0, 100, home_data["possession"], key="home_possession")
-        
+        home_matches = st.number_input("Matches Played", value=20, min_value=1, key="home_matches")
+        home_goals_scored = st.number_input("Goals Scored", value=home_data.get("goals_scored", 25), min_value=0, key="home_goals")
+        home_goals_conceded = st.number_input("Goals Conceded", value=home_data.get("goals_conceded", 25), min_value=0, key="home_conceded")
+        home_xg = st.number_input("Expected Goals (xG)", value=home_data["xg"], min_value=0.0, key="home_xg")
+        home_xga = st.number_input("Expected Goals Against (xGA)", value=home_data["xga"], min_value=0.0, key="home_xga")
+        home_possession = st.slider("Average Possession %", 0, 100, home_data["possession"], key="home_possession")
         home_tactical = st.selectbox("Home Tactical Style", 
                                    ["DEFENSIVE", "LOW_BLOCK", "COUNTER_ATTACK", "POSSESSION", "HIGH_PRESS", "GEGENPRESS", "HIGH_LINE", "BALANCED", "TRANSITION"],
-                                   index=["DEFENSIVE", "LOW_BLOCK", "COUNTER_ATTACK", "POSSESSION", "HIGH_PRESS", "GEGENPRESS", "HIGH_LINE", "BALANCED", "TRANSITION"].index(home_data["tactical_style"]) if home_data["tactical_style"] in ["DEFENSIVE", "LOW_BLOCK", "COUNTER_ATTACK", "POSSESSION", "HIGH_PRESS", "GEGENPRESS", "HIGH_LINE", "BALANCED", "TRANSITION"] else 0)
-        
-        st.markdown("---")
+                                   index=["DEFENSIVE", "LOW_BLOCK", "COUNTER_ATTACK", "POSSESSION", "HIGH_PRESS", "GEGENPRESS", "HIGH_LINE", "BALANCED", "TRANSITION"].index(home_data["tactical_style"]) if home_data["tactical_style"] in ["DEFENSIVE", "LOW_BLOCK", "COUNTER_ATTACK", "POSSESSION", "HIGH_PRESS", "GEGENPRESS", "HIGH_LINE", "BALANCED", "TRANSITION"] else 0, key="home_tactical")
+    
+    with col2:
         st.subheader("✈️ AWAY TEAM")
-        away_team = st.selectbox("Select Away Team", available_teams, index=available_teams.index("Arsenal") if "Arsenal" in available_teams else 1)
+        away_team = st.selectbox("Select Away Team", available_teams, index=available_teams.index("Arsenal") if "Arsenal" in available_teams else 1, key="away_team_select")
         
         # Auto-fill away team data
         away_data = engine.get_team_data(away_team)
         
-        col1, col2 = st.columns(2)
-        with col1:
-            away_matches = st.number_input("Away Matches Played", value=20, min_value=1, key="away_matches")
-            away_goals_scored = st.number_input("Away Goals Scored", value=away_data.get("goals_scored", 25), min_value=0, key="away_goals")
-            away_xg = st.number_input("Away Expected Goals (xG)", value=away_data["xg"], min_value=0.0, key="away_xg")
-        with col2:
-            away_goals_conceded = st.number_input("Away Goals Conceded", value=away_data.get("goals_conceded", 25), min_value=0, key="away_conceded")
-            away_xga = st.number_input("Away Expected Goals Against (xGA)", value=away_data["xga"], min_value=0.0, key="away_xga")
-            away_possession = st.slider("Away Average Possession %", 0, 100, away_data["possession"], key="away_possession")
-        
+        away_matches = st.number_input("Away Matches Played", value=20, min_value=1, key="away_matches")
+        away_goals_scored = st.number_input("Away Goals Scored", value=away_data.get("goals_scored", 25), min_value=0, key="away_goals")
+        away_goals_conceded = st.number_input("Away Goals Conceded", value=away_data.get("goals_conceded", 25), min_value=0, key="away_conceded")
+        away_xg = st.number_input("Away Expected Goals (xG)", value=away_data["xg"], min_value=0.0, key="away_xg")
+        away_xga = st.number_input("Away Expected Goals Against (xGA)", value=away_data["xga"], min_value=0.0, key="away_xga")
+        away_possession = st.slider("Away Average Possession %", 0, 100, away_data["possession"], key="away_possession")
         away_tactical = st.selectbox("Away Tactical Style",
                                    ["DEFENSIVE", "LOW_BLOCK", "COUNTER_ATTACK", "POSSESSION", "HIGH_PRESS", "GEGENPRESS", "HIGH_LINE", "BALANCED", "TRANSITION"],
-                                   index=["DEFENSIVE", "LOW_BLOCK", "COUNTER_ATTACK", "POSSESSION", "HIGH_PRESS", "GEGENPRESS", "HIGH_LINE", "BALANCED", "TRANSITION"].index(away_data["tactical_style"]) if away_data["tactical_style"] in ["DEFENSIVE", "LOW_BLOCK", "COUNTER_ATTACK", "POSSESSION", "HIGH_PRESS", "GEGENPRESS", "HIGH_LINE", "BALANCED", "TRANSITION"] else 4)
-        
-        st.markdown("---")
-        st.subheader("🎭 Enhanced Match Context")
-        
-        # Injury input with tiered system
-        st.write("**Injury Status**")
-        col1, col2 = st.columns(2)
-        with col1:
-            home_injuries = st.selectbox("Home Key Injuries", 
-                                       ["None", "Minor (1-2 rotational)", "Moderate (1-2 key starters)", "Significant (3-4 key players)", "Crisis (5+ starters)"],
-                                       key="home_injuries")
-        with col2:
-            away_injuries = st.selectbox("Away Key Injuries",
-                                       ["None", "Minor (1-2 rotational)", "Moderate (1-2 key starters)", "Significant (3-4 key players)", "Crisis (5+ starters)"],
-                                       key="away_injuries")
-        
-        # Enhanced context factors
-        match_importance = st.selectbox("Match Importance", ["Normal", "High", "Critical", "Cup Final", "Relegation Battle", "Title Decider"])
-        crowd_impact = st.selectbox("Home Crowd Impact", ["Normal", "Electric", "Hostile", "Quiet", "Volatile"])
-        referee_style = st.selectbox("Referee Style", ["Lenient", "Normal", "Strict", "Card Happy", "VAR Heavy"])
-        weather_conditions = st.selectbox("Weather Conditions", ["Normal", "Rainy", "Windy", "Hot", "Cold", "Poor Pitch"])
-        
-        st.markdown("---")
-        st.subheader("💰 Market Odds")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            home_odds = st.number_input("Home Win Odds", value=7.50, min_value=1.01, key="home_odds")
-        with col2:
-            draw_odds = st.number_input("Draw Odds", value=5.00, min_value=1.01, key="draw_odds")
-        with col3:
-            away_odds = st.number_input("Away Win Odds", value=1.38, min_value=1.01, key="away_odds")
-        
+                                   index=["DEFENSIVE", "LOW_BLOCK", "COUNTER_ATTACK", "POSSESSION", "HIGH_PRESS", "GEGENPRESS", "HIGH_LINE", "BALANCED", "TRANSITION"].index(away_data["tactical_style"]) if away_data["tactical_style"] in ["DEFENSIVE", "LOW_BLOCK", "COUNTER_ATTACK", "POSSESSION", "HIGH_PRESS", "GEGENPRESS", "HIGH_LINE", "BALANCED", "TRANSITION"] else 4, key="away_tactical")
+    
+    # Match Context Section
+    st.markdown("---")
+    st.subheader("🎭 Match Context")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        match_importance = st.selectbox("Match Importance", ["Normal", "High", "Critical", "Cup Final", "Relegation Battle", "Title Decider"], key="importance")
+    with col2:
+        crowd_impact = st.selectbox("Home Crowd Impact", ["Normal", "Electric", "Hostile", "Quiet", "Volatile"], key="crowd")
+    with col3:
+        referee_style = st.selectbox("Referee Style", ["Lenient", "Normal", "Strict", "Card Happy", "VAR Heavy"], key="referee")
+    with col4:
+        weather_conditions = st.selectbox("Weather Conditions", ["Normal", "Rainy", "Windy", "Hot", "Cold", "Poor Pitch"], key="weather")
+    
+    # Injury input with tiered system
+    st.subheader("🩹 Injury Status")
+    col1, col2 = st.columns(2)
+    with col1:
+        home_injuries = st.selectbox("Home Key Injuries", 
+                                   ["None", "Minor (1-2 rotational)", "Moderate (1-2 key starters)", "Significant (3-4 key players)", "Crisis (5+ starters)"],
+                                   key="home_injuries")
+    with col2:
+        away_injuries = st.selectbox("Away Key Injuries",
+                                   ["None", "Minor (1-2 rotational)", "Moderate (1-2 key starters)", "Significant (3-4 key players)", "Crisis (5+ starters)"],
+                                   key="away_injuries")
+    
+    # Market Odds
+    st.markdown("---")
+    st.subheader("💰 Market Odds")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        home_odds = st.number_input("Home Win Odds", value=7.50, min_value=1.01, key="home_odds")
+    with col2:
+        draw_odds = st.number_input("Draw Odds", value=5.00, min_value=1.01, key="draw_odds")
+    with col3:
+        away_odds = st.number_input("Away Win Odds", value=1.38, min_value=1.01, key="away_odds")
+    with col4:
         over_odds = st.number_input("Over 2.5 Goals Odds", value=2.00, min_value=1.01, key="over_odds")
+    
+    # Generate Prediction Button
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        generate_prediction = st.button("🚀 GENERATE PREDICTION", use_container_width=True, type="primary")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    return {
+        'generate_prediction': generate_prediction,
+        'home_team': home_team,
+        'away_team': away_team,
+        'home_data': home_data,
+        'away_data': away_data,
+        'home_xg': home_xg,
+        'home_xga': home_xga,
+        'away_xg': away_xg,
+        'away_xga': away_xga,
+        'home_tactical': home_tactical,
+        'away_tactical': away_tactical,
+        'home_injuries': home_injuries,
+        'away_injuries': away_injuries,
+        'home_odds': home_odds,
+        'draw_odds': draw_odds,
+        'away_odds': away_odds,
+        'over_odds': over_odds,
+        'match_importance': match_importance,
+        'crowd_impact': crowd_impact,
+        'referee_style': referee_style,
+        'weather_conditions': weather_conditions
+    }
+
+def display_prediction_section(engine, input_data):
+    """Display the prediction results section"""
+    st.markdown('<div class="prediction-section">', unsafe_allow_html=True)
     
     # Convert injury tiers to numerical values
     injury_tier_map = {
@@ -351,151 +383,111 @@ def main():
         "Significant (3-4 key players)": 3, "Crisis (5+ starters)": 4
     }
     
-    home_injury_tier = injury_tier_map[home_injuries]
-    away_injury_tier = injury_tier_map[away_injuries]
+    home_injury_tier = injury_tier_map[input_data['home_injuries']]
+    away_injury_tier = injury_tier_map[input_data['away_injuries']]
     
-    # Main content area - Team Overview
+    # Match Overview
     st.markdown('<div class="section-header">🏟️ Match Overview</div>', unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([2, 1, 2])
     
     with col1:
         st.markdown(f'<div class="team-card">', unsafe_allow_html=True)
-        st.subheader(f"🏠 {home_team}")
-        st.write(f"**League**: {home_data['league']}")
-        st.write(f"**Style**: {home_tactical.replace('_', ' ').title()}")
-        st.write(f"**Form**: {home_data.get('preferred_formation', '4-4-2')}")
-        st.write(f"**Press**: {home_data.get('press_intensity', 'Medium')}")
+        st.subheader(f"🏠 {input_data['home_team']}")
+        st.write(f"**League**: {input_data['home_data']['league']}")
+        st.write(f"**Style**: {input_data['home_tactical'].replace('_', ' ').title()}")
+        st.write(f"**Form**: {input_data['home_data'].get('preferred_formation', '4-4-2')}")
+        st.write(f"**Press**: {input_data['home_data'].get('press_intensity', 'Medium')}")
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align: center;'>VS</h2>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align: center;'>{league} Match</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center;'>{input_data['home_data']['league']} Match</p>", unsafe_allow_html=True)
     
     with col3:
         st.markdown(f'<div class="team-card">', unsafe_allow_html=True)
-        st.subheader(f"✈️ {away_team}")
-        st.write(f"**League**: {away_data['league']}")
-        st.write(f"**Style**: {away_tactical.replace('_', ' ').title()}")
-        st.write(f"**Form**: {away_data.get('preferred_formation', '4-3-3')}")
-        st.write(f"**Press**: {away_data.get('press_intensity', 'Medium')}")
+        st.subheader(f"✈️ {input_data['away_team']}")
+        st.write(f"**League**: {input_data['away_data']['league']}")
+        st.write(f"**Style**: {input_data['away_tactical'].replace('_', ' ').title()}")
+        st.write(f"**Form**: {input_data['away_data'].get('preferred_formation', '4-3-3')}")
+        st.write(f"**Press**: {input_data['away_data'].get('press_intensity', 'Medium')}")
         st.markdown('</div>', unsafe_allow_html=True)
     
     # Team Strength Analysis
-    col1, col2 = st.columns([2, 1])
+    st.markdown("---")
+    st.markdown('<div class="section-header">📊 Team Strength Analysis</div>', unsafe_allow_html=True)
+    
+    # Calculate team strength scores
+    home_defense, home_attack = engine.team_strength_snapshot(input_data['home_xg'], input_data['home_xga'])
+    away_defense, away_attack = engine.team_strength_snapshot(input_data['away_xg'], input_data['away_xga'])
+    
+    col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown('<div class="section-header">📊 Team Strength Analysis</div>', unsafe_allow_html=True)
+        st.subheader(f"🏠 {input_data['home_team']}")
+        col1a, col2a = st.columns(2)
+        with col1a:
+            st.metric("Defensive Strength", f"{home_defense}/10")
+        with col2a:
+            st.metric("Attacking Strength", f"{home_attack}/10")
         
-        # Calculate team strength scores
-        home_defense, home_attack = engine.team_strength_snapshot(home_xg, home_xga)
-        away_defense, away_attack = engine.team_strength_snapshot(away_xg, away_xga)
-        
-        # Display strength analysis
-        strength_col1, strength_col2 = st.columns(2)
-        
-        with strength_col1:
-            st.subheader(f"🏠 {home_team}")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Defensive Strength", f"{home_defense}/10")
-            with col2:
-                st.metric("Attacking Strength", f"{home_attack}/10")
-            
-            # Strength visualization
-            fig_home = go.Figure()
-            fig_home.add_trace(go.Barpolar(
-                r=[home_defense, home_attack, home_data.get('strength_home', 5.0)],
-                theta=['Defense', 'Attack', 'Home Advantage'],
-                name='Strength',
-                marker_color=['#1f77b4', '#ff7f0e', '#2ca02c']
-            ))
-            fig_home.update_layout(
-                polar=dict(
-                    radialaxis=dict(visible=True, range=[0, 10])
-                ),
-                showlegend=False,
-                height=300,
-                title=f"{home_team} Strength Profile"
-            )
-            st.plotly_chart(fig_home, use_container_width=True)
-        
-        with strength_col2:
-            st.subheader(f"✈️ {away_team}")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Defensive Strength", f"{away_defense}/10")
-            with col2:
-                st.metric("Attacking Strength", f"{away_attack}/10")
-            
-            # Strength visualization
-            fig_away = go.Figure()
-            fig_away.add_trace(go.Barpolar(
-                r=[away_defense, away_attack, away_data.get('strength_away', 5.0)],
-                theta=['Defense', 'Attack', 'Away Performance'],
-                name='Strength',
-                marker_color=['#1f77b4', '#ff7f0e', '#d62728']
-            ))
-            fig_away.update_layout(
-                polar=dict(
-                    radialaxis=dict(visible=True, range=[0, 10])
-                ),
-                showlegend=False,
-                height=300,
-                title=f"{away_team} Strength Profile"
-            )
-            st.plotly_chart(fig_away, use_container_width=True)
+        # Strength visualization
+        fig_home = go.Figure()
+        fig_home.add_trace(go.Barpolar(
+            r=[home_defense, home_attack, input_data['home_data'].get('strength_home', 5.0)],
+            theta=['Defense', 'Attack', 'Home Advantage'],
+            name='Strength',
+            marker_color=['#1f77b4', '#ff7f0e', '#2ca02c']
+        ))
+        fig_home.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
+            showlegend=False,
+            height=300,
+            title=f"{input_data['home_team']} Strength Profile"
+        )
+        st.plotly_chart(fig_home, use_container_width=True)
     
     with col2:
-        st.markdown('<div class="section-header">🎯 Tactical Matchup</div>', unsafe_allow_html=True)
+        st.subheader(f"✈️ {input_data['away_team']}")
+        col1a, col2a = st.columns(2)
+        with col1a:
+            st.metric("Defensive Strength", f"{away_defense}/10")
+        with col2a:
+            st.metric("Attacking Strength", f"{away_attack}/10")
         
-        # Tactical analysis
-        st.write(f"**{home_team} Style**")
-        st.write(f"`{home_tactical.replace('_', ' ').title()}`")
-        
-        st.write(f"**{away_team} Style**")
-        st.write(f"`{away_tactical.replace('_', ' ').title()}`")
-        
-        # Context factors
-        st.markdown("---")
-        st.subheader("🎭 Match Context")
-        st.write(f"**Injuries**: {home_injuries} | {away_injuries}")
-        st.write(f"**Crowd**: {crowd_impact}")
-        st.write(f"**Referee**: {referee_style}")
-        st.write(f"**Importance**: {match_importance}")
-        st.write(f"**Weather**: {weather_conditions}")
-        
-        # Key matchup insight
-        st.markdown("---")
-        st.subheader("🔍 Key Matchup Insight")
-        if home_tactical == "COUNTER_ATTACK" and away_tactical == "HIGH_LINE":
-            st.success("**Home advantage**: Counter-attacking style perfectly suits high defensive line opposition")
-        elif away_tactical == "HIGH_PRESS" and home_tactical == "DEFENSIVE":
-            st.warning("**Away advantage**: High press could force errors from defensive setup")
-        else:
-            st.info("**Balanced matchup**: Styles are relatively compatible")
+        # Strength visualization
+        fig_away = go.Figure()
+        fig_away.add_trace(go.Barpolar(
+            r=[away_defense, away_attack, input_data['away_data'].get('strength_away', 5.0)],
+            theta=['Defense', 'Attack', 'Away Performance'],
+            name='Strength',
+            marker_color=['#1f77b4', '#ff7f0e', '#d62728']
+        ))
+        fig_away.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
+            showlegend=False,
+            height=300,
+            title=f"{input_data['away_team']} Strength Profile"
+        )
+        st.plotly_chart(fig_away, use_container_width=True)
     
-    # [Rest of the prediction calculations and displays remain the same as previous version]
-    # ... (including injury modifiers, tactical modifiers, probability calculations, value bets, etc.)
-
     # Prediction calculations
     st.markdown("---")
     st.markdown('<div class="section-header">🎯 ENHANCED PRECISION PREDICTION RESULTS</div>', unsafe_allow_html=True)
     
     # Apply injury modifiers
-    home_xg_adj, home_xga_adj = engine.apply_injury_modifier(home_xg, home_xga, home_injury_tier)
-    away_xg_adj, away_xga_adj = engine.apply_injury_modifier(away_xg, away_xga, away_injury_tier)
+    home_xg_adj, home_xga_adj = engine.apply_injury_modifier(input_data['home_xg'], input_data['home_xga'], home_injury_tier)
+    away_xg_adj, away_xga_adj = engine.apply_injury_modifier(input_data['away_xg'], input_data['away_xga'], away_injury_tier)
     
     # Apply tactical modifiers
     home_xg_final, away_xg_final, home_xga_final, away_xga_final, tactical_explanations = engine.apply_tactical_modifiers(
-        home_tactical, away_tactical, home_xg_adj, away_xg_adj, home_xga_adj, away_xga_adj
+        input_data['home_tactical'], input_data['away_tactical'], home_xg_adj, away_xg_adj, home_xga_adj, away_xga_adj
     )
     
-    # Calculate probabilities (enhanced calculation)
+    # Calculate probabilities
     total_xg = home_xg_final + away_xg_final
     
-    # More sophisticated probability calculation
     home_advantage = 1.1  # Home advantage factor
     home_win_prob = (home_xg_final / (home_xg_final + away_xg_final)) * 45 * home_advantage
     away_win_prob = (away_xg_final / (home_xg_final + away_xg_final)) * 45
@@ -530,22 +522,17 @@ def main():
         conf_class, conf_label = engine.get_confidence_label(outcome_confidence)
         st.markdown(f'<div class="section-header {conf_class}">🏆 Match Outcome ({conf_label})</div>', unsafe_allow_html=True)
         
-        # Outcome probabilities
         fig_outcome = go.Figure(data=[
-            go.Bar(name='Probability', x=[f'{home_team}', 'Draw', f'{away_team}'], 
+            go.Bar(name='Probability', x=[f'{input_data["home_team"]}', 'Draw', f'{input_data["away_team"]}'], 
                   y=[home_win_prob, draw_prob, away_win_prob],
                   marker_color=['#1f77b4', '#ff7f0e', '#d62728'])
         ])
-        fig_outcome.update_layout(
-            yaxis_title='Probability (%)',
-            height=300,
-            showlegend=False
-        )
+        fig_outcome.update_layout(yaxis_title='Probability (%)', height=300, showlegend=False)
         st.plotly_chart(fig_outcome, use_container_width=True)
         
-        st.write(f"**{home_team} Win**: {home_win_prob}%")
+        st.write(f"**{input_data['home_team']} Win**: {home_win_prob}%")
         st.write(f"**Draw**: {draw_prob}%")
-        st.write(f"**{away_team} Win**: {away_win_prob}%")
+        st.write(f"**{input_data['away_team']} Win**: {away_win_prob}%")
         st.write(f"*Confidence: {outcome_confidence}/100*")
     
     with col2:
@@ -585,7 +572,7 @@ def main():
     st.markdown('<div class="section-header">💰 Smart Value Analysis</div>', unsafe_allow_html=True)
     
     # Calculate value bets
-    odds_dict = {'home': home_odds, 'draw': draw_odds, 'over_2.5': over_odds}
+    odds_dict = {'home': input_data['home_odds'], 'draw': input_data['draw_odds'], 'over_2.5': input_data['over_odds']}
     probs_dict = {'home': home_win_prob/100, 'draw': draw_prob/100, 'over_2.5': over_25_prob/100}
     
     value_bets = engine.calculate_value_bets(probs_dict, odds_dict)
@@ -598,7 +585,7 @@ def main():
         home_value = value_bets['home']
         value_class = "strong-value" if home_value['value'] > 1.5 else "value-bet-box"
         st.markdown(f'<div class="{value_class}">', unsafe_allow_html=True)
-        st.write(f"**{home_team} Win**")
+        st.write(f"**{input_data['home_team']} Win**")
         st.write(f"Value: {home_value['value']}x")
         st.write(f"EV: {home_value['ev']}")
         st.write("**STRONG VALUE 💎**" if home_value['value'] > 1.5 else "GOOD VALUE ✅")
@@ -636,8 +623,8 @@ def main():
         
         progress_data = {
             'Stage': ['Base xG', 'Injury Adjusted', 'Tactical Adjusted', 'Final Expected'],
-            f'{home_team} xG': [home_xg, home_xg_adj, home_xg_final, round(home_xg_final, 2)],
-            f'{away_team} xG': [away_xg, away_xg_adj, away_xg_final, round(away_xg_final, 2)]
+            f'{input_data["home_team"]} xG': [input_data['home_xg'], home_xg_adj, home_xg_final, round(home_xg_final, 2)],
+            f'{input_data["away_team"]} xG': [input_data['away_xg'], away_xg_adj, away_xg_final, round(away_xg_final, 2)]
         }
         
         df_progress = pd.DataFrame(progress_data)
@@ -653,9 +640,9 @@ def main():
         if home_injury_tier > 0 or away_injury_tier > 0:
             st.write("**Injury Impact:**")
             if home_injury_tier > 0:
-                st.write(f"• {home_team}: {home_injuries} reduced xG by {round((1 - (home_xg_adj/home_xg)) * 100, 1)}%")
+                st.write(f"• {input_data['home_team']}: {input_data['home_injuries']} reduced xG by {round((1 - (home_xg_adj/input_data['home_xg'])) * 100, 1)}%")
             if away_injury_tier > 0:
-                st.write(f"• {away_team}: {away_injuries} reduced xG by {round((1 - (away_xg_adj/away_xg)) * 100, 1)}%")
+                st.write(f"• {input_data['away_team']}: {input_data['away_injuries']} reduced xG by {round((1 - (away_xg_adj/input_data['away_xg'])) * 100, 1)}%")
     
     with col2:
         st.markdown('<div class="section-header">🎯 Final Expected Score</div>', unsafe_allow_html=True)
@@ -674,15 +661,46 @@ def main():
             st.write(f"• {expected_home_goals-0.5}-{expected_away_goals} (Secondary)")
         if expected_away_goals > 0:
             st.write(f"• {expected_home_goals}-{expected_away_goals-0.5} (Secondary)")
-
-    # Footer
+    
+    # Edit Input Button
     st.markdown("---")
-    st.markdown("""
-    <div style='text-align: center; color: gray;'>
-        <i>Enhanced Hybrid Precision Prediction Engine v2.0 • Powered by Advanced xG Modeling & Context-Aware Analytics</i><br>
-        <small>Data includes 25+ teams across 5 leagues with enhanced tactical profiling</small>
-    </div>
-    """, unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("✏️ EDIT INPUT PARAMETERS", use_container_width=True):
+            st.session_state.show_prediction = False
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def main():
+    st.markdown('<h1 class="main-header">🎯 Enhanced Hybrid Precision Prediction Engine</h1>', unsafe_allow_html=True)
+    
+    # Initialize prediction engine
+    engine = EnhancedPredictionEngine()
+    
+    # Initialize session state
+    if 'show_prediction' not in st.session_state:
+        st.session_state.show_prediction = False
+    if 'input_data' not in st.session_state:
+        st.session_state.input_data = None
+    
+    # Main app flow
+    if not st.session_state.show_prediction:
+        # Show input section
+        input_data = display_input_section(engine)
+        
+        if input_data['generate_prediction']:
+            st.session_state.input_data = input_data
+            st.session_state.show_prediction = True
+            st.rerun()
+    else:
+        # Show prediction section
+        if st.session_state.input_data:
+            display_prediction_section(engine, st.session_state.input_data)
+        else:
+            st.error("No input data available. Please configure the match first.")
+            if st.button("← Back to Input"):
+                st.session_state.show_prediction = False
+                st.rerun()
 
 if __name__ == "__main__":
     main()
