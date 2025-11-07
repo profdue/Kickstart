@@ -120,17 +120,123 @@ class EnhancedPredictionEngine:
         self.league_avg_xg = 1.35
         self.league_avg_xga = 1.35
         
-        # Comprehensive team database
+        # Comprehensive team database with ALL major leagues
         self.team_database = {
-            "Tottenham": {"league": "EPL", "xg": 1.95, "xga": 1.45, "possession": 58, "tactical_style": "HIGH_PRESS"},
-            "Manchester United": {"league": "EPL", "xg": 1.65, "xga": 1.40, "possession": 54, "tactical_style": "TRANSITION"},
+            # Premier League Teams (20 teams)
             "Arsenal": {"league": "EPL", "xg": 2.10, "xga": 0.95, "possession": 58, "tactical_style": "HIGH_PRESS"},
             "Manchester City": {"league": "EPL", "xg": 2.35, "xga": 0.85, "possession": 65, "tactical_style": "POSSESSION"},
             "Liverpool": {"league": "EPL", "xg": 2.25, "xga": 1.05, "possession": 62, "tactical_style": "GEGENPRESS"},
+            "Aston Villa": {"league": "EPL", "xg": 1.85, "xga": 1.25, "possession": 55, "tactical_style": "HIGH_LINE"},
+            "Tottenham": {"league": "EPL", "xg": 1.95, "xga": 1.45, "possession": 58, "tactical_style": "HIGH_PRESS"},
+            "Newcastle": {"league": "EPL", "xg": 1.75, "xga": 1.35, "possession": 52, "tactical_style": "COUNTER_ATTACK"},
+            "Brighton": {"league": "EPL", "xg": 1.90, "xga": 1.55, "possession": 60, "tactical_style": "POSSESSION"},
+            "Manchester United": {"league": "EPL", "xg": 1.65, "xga": 1.40, "possession": 54, "tactical_style": "TRANSITION"},
+            "West Ham": {"league": "EPL", "xg": 1.55, "xga": 1.65, "possession": 48, "tactical_style": "COUNTER_ATTACK"},
+            "Chelsea": {"league": "EPL", "xg": 1.70, "xga": 1.50, "possession": 59, "tactical_style": "POSSESSION"},
+            "Bournemouth": {"league": "EPL", "xg": 1.45, "xga": 1.70, "possession": 46, "tactical_style": "COUNTER_ATTACK"},
+            "Crystal Palace": {"league": "EPL", "xg": 1.35, "xga": 1.60, "possession": 49, "tactical_style": "DEFENSIVE"},
+            "Fulham": {"league": "EPL", "xg": 1.50, "xga": 1.55, "possession": 51, "tactical_style": "BALANCED"},
+            "Wolves": {"league": "EPL", "xg": 1.40, "xga": 1.65, "possession": 47, "tactical_style": "COUNTER_ATTACK"},
+            "Everton": {"league": "EPL", "xg": 1.30, "xga": 1.45, "possession": 45, "tactical_style": "DEFENSIVE"},
+            "Brentford": {"league": "EPL", "xg": 1.55, "xga": 1.75, "possession": 50, "tactical_style": "HIGH_PRESS"},
+            "Nottingham Forest": {"league": "EPL", "xg": 1.25, "xga": 1.80, "possession": 44, "tactical_style": "DEFENSIVE"},
+            "Luton": {"league": "EPL", "xg": 1.20, "xga": 2.00, "possession": 42, "tactical_style": "DEFENSIVE"},
+            "Burnley": {"league": "EPL", "xg": 1.15, "xga": 2.10, "possession": 55, "tactical_style": "POSSESSION"},
+            "Sheffield United": {"league": "EPL", "xg": 1.05, "xga": 2.30, "possession": 40, "tactical_style": "DEFENSIVE"},
+            
+            # La Liga Teams (20 teams)
+            "Real Madrid": {"league": "La Liga", "xg": 2.20, "xga": 0.80, "possession": 60, "tactical_style": "COUNTER_ATTACK"},
+            "Barcelona": {"league": "La Liga", "xg": 2.15, "xga": 0.90, "possession": 68, "tactical_style": "POSSESSION"},
+            "Atletico Madrid": {"league": "La Liga", "xg": 1.80, "xga": 1.10, "possession": 48, "tactical_style": "DEFENSIVE"},
+            "Girona": {"league": "La Liga", "xg": 1.75, "xga": 1.30, "possession": 54, "tactical_style": "HIGH_PRESS"},
+            "Athletic Bilbao": {"league": "La Liga", "xg": 1.70, "xga": 1.20, "possession": 52, "tactical_style": "HIGH_PRESS"},
+            "Real Sociedad": {"league": "La Liga", "xg": 1.65, "xga": 1.25, "possession": 56, "tactical_style": "POSSESSION"},
+            "Real Betis": {"league": "La Liga", "xg": 1.60, "xga": 1.40, "possession": 55, "tactical_style": "POSSESSION"},
+            "Valencia": {"league": "La Liga", "xg": 1.45, "xga": 1.35, "possession": 49, "tactical_style": "DEFENSIVE"},
+            "Getafe": {"league": "La Liga", "xg": 1.30, "xga": 1.50, "possession": 42, "tactical_style": "DEFENSIVE"},
+            "Las Palmas": {"league": "La Liga", "xg": 1.25, "xga": 1.45, "possession": 58, "tactical_style": "POSSESSION"},
+            "Osasuna": {"league": "La Liga", "xg": 1.35, "xga": 1.55, "possession": 46, "tactical_style": "DEFENSIVE"},
+            "Villarreal": {"league": "La Liga", "xg": 1.55, "xga": 1.65, "possession": 53, "tactical_style": "HIGH_PRESS"},
+            "Alaves": {"league": "La Liga", "xg": 1.20, "xga": 1.60, "possession": 44, "tactical_style": "DEFENSIVE"},
+            "Sevilla": {"league": "La Liga", "xg": 1.50, "xga": 1.70, "possession": 54, "tactical_style": "POSSESSION"},
+            "Mallorca": {"league": "La Liga", "xg": 1.15, "xga": 1.55, "possession": 45, "tactical_style": "DEFENSIVE"},
+            "Rayo Vallecano": {"league": "La Liga", "xg": 1.25, "xga": 1.65, "possession": 47, "tactical_style": "HIGH_PRESS"},
+            "Celta Vigo": {"league": "La Liga", "xg": 1.40, "xga": 1.75, "possession": 52, "tactical_style": "POSSESSION"},
+            "Cadiz": {"league": "La Liga", "xg": 1.10, "xga": 1.80, "possession": 40, "tactical_style": "DEFENSIVE"},
+            "Granada": {"league": "La Liga", "xg": 1.05, "xga": 2.10, "possession": 48, "tactical_style": "DEFENSIVE"},
+            "Almeria": {"league": "La Liga", "xg": 1.00, "xga": 2.20, "possession": 50, "tactical_style": "POSSESSION"},
+            
+            # Bundesliga Teams (18 teams)
+            "Bayer Leverkusen": {"league": "Bundesliga", "xg": 2.25, "xga": 0.85, "possession": 61, "tactical_style": "POSSESSION"},
+            "Bayern Munich": {"league": "Bundesliga", "xg": 2.40, "xga": 0.95, "possession": 63, "tactical_style": "HIGH_PRESS"},
+            "Stuttgart": {"league": "Bundesliga", "xg": 2.00, "xga": 1.15, "possession": 55, "tactical_style": "HIGH_PRESS"},
+            "RB Leipzig": {"league": "Bundesliga", "xg": 2.10, "xga": 1.25, "possession": 58, "tactical_style": "GEGENPRESS"},
+            "Borussia Dortmund": {"league": "Bundesliga", "xg": 2.05, "xga": 1.30, "possession": 59, "tactical_style": "HIGH_PRESS"},
+            "Eintracht Frankfurt": {"league": "Bundesliga", "xg": 1.70, "xga": 1.40, "possession": 51, "tactical_style": "COUNTER_ATTACK"},
+            "Freiburg": {"league": "Bundesliga", "xg": 1.65, "xga": 1.45, "possession": 50, "tactical_style": "BALANCED"},
+            "Hoffenheim": {"league": "Bundesliga", "xg": 1.75, "xga": 1.60, "possession": 53, "tactical_style": "HIGH_PRESS"},
+            "Heidenheim": {"league": "Bundesliga", "xg": 1.40, "xga": 1.55, "possession": 46, "tactical_style": "DEFENSIVE"},
+            "Wolfsburg": {"league": "Bundesliga", "xg": 1.55, "xga": 1.65, "possession": 52, "tactical_style": "TRANSITION"},
+            "Augsburg": {"league": "Bundesliga", "xg": 1.50, "xga": 1.70, "possession": 47, "tactical_style": "COUNTER_ATTACK"},
+            "Borussia M'gladbach": {"league": "Bundesliga", "xg": 1.60, "xga": 1.75, "possession": 54, "tactical_style": "HIGH_PRESS"},
+            "Werder Bremen": {"league": "Bundesliga", "xg": 1.45, "xga": 1.80, "possession": 49, "tactical_style": "COUNTER_ATTACK"},
+            "Bochum": {"league": "Bundesliga", "xg": 1.30, "xga": 1.85, "possession": 44, "tactical_style": "DEFENSIVE"},
+            "Union Berlin": {"league": "Bundesliga", "xg": 1.25, "xga": 1.90, "possession": 45, "tactical_style": "DEFENSIVE"},
+            "Mainz": {"league": "Bundesliga", "xg": 1.35, "xga": 1.95, "possession": 48, "tactical_style": "HIGH_PRESS"},
+            "Koln": {"league": "Bundesliga", "xg": 1.20, "xga": 2.00, "possession": 50, "tactical_style": "POSSESSION"},
+            "Darmstadt": {"league": "Bundesliga", "xg": 1.15, "xga": 2.20, "possession": 47, "tactical_style": "DEFENSIVE"},
+            
+            # Serie A Teams (20 teams)
+            "Inter Milan": {"league": "Serie A", "xg": 2.15, "xga": 0.75, "possession": 57, "tactical_style": "HIGH_PRESS"},
+            "Juventus": {"league": "Serie A", "xg": 1.85, "xga": 0.95, "possession": 52, "tactical_style": "DEFENSIVE"},
+            "AC Milan": {"league": "Serie A", "xg": 2.00, "xga": 1.10, "possession": 56, "tactical_style": "HIGH_PRESS"},
+            "Fiorentina": {"league": "Serie A", "xg": 1.75, "xga": 1.25, "possession": 58, "tactical_style": "POSSESSION"},
+            "Atalanta": {"league": "Serie A", "xg": 1.90, "xga": 1.35, "possession": 54, "tactical_style": "HIGH_PRESS"},
+            "Lazio": {"league": "Serie A", "xg": 1.70, "xga": 1.20, "possession": 55, "tactical_style": "POSSESSION"},
+            "Napoli": {"league": "Serie A", "xg": 1.80, "xga": 1.40, "possession": 53, "tactical_style": "COUNTER_ATTACK"},
+            "Roma": {"league": "Serie A", "xg": 1.65, "xga": 1.30, "possession": 52, "tactical_style": "DEFENSIVE"},
+            "Bologna": {"league": "Serie A", "xg": 1.60, "xga": 1.25, "possession": 51, "tactical_style": "HIGH_PRESS"},
+            "Monza": {"league": "Serie A", "xg": 1.35, "xga": 1.45, "possession": 48, "tactical_style": "DEFENSIVE"},
+            "Torino": {"league": "Serie A", "xg": 1.40, "xga": 1.35, "possession": 49, "tactical_style": "DEFENSIVE"},
+            "Genoa": {"league": "Serie A", "xg": 1.30, "xga": 1.50, "possession": 47, "tactical_style": "DEFENSIVE"},
+            "Lecce": {"league": "Serie A", "xg": 1.25, "xga": 1.55, "possession": 46, "tactical_style": "DEFENSIVE"},
+            "Sassuolo": {"league": "Serie A", "xg": 1.45, "xga": 1.80, "possession": 53, "tactical_style": "POSSESSION"},
+            "Frosinone": {"league": "Serie A", "xg": 1.20, "xga": 1.85, "possession": 50, "tactical_style": "HIGH_PRESS"},
+            "Udinese": {"league": "Serie A", "xg": 1.35, "xga": 1.65, "possession": 49, "tactical_style": "DEFENSIVE"},
+            "Empoli": {"league": "Serie A", "xg": 1.15, "xga": 1.75, "possession": 48, "tactical_style": "DEFENSIVE"},
+            "Cagliari": {"league": "Serie A", "xg": 1.10, "xga": 1.90, "possession": 46, "tactical_style": "DEFENSIVE"},
+            "Verona": {"league": "Serie A", "xg": 1.05, "xga": 1.95, "possession": 44, "tactical_style": "DEFENSIVE"},
+            "Salernitana": {"league": "Serie A", "xg": 1.00, "xga": 2.10, "possession": 45, "tactical_style": "DEFENSIVE"},
+            
+            # Ligue 1 Teams (18 teams)
+            "PSG": {"league": "Ligue 1", "xg": 2.30, "xga": 0.90, "possession": 64, "tactical_style": "POSSESSION"},
+            "Nice": {"league": "Ligue 1", "xg": 1.80, "xga": 0.85, "possession": 52, "tactical_style": "DEFENSIVE"},
+            "Monaco": {"league": "Ligue 1", "xg": 2.00, "xga": 1.40, "possession": 56, "tactical_style": "HIGH_PRESS"},
+            "Lille": {"league": "Ligue 1", "xg": 1.75, "xga": 1.20, "possession": 53, "tactical_style": "DEFENSIVE"},
+            "Brest": {"league": "Ligue 1", "xg": 1.60, "xga": 1.25, "possession": 49, "tactical_style": "DEFENSIVE"},
+            "Lens": {"league": "Ligue 1", "xg": 1.70, "xga": 1.35, "possession": 51, "tactical_style": "HIGH_PRESS"},
+            "Marseille": {"league": "Ligue 1", "xg": 1.85, "xga": 1.50, "possession": 55, "tactical_style": "HIGH_PRESS"},
+            "Rennes": {"league": "Ligue 1", "xg": 1.65, "xga": 1.45, "possession": 54, "tactical_style": "POSSESSION"},
+            "Reims": {"league": "Ligue 1", "xg": 1.55, "xga": 1.55, "possession": 50, "tactical_style": "HIGH_PRESS"},
+            "Strasbourg": {"league": "Ligue 1", "xg": 1.45, "xga": 1.60, "possession": 48, "tactical_style": "DEFENSIVE"},
+            "Montpellier": {"league": "Ligue 1", "xg": 1.50, "xga": 1.70, "possession": 49, "tactical_style": "COUNTER_ATTACK"},
+            "Nantes": {"league": "Ligue 1", "xg": 1.35, "xga": 1.65, "possession": 47, "tactical_style": "DEFENSIVE"},
+            "Le Havre": {"league": "Ligue 1", "xg": 1.25, "xga": 1.55, "possession": 46, "tactical_style": "DEFENSIVE"},
+            "Toulouse": {"league": "Ligue 1", "xg": 1.40, "xga": 1.75, "possession": 51, "tactical_style": "HIGH_PRESS"},
+            "Lorient": {"league": "Ligue 1", "xg": 1.30, "xga": 1.85, "possession": 49, "tactical_style": "COUNTER_ATTACK"},
+            "Clermont Foot": {"league": "Ligue 1", "xg": 1.15, "xga": 1.90, "possession": 47, "tactical_style": "DEFENSIVE"},
+            "Metz": {"league": "Ligue 1", "xg": 1.20, "xga": 2.00, "possession": 45, "tactical_style": "DEFENSIVE"},
+            "Lyon": {"league": "Ligue 1", "xg": 1.45, "xga": 1.80, "possession": 53, "tactical_style": "POSSESSION"},
         }
         
         # Enhanced tactical style effects
         self.tactical_effects = {
+            ('LOW_BLOCK', 'HIGH_PRESS'): {'home_xg_mod': +0.05, 'away_xg_mod': -0.10, 'explanation': "Home low block reduces away attacking efficiency"},
+            ('DEFENSIVE', 'POSSESSION'): {'home_xg_mod': -0.05, 'away_xg_mod': +0.05, 'explanation': "Away possession dominance increases their attacking chances"},
+            ('COUNTER_ATTACK', 'HIGH_LINE'): {'home_xg_mod': +0.15, 'away_xg_mod': 0, 'explanation': "Home counter attack perfectly suits high defensive line"},
+            ('GEGENPRESS', 'POSSESSION'): {'home_xg_mod': +0.08, 'away_xg_mod': -0.05, 'explanation': "High press disrupts possession-based build-up"},
+            ('HIGH_PRESS', 'DEFENSIVE'): {'home_xg_mod': +0.10, 'away_xg_mod': -0.08, 'explanation': "High press forces errors from defensive team"},
+            ('POSSESSION', 'COUNTER_ATTACK'): {'home_xg_mod': -0.07, 'away_xg_mod': +0.12, 'explanation': "Away team can exploit spaces in possession system"},
             ('HIGH_PRESS', 'TRANSITION'): {'home_xg_mod': +0.10, 'away_xg_mod': -0.05, 'explanation': "Home high press disrupts away transitions"},
             ('COUNTER_ATTACK', 'HIGH_PRESS'): {'home_xg_mod': +0.15, 'away_xg_mod': 0, 'explanation': "Home counter attack perfectly suits high press"},
         }
@@ -192,17 +298,36 @@ class EnhancedPredictionEngine:
         value_bets['over_2.5'] = {'value': round(over_value, 2), 'ev': round(over_ev, 3)}
         
         return value_bets
+    
+    def get_all_teams(self, league=None):
+        if league:
+            return [team for team, data in self.team_database.items() if data['league'] == league]
+        return list(self.team_database.keys())
 
 def display_input_section(engine, existing_data=None):
     st.markdown('<div class="input-section">', unsafe_allow_html=True)
     st.markdown('<h2 style="text-align: center; color: #1f77b4;">⚽ Match Configuration</h2>', unsafe_allow_html=True)
     
-    available_teams = list(engine.team_database.keys())
+    # League selection with team filtering
+    col1, col2 = st.columns(2)
     
+    with col1:
+        league = st.selectbox("SELECT LEAGUE", ["All Leagues", "EPL", "La Liga", "Bundesliga", "Serie A", "Ligue 1"], 
+                            key="league_select")
+    
+    # Get teams based on league selection
+    if league == "All Leagues":
+        available_teams = engine.get_all_teams()
+    else:
+        available_teams = engine.get_all_teams(league)
+    
+    # Team selection - use existing data if available
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("🏠 HOME TEAM")
+        
+        # Set default index based on existing data
         home_default_index = available_teams.index("Tottenham") if "Tottenham" in available_teams else 0
         if existing_data and existing_data['home_team'] in available_teams:
             home_default_index = available_teams.index(existing_data['home_team'])
@@ -210,9 +335,15 @@ def display_input_section(engine, existing_data=None):
         home_team = st.selectbox("Select Home Team", available_teams, index=home_default_index, key="home_team_select")
         home_data = engine.get_team_data(home_team)
         
-        home_xg = st.number_input("Expected Goals (xG)", value=existing_data['home_xg'] if existing_data else home_data["xg"], min_value=0.0, key="home_xg")
-        home_xga = st.number_input("Expected Goals Against (xGA)", value=existing_data['home_xga'] if existing_data else home_data["xga"], min_value=0.0, key="home_xga")
-        home_possession = st.slider("Average Possession %", 0, 100, existing_data['home_possession'] if existing_data else home_data["possession"], key="home_possession")
+        home_xg = st.number_input("Expected Goals (xG)", 
+                                value=existing_data['home_xg'] if existing_data else home_data["xg"], 
+                                min_value=0.0, key="home_xg")
+        home_xga = st.number_input("Expected Goals Against (xGA)", 
+                                 value=existing_data['home_xga'] if existing_data else home_data["xga"], 
+                                 min_value=0.0, key="home_xga")
+        home_possession = st.slider("Average Possession %", 0, 100, 
+                                  existing_data['home_possession'] if existing_data else home_data["possession"], 
+                                  key="home_possession")
         
         tactical_options = ["DEFENSIVE", "LOW_BLOCK", "COUNTER_ATTACK", "POSSESSION", "HIGH_PRESS", "GEGENPRESS", "HIGH_LINE", "BALANCED", "TRANSITION"]
         home_tactical_index = tactical_options.index(home_data["tactical_style"]) if home_data["tactical_style"] in tactical_options else 0
@@ -222,6 +353,7 @@ def display_input_section(engine, existing_data=None):
     
     with col2:
         st.subheader("✈️ AWAY TEAM")
+        
         away_default_index = available_teams.index("Manchester United") if "Manchester United" in available_teams else 1
         if existing_data and existing_data['away_team'] in available_teams:
             away_default_index = available_teams.index(existing_data['away_team'])
@@ -229,49 +361,89 @@ def display_input_section(engine, existing_data=None):
         away_team = st.selectbox("Select Away Team", available_teams, index=away_default_index, key="away_team_select")
         away_data = engine.get_team_data(away_team)
         
-        away_xg = st.number_input("Away Expected Goals (xG)", value=existing_data['away_xg'] if existing_data else away_data["xg"], min_value=0.0, key="away_xg")
-        away_xga = st.number_input("Away Expected Goals Against (xGA)", value=existing_data['away_xga'] if existing_data else away_data["xga"], min_value=0.0, key="away_xga")
-        away_possession = st.slider("Away Average Possession %", 0, 100, existing_data['away_possession'] if existing_data else away_data["possession"], key="away_possession")
+        away_xg = st.number_input("Away Expected Goals (xG)", 
+                                value=existing_data['away_xg'] if existing_data else away_data["xg"], 
+                                min_value=0.0, key="away_xg")
+        away_xga = st.number_input("Away Expected Goals Against (xGA)", 
+                                 value=existing_data['away_xga'] if existing_data else away_data["xga"], 
+                                 min_value=0.0, key="away_xga")
+        away_possession = st.slider("Away Average Possession %", 0, 100, 
+                                  existing_data['away_possession'] if existing_data else away_data["possession"], 
+                                  key="away_possession")
         
         away_tactical_index = tactical_options.index(away_data["tactical_style"]) if away_data["tactical_style"] in tactical_options else 4
         if existing_data:
             away_tactical_index = tactical_options.index(existing_data['away_tactical']) if existing_data['away_tactical'] in tactical_options else away_tactical_index
         away_tactical = st.selectbox("Away Tactical Style", tactical_options, index=away_tactical_index, key="away_tactical")
     
+    # Match Context Section - with ALL options restored
     st.markdown("---")
     st.subheader("🎭 Match Context")
+    
     col1, col2, col3, col4 = st.columns(4)
     
-    with col1:
-        match_importance = st.selectbox("Match Importance", ["Normal", "High", "Critical", "Cup Final"], key="importance")
-    with col2:
-        crowd_impact = st.selectbox("Home Crowd Impact", ["Normal", "Electric", "Hostile"], key="crowd")
-    with col3:
-        referee_style = st.selectbox("Referee Style", ["Lenient", "Normal", "Strict"], key="referee")
-    with col4:
-        weather_conditions = st.selectbox("Weather Conditions", ["Normal", "Rainy", "Windy"], key="weather")
+    context_options = {
+        "importance": ["Normal", "High", "Critical", "Cup Final", "Relegation Battle", "Title Decider"],
+        "crowd": ["Normal", "Electric", "Hostile", "Quiet", "Volatile"],
+        "referee": ["Lenient", "Normal", "Strict", "Card Happy", "VAR Heavy"],
+        "weather": ["Normal", "Rainy", "Windy", "Hot", "Cold", "Poor Pitch"]
+    }
     
+    with col1:
+        importance_index = context_options["importance"].index(existing_data['match_importance']) if existing_data and existing_data['match_importance'] in context_options["importance"] else 0
+        match_importance = st.selectbox("Match Importance", context_options["importance"], 
+                                      index=importance_index, key="importance")
+    with col2:
+        crowd_index = context_options["crowd"].index(existing_data['crowd_impact']) if existing_data and existing_data['crowd_impact'] in context_options["crowd"] else 0
+        crowd_impact = st.selectbox("Home Crowd Impact", context_options["crowd"], 
+                                  index=crowd_index, key="crowd")
+    with col3:
+        referee_index = context_options["referee"].index(existing_data['referee_style']) if existing_data and existing_data['referee_style'] in context_options["referee"] else 1
+        referee_style = st.selectbox("Referee Style", context_options["referee"], 
+                                   index=referee_index, key="referee")
+    with col4:
+        weather_index = context_options["weather"].index(existing_data['weather_conditions']) if existing_data and existing_data['weather_conditions'] in context_options["weather"] else 0
+        weather_conditions = st.selectbox("Weather Conditions", context_options["weather"], 
+                                        index=weather_index, key="weather")
+    
+    # Injury input with tiered system - ALL options restored
     st.subheader("🩹 Injury Status")
     col1, col2 = st.columns(2)
+    
     injury_options = ["None", "Minor (1-2 rotational)", "Moderate (1-2 key starters)", "Significant (3-4 key players)", "Crisis (5+ starters)"]
     
     with col1:
-        home_injuries = st.selectbox("Home Key Injuries", injury_options, key="home_injuries")
+        home_injury_index = injury_options.index(existing_data['home_injuries']) if existing_data and existing_data['home_injuries'] in injury_options else 0
+        home_injuries = st.selectbox("Home Key Injuries", injury_options,
+                                   index=home_injury_index, key="home_injuries")
     with col2:
-        away_injuries = st.selectbox("Away Key Injuries", injury_options, key="away_injuries")
+        away_injury_index = injury_options.index(existing_data['away_injuries']) if existing_data and existing_data['away_injuries'] in injury_options else 0
+        away_injuries = st.selectbox("Away Key Injuries", injury_options,
+                                   index=away_injury_index, key="away_injuries")
     
+    # Market Odds - restored
     st.markdown("---")
     st.subheader("💰 Market Odds")
+    
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        home_odds = st.number_input("Home Win Odds", value=7.50, min_value=1.01, key="home_odds")
+        home_odds = st.number_input("Home Win Odds", 
+                                  value=existing_data['home_odds'] if existing_data else 7.50, 
+                                  min_value=1.01, key="home_odds")
     with col2:
-        draw_odds = st.number_input("Draw Odds", value=5.00, min_value=1.01, key="draw_odds")
+        draw_odds = st.number_input("Draw Odds", 
+                                  value=existing_data['draw_odds'] if existing_data else 5.00, 
+                                  min_value=1.01, key="draw_odds")
     with col3:
-        away_odds = st.number_input("Away Win Odds", value=1.38, min_value=1.01, key="away_odds")
+        away_odds = st.number_input("Away Win Odds", 
+                                  value=existing_data['away_odds'] if existing_data else 1.38, 
+                                  min_value=1.01, key="away_odds")
     with col4:
-        over_odds = st.number_input("Over 2.5 Goals Odds", value=2.00, min_value=1.01, key="over_odds")
+        over_odds = st.number_input("Over 2.5 Goals Odds", 
+                                  value=existing_data['over_odds'] if existing_data else 2.00, 
+                                  min_value=1.01, key="over_odds")
     
+    # Generate Prediction Button
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -418,6 +590,8 @@ def display_prediction_section(engine, input_data):
         with col2a: st.metric("Attacking Strength", f"{home_attack}/10")
         st.write(f"**Style**: {input_data['home_tactical'].replace('_', ' ').title()}")
         st.write(f"**Injuries**: {input_data['home_injuries']}")
+        st.write(f"**Base xG**: {input_data['home_xg']}")
+        st.write(f"**Base xGA**: {input_data['home_xga']}")
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
@@ -429,6 +603,8 @@ def display_prediction_section(engine, input_data):
         with col2a: st.metric("Attacking Strength", f"{away_attack}/10")
         st.write(f"**Style**: {input_data['away_tactical'].replace('_', ' ').title()}")
         st.write(f"**Injuries**: {input_data['away_injuries']}")
+        st.write(f"**Base xG**: {input_data['away_xg']}")
+        st.write(f"**Base xGA**: {input_data['away_xga']}")
         st.markdown('</div>', unsafe_allow_html=True)
     
     # Model Insights
