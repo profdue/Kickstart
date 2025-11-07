@@ -83,11 +83,14 @@ st.markdown("""
         margin: 0.5rem 0;
         color: #004085;
     }
-    .number-input {
-        background-color: white;
-        border: 2px solid #e9ecef;
-        border-radius: 5px;
+    .understat-format {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
         padding: 0.5rem;
+        border-radius: 5px;
+        font-family: monospace;
+        font-weight: bold;
+        text-align: center;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -98,41 +101,116 @@ class ProfessionalPredictionEngine:
         self.league_avg_xga = 1.35
         self.rho = -0.13  # Dixon-Coles correlation parameter
         
-        # Comprehensive team database
+        # Updated team database with Last 5 Matches xG/xGA (Understat format)
         self.team_database = {
-            # Premier League
-            "Arsenal": {"league": "Premier League", "xg": 2.10, "xga": 0.95, "form_trend": 0.08},
-            "Manchester City": {"league": "Premier League", "xg": 2.35, "xga": 0.85, "form_trend": 0.12},
-            "Liverpool": {"league": "Premier League", "xg": 2.25, "xga": 1.05, "form_trend": 0.05},
-            "Aston Villa": {"league": "Premier League", "xg": 1.85, "xga": 1.25, "form_trend": 0.10},
-            "Tottenham": {"league": "Premier League", "xg": 1.95, "xga": 1.45, "form_trend": -0.02},
-            "Newcastle": {"league": "Premier League", "xg": 1.75, "xga": 1.35, "form_trend": 0.03},
-            "Manchester United": {"league": "Premier League", "xg": 1.65, "xga": 1.40, "form_trend": -0.05},
-            "Chelsea": {"league": "Premier League", "xg": 1.70, "xga": 1.50, "form_trend": 0.06},
-            "Brighton": {"league": "Premier League", "xg": 1.90, "xga": 1.55, "form_trend": 0.04},
-            "West Ham": {"league": "Premier League", "xg": 1.55, "xga": 1.65, "form_trend": -0.08},
+            # Premier League - Example data from Understat format "10.25-1.75"
+            "Arsenal": {
+                "league": "Premier League", 
+                "last_5_xg_total": 10.25,  # Total xG scored in last 5 matches
+                "last_5_xga_total": 1.75,  # Total xGA conceded in last 5 matches
+                "form_trend": 0.08,
+                "last_5_opponents": ["Bournemouth", "Tottenham", "Burnley", "Newcastle", "West Ham"]
+            },
+            "Bournemouth": {
+                "league": "Premier League",
+                "last_5_xg_total": 5.77,
+                "last_5_xga_total": 2.30,
+                "form_trend": 0.12,
+                "last_5_opponents": ["Arsenal", "Brighton", "Wolves", "Crystal Palace", "Everton"]
+            },
+            "Manchester City": {
+                "league": "Premier League",
+                "last_5_xg_total": 11.44,
+                "last_5_xga_total": 5.00,
+                "form_trend": 0.15,
+                "last_5_opponents": ["Chelsea", "Liverpool", "Brighton", "Man United", "Aston Villa"]
+            },
+            "Manchester United": {
+                "league": "Premier League", 
+                "last_5_xg_total": 10.64,
+                "last_5_xga_total": 4.88,
+                "form_trend": -0.05,
+                "last_5_opponents": ["Chelsea", "Liverpool", "West Ham", "Everton", "Newcastle"]
+            },
+            "Liverpool": {
+                "league": "Premier League",
+                "last_5_xg_total": 11.25,  # 2.25 x 5
+                "last_5_xga_total": 5.25,   # 1.05 x 5
+                "form_trend": 0.10,
+                "last_5_opponents": ["Brighton", "Sheffield Utd", "Crystal Palace", "Man United", "Everton"]
+            },
+            "Tottenham": {
+                "league": "Premier League",
+                "last_5_xg_total": 9.75,
+                "last_5_xga_total": 7.25,
+                "form_trend": -0.02,
+                "last_5_opponents": ["Arsenal", "Chelsea", "Wolves", "Crystal Palace", "Luton"]
+            },
+            "Newcastle": {
+                "league": "Premier League",
+                "last_5_xg_total": 8.75,
+                "last_5_xga_total": 6.75,
+                "form_trend": 0.03,
+                "last_5_opponents": ["Arsenal", "West Ham", "Everton", "Crystal Palace", "Fulham"]
+            },
+            "Chelsea": {
+                "league": "Premier League",
+                "last_5_xg_total": 8.50,
+                "last_5_xga_total": 7.50,
+                "form_trend": 0.06,
+                "last_5_opponents": ["Man City", "Tottenham", "Brighton", "Man United", "Burnley"]
+            },
+            "Aston Villa": {
+                "league": "Premier League",
+                "last_5_xg_total": 9.25,
+                "last_5_xga_total": 6.25,
+                "form_trend": 0.10,
+                "last_5_opponents": ["Man City", "Arsenal", "Brentford", "West Ham", "Wolves"]
+            },
+            "West Ham": {
+                "league": "Premier League",
+                "last_5_xg_total": 7.75,
+                "last_5_xga_total": 8.25,
+                "form_trend": -0.08,
+                "last_5_opponents": ["Arsenal", "Newcastle", "Tottenham", "Wolves", "Fulham"]
+            },
             
-            # La Liga
-            "Real Madrid": {"league": "La Liga", "xg": 2.20, "xga": 0.80, "form_trend": 0.15},
-            "Barcelona": {"league": "La Liga", "xg": 2.15, "xga": 0.90, "form_trend": 0.09},
-            "Atletico Madrid": {"league": "La Liga", "xg": 1.95, "xga": 0.95, "form_trend": 0.07},
-            "Girona": {"league": "La Liga", "xg": 1.80, "xga": 1.20, "form_trend": 0.20},
-            
-            # Bundesliga
-            "Bayern Munich": {"league": "Bundesliga", "xg": 2.40, "xga": 0.95, "form_trend": 0.11},
-            "Bayer Leverkusen": {"league": "Bundesliga", "xg": 2.10, "xga": 0.85, "form_trend": 0.18},
-            "Borussia Dortmund": {"league": "Bundesliga", "xg": 2.05, "xga": 1.15, "form_trend": 0.04},
-            
-            # Serie A
-            "Inter Milan": {"league": "Serie A", "xg": 2.15, "xga": 0.75, "form_trend": 0.13},
-            "Juventus": {"league": "Serie A", "xg": 1.85, "xga": 0.85, "form_trend": 0.08},
-            "AC Milan": {"league": "Serie A", "xg": 1.90, "xga": 1.10, "form_trend": 0.06},
-            "Napoli": {"league": "Serie A", "xg": 1.75, "xga": 1.25, "form_trend": -0.07},
-            
-            # Ligue 1
-            "Paris Saint-Germain": {"league": "Ligue 1", "xg": 2.30, "xga": 0.90, "form_trend": 0.14},
-            "AS Monaco": {"league": "Ligue 1", "xg": 1.95, "xga": 1.15, "form_trend": 0.09},
-            "Lille": {"league": "Ligue 1", "xg": 1.70, "xga": 1.05, "form_trend": 0.05},
+            # Additional teams for league variety
+            "Real Madrid": {
+                "league": "La Liga",
+                "last_5_xg_total": 12.50,
+                "last_5_xga_total": 4.00,
+                "form_trend": 0.15,
+                "last_5_opponents": ["Barcelona", "Atletico", "Sevilla", "Valencia", "Girona"]
+            },
+            "Barcelona": {
+                "league": "La Liga",
+                "last_5_xg_total": 10.75,
+                "last_5_xga_total": 4.50,
+                "form_trend": 0.09,
+                "last_5_opponents": ["Real Madrid", "Atletico", "Sevilla", "Valencia", "Betis"]
+            },
+            "Bayern Munich": {
+                "league": "Bundesliga",
+                "last_5_xg_total": 12.00,
+                "last_5_xga_total": 4.75,
+                "form_trend": 0.11,
+                "last_5_opponents": ["Dortmund", "Leverkusen", "Leipzig", "Stuttgart", "Frankfurt"]
+            },
+            "Inter Milan": {
+                "league": "Serie A",
+                "last_5_xg_total": 10.75,
+                "last_5_xga_total": 3.75,
+                "form_trend": 0.13,
+                "last_5_opponents": ["Juventus", "Milan", "Napoli", "Roma", "Lazio"]
+            },
+            "Paris Saint-Germain": {
+                "league": "Ligue 1",
+                "last_5_xg_total": 11.50,
+                "last_5_xga_total": 4.50,
+                "form_trend": 0.14,
+                "last_5_opponents": ["Monaco", "Lyon", "Marseille", "Lille", "Rennes"]
+            }
         }
         
         # Injury impact weights
@@ -153,29 +231,47 @@ class ProfessionalPredictionEngine:
 
     def get_team_data(self, team_name):
         """Get team data with fallback defaults"""
-        return self.team_database.get(team_name, {
-            "league": "Unknown", "xg": 1.50, "xga": 1.50, "form_trend": 0.00
-        })
+        default_data = {
+            "league": "Unknown", 
+            "last_5_xg_total": 7.50,  # 1.50 x 5
+            "last_5_xga_total": 7.50,  # 1.50 x 5
+            "form_trend": 0.00,
+            "last_5_opponents": ["Unknown"] * 5
+        }
+        
+        team_data = self.team_database.get(team_name, default_data)
+        
+        # Calculate per-match averages
+        team_data['last_5_xg_per_match'] = team_data['last_5_xg_total'] / 5
+        team_data['last_5_xga_per_match'] = team_data['last_5_xga_total'] / 5
+        
+        return team_data
+
+    def calculate_per_match_averages(self, xg_total, xga_total):
+        """Calculate per-match averages from Understat totals"""
+        return xg_total / 5, xga_total / 5
 
     def validate_inputs(self, inputs):
-        """Comprehensive input validation"""
+        """Comprehensive input validation for Understat format"""
         errors = []
         warnings = []
         
         # Required field validation
-        required_fields = ['home_team', 'away_team', 'home_xg', 'home_xga', 'away_xg', 'away_xga']
+        required_fields = ['home_team', 'away_team', 'home_xg_total', 'home_xga_total', 'away_xg_total', 'away_xga_total']
         for field in required_fields:
             if not inputs.get(field):
                 errors.append(f"Missing required field: {field}")
         
-        # Numerical value validation
-        numerical_fields = ['home_xg', 'home_xga', 'away_xg', 'away_xga', 'home_rest', 'away_rest']
+        # Numerical value validation for Understat totals
+        numerical_fields = ['home_xg_total', 'home_xga_total', 'away_xg_total', 'away_xga_total', 'home_rest', 'away_rest']
         for field in numerical_fields:
             value = inputs.get(field)
             if value is not None:
-                if field in ['home_xg', 'home_xga', 'away_xg', 'away_xga']:
-                    if not (0.1 <= value <= 5.0):
-                        errors.append(f"{field} must be between 0.1 and 5.0")
+                if field in ['home_xg_total', 'home_xga_total', 'away_xg_total', 'away_xga_total']:
+                    if not (0.0 <= value <= 25.0):
+                        errors.append(f"{field} must be between 0.0 and 25.0 (Understat format)")
+                    elif value == 0:
+                        warnings.append(f"{field} is 0 - this seems unusual for a team's last 5 matches")
                 elif field in ['home_rest', 'away_rest']:
                     if not (2 <= value <= 14):
                         errors.append(f"{field} must be between 2 and 14 days")
@@ -191,6 +287,14 @@ class ProfessionalPredictionEngine:
             value = inputs.get(field)
             if value is not None and value < 1.01:
                 errors.append(f"{field} must be at least 1.01")
+        
+        # Data quality warnings
+        if inputs.get('home_xg_total') and inputs.get('home_xga_total'):
+            home_xg_per_match = inputs['home_xg_total'] / 5
+            if home_xg_per_match > 3.0:
+                warnings.append(f"{inputs['home_team']} has very high xG ({home_xg_per_match:.2f} per match) - please verify data")
+            if home_xg_per_match < 0.5:
+                warnings.append(f"{inputs['home_team']} has very low xG ({home_xg_per_match:.2f} per match) - please verify data")
         
         return errors, warnings
 
@@ -253,11 +357,11 @@ class ProfessionalPredictionEngine:
             'expected_away_goals': away_exp
         }
 
-    def calculate_confidence(self, home_xg, away_xg, home_xga, away_xga):
-        """Calculate prediction confidence score"""
+    def calculate_confidence(self, home_xg_per_match, away_xg_per_match, home_xga_per_match, away_xga_per_match):
+        """Calculate prediction confidence score based on data quality"""
         # Base confidence on data quality and match predictability
-        data_quality = min(1.0, (home_xg + away_xg + home_xga + away_xga) / 6.0)
-        predictability = 1 - (abs(home_xg - away_xg) / max(home_xg, away_xg))
+        data_quality = min(1.0, (home_xg_per_match + away_xg_per_match + home_xga_per_match + away_xga_per_match) / 5.4)
+        predictability = 1 - (abs(home_xg_per_match - away_xg_per_match) / max(home_xg_per_match, away_xg_per_match, 0.1))
         
         confidence = (data_quality * 0.6 + predictability * 0.4) * 100
         return min(95, max(50, confidence))
@@ -314,21 +418,27 @@ class ProfessionalPredictionEngine:
         return value_bets
 
     def predict_match(self, inputs):
-        """Main prediction function"""
+        """Main prediction function with Understat data"""
         # Validate inputs first
         errors, warnings = self.validate_inputs(inputs)
         if errors:
             return None, errors, warnings
         
+        # Calculate per-match averages from Understat totals
+        home_xg_per_match = inputs['home_xg_total'] / 5
+        home_xga_per_match = inputs['home_xga_total'] / 5
+        away_xg_per_match = inputs['away_xg_total'] / 5
+        away_xga_per_match = inputs['away_xga_total'] / 5
+        
         # Apply modifiers to get final expected goals
         home_xg_adj, home_xga_adj = self.apply_modifiers(
-            inputs['home_xg'], inputs['home_xga'],
+            home_xg_per_match, home_xga_per_match,
             inputs['home_injuries'], inputs['home_rest'],
             self.get_team_data(inputs['home_team'])['form_trend']
         )
         
         away_xg_adj, away_xga_adj = self.apply_modifiers(
-            inputs['away_xg'], inputs['away_xga'],
+            away_xg_per_match, away_xga_per_match,
             inputs['away_injuries'], inputs['away_rest'],
             self.get_team_data(inputs['away_team'])['form_trend']
         )
@@ -347,8 +457,8 @@ class ProfessionalPredictionEngine:
         
         # Calculate confidence
         confidence = self.calculate_confidence(
-            inputs['home_xg'], inputs['away_xg'],
-            inputs['home_xga'], inputs['away_xga']
+            home_xg_per_match, away_xg_per_match,
+            home_xga_per_match, away_xga_per_match
         )
         
         # Calculate value bets
@@ -361,7 +471,7 @@ class ProfessionalPredictionEngine:
         value_bets = self.calculate_value_bets(probabilities, odds)
         
         # Generate insights
-        insights = self.generate_insights(inputs, probabilities, home_expected, away_expected)
+        insights = self.generate_insights(inputs, probabilities, home_expected, away_expected, home_xg_per_match, away_xg_per_match)
         
         result = {
             'probabilities': probabilities,
@@ -369,17 +479,17 @@ class ProfessionalPredictionEngine:
             'value_bets': value_bets,
             'confidence': confidence,
             'insights': insights,
-            'modified_stats': {
-                'home_xg_adj': home_xg_adj,
-                'home_xga_adj': home_xga_adj,
-                'away_xg_adj': away_xg_adj,
-                'away_xga_adj': away_xga_adj
+            'per_match_stats': {
+                'home_xg': home_xg_per_match,
+                'home_xga': home_xga_per_match,
+                'away_xg': away_xg_per_match,
+                'away_xga': away_xga_per_match
             }
         }
         
         return result, errors, warnings
 
-    def generate_insights(self, inputs, probabilities, home_expected, away_expected):
+    def generate_insights(self, inputs, probabilities, home_expected, away_expected, home_xg_per_match, away_xg_per_match):
         """Generate insightful analysis"""
         insights = []
         
@@ -407,6 +517,18 @@ class ProfessionalPredictionEngine:
         elif total_goals < 2.0:
             insights.append("🔒 Defensive battle anticipated")
         
+        # Form analysis based on last 5 matches
+        if home_xg_per_match > 2.0:
+            insights.append(f"📈 {inputs['home_team']} in strong attacking form ({home_xg_per_match:.2f} xG/match)")
+        if away_xg_per_match > 2.0:
+            insights.append(f"📈 {inputs['away_team']} in strong attacking form ({away_xg_per_match:.2f} xG/match)")
+        
+        # Defensive form analysis
+        if home_xg_per_match < 1.0:
+            insights.append(f"🛡️ {inputs['home_team']} showing excellent defense ({home_xg_per_match:.2f} xGA/match)")
+        if away_xg_per_match < 1.0:
+            insights.append(f"🛡️ {inputs['away_team']} showing excellent defense ({away_xg_per_match:.2f} xGA/match)")
+        
         # Value bet insights
         if any(vb['value_ratio'] > 1.15 for vb in probabilities.values() if isinstance(vb, dict)):
             insights.append("💰 Strong value betting opportunities identified")
@@ -423,14 +545,14 @@ def initialize_session_state():
         st.session_state.show_edit = False
 
 def get_default_inputs():
-    """Get default input values"""
+    """Get default input values based on Understat format"""
     return {
         'home_team': 'Arsenal',
         'away_team': 'Liverpool',
-        'home_xg': 2.10,
-        'home_xga': 0.95,
-        'away_xg': 2.25,
-        'away_xga': 1.05,
+        'home_xg_total': 10.25,  # Understat format: 10.25-1.75
+        'home_xga_total': 1.75,  # Understat format: 10.25-1.75
+        'away_xg_total': 11.25,  # Understat format: 11.25-5.25
+        'away_xga_total': 5.25,  # Understat format: 11.25-5.25
         'home_injuries': 'None',
         'away_injuries': 'None',
         'home_rest': 7,
@@ -441,8 +563,8 @@ def get_default_inputs():
         'over_odds': 1.90
     }
 
-def display_input_form(engine):
-    """Display the main input form"""
+def display_understat_input_form(engine):
+    """Display the main input form with Understat format"""
     st.markdown('<div class="main-header">🎯 Professional Football Prediction Engine</div>', unsafe_allow_html=True)
     
     # Use existing inputs or defaults
@@ -470,6 +592,7 @@ def display_input_form(engine):
         # Display team info
         st.write(f"**League:** {home_data['league']}")
         st.write(f"**Form Trend:** {'↗️ Improving' if home_data['form_trend'] > 0 else '↘️ Declining' if home_data['form_trend'] < 0 else '➡️ Stable'}")
+        st.write(f"**Last 5 Opponents:** {', '.join(home_data['last_5_opponents'])}")
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
@@ -486,94 +609,128 @@ def display_input_form(engine):
         # Display team info
         st.write(f"**League:** {away_data['league']}")
         st.write(f"**Form Trend:** {'↗️ Improving' if away_data['form_trend'] > 0 else '↘️ Declining' if away_data['form_trend'] < 0 else '➡️ Stable'}")
+        st.write(f"**Last 5 Opponents:** {', '.join(away_data['last_5_opponents'])}")
         st.markdown('</div>', unsafe_allow_html=True)
     
-    st.markdown('<div class="section-header">📊 Expected Goals Metrics</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">📊 Understat Last 5 Matches Data</div>', unsafe_allow_html=True)
     
-    # xG Inputs
+    # Understat Format Explanation
+    st.markdown("""
+    <div class="warning-box">
+    <strong>📝 Understat Format Guide:</strong><br>
+    Enter data in the format shown on Understat.com: <strong>"10.25-1.75"</strong><br>
+    - <strong>First number</strong>: Total xG scored in last 5 matches<br>
+    - <strong>Second number</strong>: Total xGA conceded in last 5 matches<br>
+    Example: Arsenal's "10.25-1.75" means 10.25 xG scored and 1.75 xGA conceded in last 5 matches.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Understat Data Inputs
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown('<div class="input-card">', unsafe_allow_html=True)
-        st.subheader(f"📈 {home_team} Statistics")
+        st.subheader(f"📈 {home_team} - Last 5 Matches")
+        
+        # Understat format display
+        current_home_format = f"{current_inputs['home_xg_total']}-{current_inputs['home_xga_total']}"
+        st.markdown(f'<div class="understat-format">Understat Format: {current_home_format}</div>', unsafe_allow_html=True)
         
         col1a, col1b = st.columns(2)
         with col1a:
-            home_xg = st.number_input(
-                "Expected Goals (xG)",
-                min_value=0.1,
-                max_value=5.0,
-                value=current_inputs['home_xg'],
+            home_xg_total = st.number_input(
+                "Total xG Scored",
+                min_value=0.0,
+                max_value=25.0,
+                value=current_inputs['home_xg_total'],
                 step=0.1,
-                key="home_xg_input",
-                help="Average expected goals per match"
+                key="home_xg_total_input",
+                help="Total expected goals scored in last 5 matches (e.g., 10.25)"
             )
         with col1b:
-            home_xga = st.number_input(
-                "Expected Goals Against (xGA)",
-                min_value=0.1,
-                max_value=5.0,
-                value=current_inputs['home_xga'],
+            home_xga_total = st.number_input(
+                "Total xGA Conceded",
+                min_value=0.0,
+                max_value=25.0,
+                value=current_inputs['home_xga_total'],
                 step=0.1,
-                key="home_xga_input",
-                help="Average expected goals conceded per match"
+                key="home_xga_total_input",
+                help="Total expected goals against in last 5 matches (e.g., 1.75)"
             )
         
+        # Calculate and show per-match averages
+        home_xg_per_match = home_xg_total / 5
+        home_xga_per_match = home_xga_total / 5
+        
+        st.metric("xG per match", f"{home_xg_per_match:.2f}")
+        st.metric("xGA per match", f"{home_xga_per_match:.2f}")
+        
         # Show comparison to database
-        db_home_xg = home_data['xg']
-        db_home_xga = home_data['xga']
+        db_home_xg = home_data['last_5_xg_per_match']
+        db_home_xga = home_data['last_5_xga_per_match']
         
-        if home_xg != db_home_xg:
-            diff = home_xg - db_home_xg
+        if home_xg_per_match != db_home_xg:
+            diff = home_xg_per_match - db_home_xg
             color = "green" if diff > 0 else "red"
-            st.markdown(f"<small style='color:{color}'>📊 {diff:+.2f} from team database</small>", unsafe_allow_html=True)
+            st.markdown(f"<small style='color:{color}'>📊 {diff:+.2f} from database average</small>", unsafe_allow_html=True)
         
-        if home_xga != db_home_xga:
-            diff = home_xga - db_home_xga
+        if home_xga_per_match != db_home_xga:
+            diff = home_xga_per_match - db_home_xga
             color = "red" if diff > 0 else "green"
-            st.markdown(f"<small style='color:{color}'>🛡️ {diff:+.2f} from team database</small>", unsafe_allow_html=True)
+            st.markdown(f"<small style='color:{color}'>🛡️ {diff:+.2f} from database average</small>", unsafe_allow_html=True)
             
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
         st.markdown('<div class="input-card">', unsafe_allow_html=True)
-        st.subheader(f"📈 {away_team} Statistics")
+        st.subheader(f"📈 {away_team} - Last 5 Matches")
+        
+        # Understat format display
+        current_away_format = f"{current_inputs['away_xg_total']}-{current_inputs['away_xga_total']}"
+        st.markdown(f'<div class="understat-format">Understat Format: {current_away_format}</div>', unsafe_allow_html=True)
         
         col2a, col2b = st.columns(2)
         with col2a:
-            away_xg = st.number_input(
-                "Expected Goals (xG)",
-                min_value=0.1,
-                max_value=5.0,
-                value=current_inputs['away_xg'],
+            away_xg_total = st.number_input(
+                "Total xG Scored",
+                min_value=0.0,
+                max_value=25.0,
+                value=current_inputs['away_xg_total'],
                 step=0.1,
-                key="away_xg_input",
-                help="Average expected goals per match"
+                key="away_xg_total_input",
+                help="Total expected goals scored in last 5 matches (e.g., 11.25)"
             )
         with col2b:
-            away_xga = st.number_input(
-                "Expected Goals Against (xGA)",
-                min_value=0.1,
-                max_value=5.0,
-                value=current_inputs['away_xga'],
+            away_xga_total = st.number_input(
+                "Total xGA Conceded",
+                min_value=0.0,
+                max_value=25.0,
+                value=current_inputs['away_xga_total'],
                 step=0.1,
-                key="away_xga_input",
-                help="Average expected goals conceded per match"
+                key="away_xga_total_input",
+                help="Total expected goals against in last 5 matches (e.g., 5.25)"
             )
         
+        # Calculate and show per-match averages
+        away_xg_per_match = away_xg_total / 5
+        away_xga_per_match = away_xga_total / 5
+        
+        st.metric("xG per match", f"{away_xg_per_match:.2f}")
+        st.metric("xGA per match", f"{away_xga_per_match:.2f}")
+        
         # Show comparison to database
-        db_away_xg = away_data['xg']
-        db_away_xga = away_data['xga']
+        db_away_xg = away_data['last_5_xg_per_match']
+        db_away_xga = away_data['last_5_xga_per_match']
         
-        if away_xg != db_away_xg:
-            diff = away_xg - db_away_xg
+        if away_xg_per_match != db_away_xg:
+            diff = away_xg_per_match - db_away_xg
             color = "green" if diff > 0 else "red"
-            st.markdown(f"<small style='color:{color}'>📊 {diff:+.2f} from team database</small>", unsafe_allow_html=True)
+            st.markdown(f"<small style='color:{color}'>📊 {diff:+.2f} from database average</small>", unsafe_allow_html=True)
         
-        if away_xga != db_away_xga:
-            diff = away_xga - db_away_xga
+        if away_xga_per_match != db_away_xga:
+            diff = away_xga_per_match - db_away_xga
             color = "red" if diff > 0 else "green"
-            st.markdown(f"<small style='color:{color}'>🛡️ {diff:+.2f} from team database</small>", unsafe_allow_html=True)
+            st.markdown(f"<small style='color:{color}'>🛡️ {diff:+.2f} from database average</small>", unsafe_allow_html=True)
             
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -697,10 +854,10 @@ def display_input_form(engine):
     inputs = {
         'home_team': home_team,
         'away_team': away_team,
-        'home_xg': home_xg,
-        'home_xga': home_xga,
-        'away_xg': away_xg,
-        'away_xga': away_xga,
+        'home_xg_total': home_xg_total,
+        'home_xga_total': home_xga_total,
+        'away_xg_total': away_xg_total,
+        'away_xga_total': away_xga_total,
         'home_injuries': home_injuries,
         'away_injuries': away_injuries,
         'home_rest': home_rest,
@@ -902,11 +1059,12 @@ def display_prediction_results(engine, result, inputs):
     
     # Additional statistical insights
     total_xg = expected_home + expected_away
+    per_match = result['per_match_stats']
     st.markdown(f'<div class="metric-card">', unsafe_allow_html=True)
     st.markdown("**📈 Statistical Summary:**")
     st.markdown(f"- **Total Expected Goals:** {total_xg:.2f}")
-    st.markdown(f"- **Home Attack Strength:** {expected_home:.2f} xG")
-    st.markdown(f"- **Away Attack Strength:** {expected_away:.2f} xG")
+    st.markdown(f"- **{inputs['home_team']} Form:** {per_match['home_xg']:.2f} xG, {per_match['home_xga']:.2f} xGA per match")
+    st.markdown(f"- **{inputs['away_team']} Form:** {per_match['away_xg']:.2f} xG, {per_match['away_xga']:.2f} xGA per match")
     st.markdown(f"- **Goal Expectancy:** {total_xg/2.5:.1%} of average match")
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -939,7 +1097,7 @@ def main():
     # Show edit form if requested
     if st.session_state.show_edit:
         st.markdown('<div class="main-header">✏️ Edit Match Inputs</div>', unsafe_allow_html=True)
-        inputs = display_input_form(engine)
+        inputs = display_understat_input_form(engine)
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
@@ -969,7 +1127,7 @@ def main():
     
     # Show main input form
     else:
-        inputs = display_input_form(engine)
+        inputs = display_understat_input_form(engine)
         
         # Generate Prediction Button
         st.markdown("---")
