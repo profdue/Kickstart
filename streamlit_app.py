@@ -129,6 +129,7 @@ st.markdown("""
 class ProfessionalPredictionEngine:
     def __init__(self):
         self.league_avg_xg = 1.35
+        self.league_avg_xga = 1.35  # Fixed: Added missing attribute
         self.home_advantage = 1.15  # 15% home advantage
         
         # Enhanced injury impact weights
@@ -194,8 +195,6 @@ class ProfessionalPredictionEngine:
             "Köln": {"league": "Bundesliga", "last_5_xg_total": 6.00, "last_5_xga_total": 9.75, "form_trend": -0.12},
             "Bochum": {"league": "Bundesliga", "last_5_xg_total": 5.75, "last_5_xga_total": 10.25, "form_trend": -0.14},
             "Darmstadt": {"league": "Bundesliga", "last_5_xg_total": 5.25, "last_5_xga_total": 11.50, "form_trend": -0.18},
-
-            # Add other leagues as needed...
         }
 
     def get_team_data(self, team_name):
@@ -506,8 +505,6 @@ class ProfessionalPredictionEngine:
             insights.append("💰 Good value betting opportunities available")
         
         return insights
-
-# [The rest of your original UI code remains EXACTLY the same - initialize_session_state, get_default_inputs, display_understat_input_form, display_prediction_results, _display_value_analysis, main]
 
 def initialize_session_state():
     """Initialize session state variables"""
