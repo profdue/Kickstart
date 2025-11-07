@@ -100,6 +100,20 @@ st.markdown("""
         border-left: 4px solid #1f77b4;
         margin: 0.5rem 0;
     }
+    .input-section {
+        background-color: #f8f9fa;
+        padding: 2rem;
+        border-radius: 15px;
+        border: 2px solid #e9ecef;
+        margin-bottom: 2rem;
+    }
+    .prediction-section {
+        background-color: #ffffff;
+        padding: 2rem;
+        border-radius: 15px;
+        border: 2px solid #1f77b4;
+        margin-bottom: 2rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -319,7 +333,7 @@ class EnhancedPredictionEngine:
 
 def display_input_section(engine, existing_data=None):
     """Display the main input section with existing data if provided"""
-    st.markdown('<div style="background-color: #f8f9fa; padding: 2rem; border-radius: 15px; border: 2px solid #e9ecef; margin-bottom: 2rem;">', unsafe_allow_html=True)
+    st.markdown('<div class="input-section">', unsafe_allow_html=True)
     st.markdown('<h2 style="text-align: center; color: #1f77b4;">⚽ Match Configuration</h2>', unsafe_allow_html=True)
     
     # League selection with team filtering
@@ -506,7 +520,7 @@ def display_input_section(engine, existing_data=None):
 
 def display_prediction_section(engine, input_data):
     """Display the prediction results section"""
-    st.markdown('<div style="background-color: #ffffff; padding: 2rem; border-radius: 15px; border: 2px solid #1f77b4; margin-bottom: 2rem;">', unsafe_allow_html=True)
+    st.markdown('<div class="prediction-section">', unsafe_allow_html=True)
     
     # Convert injury tiers to numerical values
     injury_tier_map = {
