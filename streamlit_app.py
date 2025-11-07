@@ -264,7 +264,7 @@ LEAGUE_CONFIGS = {
             "Arsenal", "Man City", "Liverpool", "Chelsea", "Tottenham", "Man United",
             "Newcastle", "Brighton", "West Ham", "Aston Villa", "Crystal Palace", "Wolves",
             "Fulham", "Bournemouth", "Brentford", "Everton", "Nott'ham Forest",
-            "Luton", "Burnley", "Sheffield Utd"
+            "Luton", "Sunderland", "Burnley", "Sheffield Utd"
         ],
         "baselines": {
             "avg_goals": 2.75,
