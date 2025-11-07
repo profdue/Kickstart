@@ -71,6 +71,27 @@ st.markdown("""
         border: 2px solid #1f77b4;
         margin-bottom: 2rem;
     }
+    .prediction-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 15px;
+        text-align: center;
+        margin: 1rem 0;
+    }
+    .expected-score {
+        font-size: 3rem;
+        font-weight: bold;
+        margin: 1rem 0;
+    }
+    .probability-badge {
+        background-color: #1f77b4;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 25px;
+        font-weight: bold;
+        margin: 0.5rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -422,93 +443,10 @@ def display_prediction_section(engine, input_data):
     home_injury_tier = injury_tier_map[input_data['home_injuries']]
     away_injury_tier = injury_tier_map[input_data['away_injuries']]
     
-    # Match Overview
-    st.markdown('<div class="section-header">🏟️ Match Overview</div>', unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([2, 1, 2])
-    
-    with col1:
-        st.markdown(f'<div class="team-card">', unsafe_allow_html=True)
-        st.subheader(f"🏠 {input_data['home_team']}")
-        st.write(f"**League**: {input_data['home_data']['league']}")
-        st.write(f"**Style**: {input_data['home_tactical'].replace('_', ' ').title()}")
-        st.write(f"**Avg Possession**: {input_data['home_data']['possession']}%")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("<h2 style='text-align: center;'>VS</h2>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align: center;'>{input_data['home_data']['league']} Match</p>", unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f'<div class="team-card">', unsafe_allow_html=True)
-        st.subheader(f"✈️ {input_data['away_team']}")
-        st.write(f"**League**: {input_data['away_data']['league']}")
-        st.write(f"**Style**: {input_data['away_tactical'].replace('_', ' ').title()}")
-        st.write(f"**Avg Possession**: {input_data['away_data']['possession']}%")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Team Strength Analysis
-    st.markdown("---")
-    st.markdown('<div class="section-header">📊 Team Strength Analysis</div>', unsafe_allow_html=True)
-    
-    # Calculate team strength scores
-    home_defense, home_attack = engine.team_strength_snapshot(input_data['home_xg'], input_data['home_xga'])
-    away_defense, away_attack = engine.team_strength_snapshot(input_data['away_xg'], input_data['away_xga'])
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader(f"🏠 {input_data['home_team']}")
-        col1a, col2a = st.columns(2)
-        with col1a:
-            st.metric("Defensive Strength", f"{home_defense}/10")
-        with col2a:
-            st.metric("Attacking Strength", f"{home_attack}/10")
-        
-        # Strength visualization
-        fig_home = go.Figure()
-        fig_home.add_trace(go.Barpolar(
-            r=[home_defense, home_attack, input_data['home_data']['possession']/10],
-            theta=['Defense', 'Attack', 'Possession'],
-            name='Strength',
-            marker_color=['#1f77b4', '#ff7f0e', '#2ca02c']
-        ))
-        fig_home.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
-            showlegend=False,
-            height=300,
-            title=f"{input_data['home_team']} Strength Profile"
-        )
-        st.plotly_chart(fig_home, use_container_width=True)
-    
-    with col2:
-        st.subheader(f"✈️ {input_data['away_team']}")
-        col1a, col2a = st.columns(2)
-        with col1a:
-            st.metric("Defensive Strength", f"{away_defense}/10")
-        with col2a:
-            st.metric("Attacking Strength", f"{away_attack}/10")
-        
-        # Strength visualization
-        fig_away = go.Figure()
-        fig_away.add_trace(go.Barpolar(
-            r=[away_defense, away_attack, input_data['away_data']['possession']/10],
-            theta=['Defense', 'Attack', 'Possession'],
-            name='Strength',
-            marker_color=['#1f77b4', '#ff7f0e', '#d62728']
-        ))
-        fig_away.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
-            showlegend=False,
-            height=300,
-            title=f"{input_data['away_team']} Strength Profile"
-        )
-        st.plotly_chart(fig_away, use_container_width=True)
-    
-    # Prediction calculations
-    st.markdown("---")
-    st.markdown('<div class="section-header">🎯 ENHANCED PRECISION PREDICTION RESULTS</div>', unsafe_allow_html=True)
+    # Main Prediction Header
+    st.markdown(f'<div class="prediction-card">', unsafe_allow_html=True)
+    st.markdown(f'<h1 style="text-align: center; color: white; margin-bottom: 1rem;">🎯 PREDICTION RESULTS</h1>', unsafe_allow_html=True)
+    st.markdown(f'<h2 style="text-align: center; color: white; margin-bottom: 2rem;">{input_data["home_team"]} vs {input_data["away_team"]}</h2>', unsafe_allow_html=True)
     
     # Apply injury modifiers
     home_xg_adj, home_xga_adj = engine.apply_injury_modifier(input_data['home_xg'], input_data['home_xga'], home_injury_tier)
@@ -549,175 +487,177 @@ def display_prediction_section(engine, input_data):
     draw_prob = round((draw_prob / total) * 100, 1)
     away_win_prob = round((away_win_prob / total) * 100, 1)
     
-    # Over/Under and BTTS probabilities
-    over_25_prob = round(min(95, max(25, (total_xg / 2.5) * 65)), 1)
-    under_25_prob = round(100 - over_25_prob, 1)
+    # Expected Score Display
+    expected_home_goals = round(home_xg_final, 1)
+    expected_away_goals = round(away_xg_final, 1)
     
-    btts_yes_prob = round(min(90, max(25, ((home_xg_final * 0.7 + away_xg_final * 0.7) / 2) * 85)), 1)
-    btts_no_prob = round(100 - btts_yes_prob, 1)
+    st.markdown(f'<div class="expected-score">{expected_home_goals} - {expected_away_goals}</div>', unsafe_allow_html=True)
+    st.markdown(f'<p style="text-align: center; color: white; font-size: 1.2rem;">Expected Final Score</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    # Calculate confidence scores
-    outcome_probs = {'home': home_win_prob/100, 'draw': draw_prob/100, 'away': away_win_prob/100}
-    over_under_probs = {'over': over_25_prob/100, 'under': under_25_prob/100}
-    btts_probs = {'yes': btts_yes_prob/100, 'no': btts_no_prob/100}
-    
-    outcome_confidence = engine.calculate_confidence_score(outcome_probs)
-    over_under_confidence = engine.calculate_confidence_score(over_under_probs)
-    btts_confidence = engine.calculate_confidence_score(btts_probs)
-    
-    # Display predictions with confidence
-    col1, col2, col3 = st.columns(3)
+    # Quick Stats Row
+    st.markdown("---")
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        conf_class, conf_label = engine.get_confidence_label(outcome_confidence)
-        st.markdown(f'<div class="section-header {conf_class}">🏆 Match Outcome ({conf_label})</div>', unsafe_allow_html=True)
-        
-        fig_outcome = go.Figure(data=[
-            go.Bar(name='Probability', x=[f'{input_data["home_team"]}', 'Draw', f'{input_data["away_team"]}'], 
-                  y=[home_win_prob, draw_prob, away_win_prob],
-                  marker_color=['#1f77b4', '#ff7f0e', '#d62728'])
-        ])
-        fig_outcome.update_layout(yaxis_title='Probability (%)', height=300, showlegend=False)
-        st.plotly_chart(fig_outcome, use_container_width=True)
-        
-        st.write(f"**{input_data['home_team']} Win**: {home_win_prob}%")
-        st.write(f"**Draw**: {draw_prob}%")
-        st.write(f"**{input_data['away_team']} Win**: {away_win_prob}%")
-        st.write(f"*Confidence: {outcome_confidence}/100*")
-    
+        st.metric("Home Win Probability", f"{home_win_prob}%")
     with col2:
-        conf_class, conf_label = engine.get_confidence_label(over_under_confidence)
-        st.markdown(f'<div class="section-header {conf_class}">📊 Over/Under 2.5 ({conf_label})</div>', unsafe_allow_html=True)
-        
-        fig_ou = go.Figure(data=[
-            go.Pie(labels=['Over 2.5', 'Under 2.5'], 
-                  values=[over_25_prob, under_25_prob],
-                  marker_colors=['#2ca02c', '#ff7f0e'])
-        ])
-        fig_ou.update_layout(height=300)
-        st.plotly_chart(fig_ou, use_container_width=True)
-        
-        st.write(f"**Over 2.5**: {over_25_prob}%")
-        st.write(f"**Under 2.5**: {under_25_prob}%")
-        st.write(f"*Confidence: {over_under_confidence}/100*")
-    
+        st.metric("Draw Probability", f"{draw_prob}%")
     with col3:
-        conf_class, conf_label = engine.get_confidence_label(btts_confidence)
-        st.markdown(f'<div class="section-header {conf_class}">⚽ Both Teams to Score ({conf_label})</div>', unsafe_allow_html=True)
-        
-        fig_btts = go.Figure(data=[
-            go.Pie(labels=['Yes', 'No'], 
-                  values=[btts_yes_prob, btts_no_prob],
-                  marker_colors=['#9467bd', '#8c564b'])
-        ])
-        fig_btts.update_layout(height=300)
-        st.plotly_chart(fig_btts, use_container_width=True)
-        
-        st.write(f"**Yes**: {btts_yes_prob}%")
-        st.write(f"**No**: {btts_no_prob}%")
-        st.write(f"*Confidence: {btts_confidence}/100*")
+        st.metric("Away Win Probability", f"{away_win_prob}%")
+    with col4:
+        over_25_prob = round(min(95, max(25, (total_xg / 2.5) * 65)), 1)
+        st.metric("Over 2.5 Goals", f"{over_25_prob}%")
     
-    # Value Bets Analysis
+    # Main Prediction Cards
     st.markdown("---")
-    st.markdown('<div class="section-header">💰 Smart Value Analysis</div>', unsafe_allow_html=True)
-    
-    # Calculate value bets
-    odds_dict = {'home': input_data['home_odds'], 'draw': input_data['draw_odds'], 'over_2.5': input_data['over_odds']}
-    probs_dict = {'home': home_win_prob/100, 'draw': draw_prob/100, 'over_2.5': over_25_prob/100}
-    
-    value_bets = engine.calculate_value_bets(probs_dict, odds_dict)
-    
-    st.subheader("🎯 VALUE BETS IDENTIFIED")
+    st.markdown('<div class="section-header">📊 Detailed Predictions</div>', unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        home_value = value_bets['home']
-        value_class = "strong-value" if home_value['value'] > 1.5 else "value-bet-box"
-        st.markdown(f'<div class="{value_class}">', unsafe_allow_html=True)
-        st.write(f"**{input_data['home_team']} Win**")
-        st.write(f"Value: {home_value['value']}x")
-        st.write(f"EV: {home_value['ev']}")
-        st.write("**STRONG VALUE 💎**" if home_value['value'] > 1.5 else "GOOD VALUE ✅")
+        st.markdown('<div class="team-card">', unsafe_allow_html=True)
+        st.subheader("🏆 Match Outcome")
+        st.markdown(f'<div style="text-align: center; margin: 1rem 0;">')
+        st.markdown(f'<span class="probability-badge">{input_data["home_team"]} Win: {home_win_prob}%</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="probability-badge">Draw: {draw_prob}%</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="probability-badge">{input_data["away_team"]} Win: {away_win_prob}%</span>', unsafe_allow_html=True)
+        st.markdown('</div>')
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
-        draw_value = value_bets['draw']
-        value_class = "strong-value" if draw_value['value'] > 1.5 else "value-bet-box"
-        st.markdown(f'<div class="{value_class}">', unsafe_allow_html=True)
-        st.write("**Draw**")
-        st.write(f"Value: {draw_value['value']}x")
-        st.write(f"EV: {draw_value['ev']}")
-        st.write("**STRONG VALUE 💎**" if draw_value['value'] > 1.5 else "GOOD VALUE ✅")
+        st.markdown('<div class="team-card">', unsafe_allow_html=True)
+        st.subheader("⚽ Goals Market")
+        under_25_prob = round(100 - over_25_prob, 1)
+        st.markdown(f'<div style="text-align: center; margin: 1rem 0;">')
+        st.markdown(f'<span class="probability-badge">Over 2.5: {over_25_prob}%</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="probability-badge">Under 2.5: {under_25_prob}%</span>', unsafe_allow_html=True)
+        st.markdown('</div>')
+        
+        btts_yes_prob = round(min(90, max(25, ((home_xg_final * 0.7 + away_xg_final * 0.7) / 2) * 85)), 1)
+        btts_no_prob = round(100 - btts_yes_prob, 1)
+        st.markdown(f'<div style="text-align: center; margin: 1rem 0;">')
+        st.markdown(f'<span class="probability-badge">BTTS Yes: {btts_yes_prob}%</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="probability-badge">BTTS No: {btts_no_prob}%</span>', unsafe_allow_html=True)
+        st.markdown('</div>')
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col3:
-        over_value = value_bets['over_2.5']
-        value_class = "strong-value" if over_value['value'] > 1.5 else "value-bet-box"
-        st.markdown(f'<div class="{value_class}">', unsafe_allow_html=True)
-        st.write("**Over 2.5 Goals**")
-        st.write(f"Value: {over_value['value']}x")
-        st.write(f"EV: {over_value['ev']}")
-        st.write("**STRONG VALUE 💎**" if over_value['value'] > 1.5 else "GOOD VALUE ✅")
+        st.markdown('<div class="team-card">', unsafe_allow_html=True)
+        st.subheader("💰 Value Bets")
+        
+        # Calculate value bets
+        odds_dict = {'home': input_data['home_odds'], 'draw': input_data['draw_odds'], 'over_2.5': input_data['over_odds']}
+        probs_dict = {'home': home_win_prob/100, 'draw': draw_prob/100, 'over_2.5': over_25_prob/100}
+        value_bets = engine.calculate_value_bets(probs_dict, odds_dict)
+        
+        st.markdown(f'<div style="text-align: center; margin: 1rem 0;">')
+        if value_bets['home']['value'] > 1.1:
+            st.markdown(f'<span class="probability-badge" style="background-color: #00a86b;">{input_data["home_team"]} Win ✅</span>', unsafe_allow_html=True)
+        if value_bets['draw']['value'] > 1.1:
+            st.markdown(f'<span class="probability-badge" style="background-color: #00a86b;">Draw ✅</span>', unsafe_allow_html=True)
+        if value_bets['over_2.5']['value'] > 1.1:
+            st.markdown(f'<span class="probability-badge" style="background-color: #00a86b;">Over 2.5 ✅</span>', unsafe_allow_html=True)
+        
+        if all(value['value'] <= 1.1 for value in value_bets.values()):
+            st.markdown(f'<span class="probability-badge" style="background-color: #ff4444;">No Value Bets ❌</span>', unsafe_allow_html=True)
+        st.markdown('</div>')
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Model Process Explanation
+    # Team Analysis
     st.markdown("---")
-    col1, col2 = st.columns([2, 1])
+    st.markdown('<div class="section-header">🔍 Team Analysis</div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown('<div class="section-header">📈 Expected Score & Model Process</div>', unsafe_allow_html=True)
+        home_defense, home_attack = engine.team_strength_snapshot(input_data['home_xg'], input_data['home_xga'])
+        st.subheader(f"🏠 {input_data['home_team']}")
+        st.write(f"**Defensive Strength**: {home_defense}/10")
+        st.write(f"**Attacking Strength**: {home_attack}/10")
+        st.write(f"**Tactical Style**: {input_data['home_tactical'].replace('_', ' ').title()}")
+        st.write(f"**Injuries**: {input_data['home_injuries']}")
         
-        # Expected goals progression
+        # Home team strength gauge
+        fig_home = go.Figure(go.Indicator(
+            mode = "gauge+number+delta",
+            value = home_attack,
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            title = {'text': "Attacking Strength"},
+            gauge = {
+                'axis': {'range': [None, 10]},
+                'bar': {'color': "darkblue"},
+                'steps': [
+                    {'range': [0, 4], 'color': "lightgray"},
+                    {'range': [4, 7], 'color': "yellow"},
+                    {'range': [7, 10], 'color': "lightgreen"}
+                ]
+            }
+        ))
+        fig_home.update_layout(height=300)
+        st.plotly_chart(fig_home, use_container_width=True)
+    
+    with col2:
+        away_defense, away_attack = engine.team_strength_snapshot(input_data['away_xg'], input_data['away_xga'])
+        st.subheader(f"✈️ {input_data['away_team']}")
+        st.write(f"**Defensive Strength**: {away_defense}/10")
+        st.write(f"**Attacking Strength**: {away_attack}/10")
+        st.write(f"**Tactical Style**: {input_data['away_tactical'].replace('_', ' ').title()}")
+        st.write(f"**Injuries**: {input_data['away_injuries']}")
+        
+        # Away team strength gauge
+        fig_away = go.Figure(go.Indicator(
+            mode = "gauge+number+delta",
+            value = away_attack,
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            title = {'text': "Attacking Strength"},
+            gauge = {
+                'axis': {'range': [None, 10]},
+                'bar': {'color': "darkred"},
+                'steps': [
+                    {'range': [0, 4], 'color': "lightgray"},
+                    {'range': [4, 7], 'color': "yellow"},
+                    {'range': [7, 10], 'color': "lightgreen"}
+                ]
+            }
+        ))
+        fig_away.update_layout(height=300)
+        st.plotly_chart(fig_away, use_container_width=True)
+    
+    # Model Insights
+    st.markdown("---")
+    st.markdown('<div class="section-header">🧠 Model Insights</div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
         st.write("**Expected Goals Progression**")
-        
         progress_data = {
-            'Stage': ['Base xG', 'Injury Adjusted', 'Tactical Adjusted', 'Final Expected'],
-            f'{input_data["home_team"]} xG': [input_data['home_xg'], home_xg_adj, home_xg_final, round(home_xg_final, 2)],
-            f'{input_data["away_team"]} xG': [input_data['away_xg'], away_xg_adj, away_xg_final, round(away_xg_final, 2)]
+            'Stage': ['Base xG', 'After Injuries', 'Tactical Adjust', 'Final xG'],
+            f'{input_data["home_team"]}': [input_data['home_xg'], home_xg_adj, home_xg_final, round(home_xg_final, 2)],
+            f'{input_data["away_team"]}': [input_data['away_xg'], away_xg_adj, away_xg_final, round(away_xg_final, 2)]
         }
-        
-        df_progress = pd.DataFrame(progress_data)
-        st.dataframe(df_progress, use_container_width=True)
-        
-        # Display explanations
+        st.dataframe(pd.DataFrame(progress_data), use_container_width=True)
+    
+    with col2:
+        st.write("**Key Factors**")
+        if home_injury_tier > 0:
+            st.write(f"• {input_data['home_team']} injuries: {input_data['home_injuries']}")
+        if away_injury_tier > 0:
+            st.write(f"• {input_data['away_team']} injuries: {input_data['away_injuries']}")
         if tactical_explanations:
-            st.write("**Tactical Adjustments Applied:**")
             for explanation in tactical_explanations:
                 st.write(f"• {explanation}")
-        
-        # Injury impact explanation
-        if home_injury_tier > 0 or away_injury_tier > 0:
-            st.write("**Injury Impact:**")
-            if home_injury_tier > 0:
-                st.write(f"• {input_data['home_team']}: {input_data['home_injuries']} reduced xG by {round((1 - (home_xg_adj/input_data['home_xg'])) * 100, 1)}%")
-            if away_injury_tier > 0:
-                st.write(f"• {input_data['away_team']}: {input_data['away_injuries']} reduced xG by {round((1 - (away_xg_adj/input_data['away_xg'])) * 100, 1)}%")
+        st.write(f"• Home advantage: +10% boost")
+        st.write(f"• Total expected goals: {round(total_xg, 2)}")
     
-    with col2:
-        st.markdown('<div class="section-header">🎯 Final Expected Score</div>', unsafe_allow_html=True)
-        
-        expected_home_goals = round(home_xg_final, 1)
-        expected_away_goals = round(away_xg_final, 1)
-        total_expected = round(expected_home_goals + expected_away_goals, 1)
-        
-        st.metric(f"Expected Score", f"{expected_home_goals} - {expected_away_goals}")
-        st.metric("Total Expected Goals", f"{total_expected}")
-        
-        # Score probability distribution
-        st.write("**Most Likely Scores:**")
-        st.write(f"• {expected_home_goals}-{expected_away_goals} (Primary)")
-        if expected_home_goals > 0:
-            st.write(f"• {expected_home_goals-0.5}-{expected_away_goals} (Secondary)")
-        if expected_away_goals > 0:
-            st.write(f"• {expected_home_goals}-{expected_away_goals-0.5} (Secondary)")
-    
-    # Edit Input Button
+    # New Analysis Button
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("✏️ EDIT INPUT PARAMETERS", use_container_width=True):
+        if st.button("🔄 PERFORM NEW ANALYSIS", use_container_width=True, type="primary"):
             st.session_state.show_prediction = False
+            st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -730,8 +670,6 @@ def main():
     # Initialize session state
     if 'show_prediction' not in st.session_state:
         st.session_state.show_prediction = False
-    if 'input_data' not in st.session_state:
-        st.session_state.input_data = None
     
     # Main app flow
     if not st.session_state.show_prediction:
