@@ -589,7 +589,7 @@ class ProfessionalPredictionEngine:
         value_bets = self.calculate_value_bets(probabilities, odds)
         
         # Generate insights and detect contradictions
-        insights = self.generate_insights(inputs, probabilities, home_expected, away_expected, home_xg_per_match, away_xg_per_match)
+        insights = self.generate_insights(inputs, probabilities, home_expected, away_expected, home_xg_per_match, away_xg_per_match, home_xga_per_match, away_xga_per_match)
         contradictions = self.detect_contradictions(inputs, probabilities, home_expected, away_expected)
         
         result = {
@@ -610,7 +610,7 @@ class ProfessionalPredictionEngine:
         
         return result, errors, warnings
 
-    def generate_insights(self, inputs, probabilities, home_expected, away_expected, home_xg_per_match, away_xg_per_match):
+    def generate_insights(self, inputs, probabilities, home_expected, away_expected, home_xg_per_match, away_xg_per_match, home_xga_per_match, away_xga_per_match):
         """Generate enhanced insightful analysis"""
         insights = []
         
@@ -1069,7 +1069,7 @@ def display_prediction_results(engine, result, inputs):
         st.write(f"**Odds:** {inputs['home_odds']:.2f}")
         
         value_home = result['value_bets']['home']
-        self._display_value_analysis(value_home)
+        _display_value_analysis(value_home)
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
@@ -1080,7 +1080,7 @@ def display_prediction_results(engine, result, inputs):
         st.write(f"**Odds:** {inputs['draw_odds']:.2f}")
         
         value_draw = result['value_bets']['draw']
-        self._display_value_analysis(value_draw)
+        _display_value_analysis(value_draw)
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col3:
@@ -1091,7 +1091,7 @@ def display_prediction_results(engine, result, inputs):
         st.write(f"**Odds:** {inputs['away_odds']:.2f}")
         
         value_away = result['value_bets']['away']
-        self._display_value_analysis(value_away)
+        _display_value_analysis(value_away)
         st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
@@ -1109,7 +1109,7 @@ def display_prediction_results(engine, result, inputs):
         st.write(f"**Odds:** {inputs['over_odds']:.2f}")
         
         value_over = result['value_bets']['over_2.5']
-        self._display_value_analysis(value_over)
+        _display_value_analysis(value_over)
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
@@ -1212,7 +1212,7 @@ def display_prediction_results(engine, result, inputs):
         if st.button("📊 Advanced Analytics", use_container_width=True):
             st.info("Advanced analytics feature coming soon!")
 
-def _display_value_analysis(self, value_data):
+def _display_value_analysis(value_data):
     """Display value analysis for a bet"""
     if value_data['rating'] == 'excellent':
         st.success(f"**Excellent Value:** {value_data['value_ratio']:.2f}x")
@@ -1224,9 +1224,6 @@ def _display_value_analysis(self, value_data):
         st.error(f"**Poor Value:** {value_data['value_ratio']:.2f}x")
         
     st.write(f"**Expected Value:** {value_data['ev']:.1%}")
-
-# Attach the method to the function for display
-display_prediction_results._display_value_analysis = _display_value_analysis
 
 def main():
     """Main application function"""
