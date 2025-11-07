@@ -1,252 +1,277 @@
-import streamlit as st
-import pandas as pd
+"""
+Hybrid Precision Engine - COMPLETE WORKING VERSION
+Enhanced with correlation awareness and style-based probability adjustments
+"""
+
+from math import exp, factorial
 import numpy as np
-from scipy.stats import poisson, skellam
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import warnings
-warnings.filterwarnings('ignore')
 
-# =============================================================================
-# PRECISION PREDICTION ENGINE - REALISTIC DATA EDITION
-# =============================================================================
+class HybridPrecisionEngine:
+    def __init__(self, constraints=None):
+        # Default constraint set (tunable)
+        self.constraints = {
+            'max_transitions_per_game': 12,        
+            'possession_zero_sum': True,           
+            'game_state_damping': 0.7,             
+            'style_interaction_caps': {
+                'HIGH_PRESS_VS_COUNTER': 1.25,
+                'POSSESSION_VS_DEEP_DEFENSE': 0.85
+            },
+            'max_total_xg': 5.0,                   
+            'uncertainty_compression_threshold': 0.55,
+            'uncertainty_compression_factor': 0.80,
+            'draw_correlation_threshold': 0.7,     # When to boost draw probability
+            'draw_boost_amount': 0.08,             # How much to boost draws
+            'style_win_advantages': {              # Style-based win probability adjustments
+                'COUNTER_VS_HIGH_PRESS': 0.10,
+                'POSSESSION_VS_DEEP_DEFENSE': 0.08,
+                'HIGH_PRESS_VS_POSSESSION': 0.06
+            }
+        }
+        if constraints:
+            self.constraints.update(constraints)
 
-class RealisticPrecisionEngine:
-    def __init__(self):
-        self.team_profiles = {}
-        self.league_baselines = {
-            'EPL': {'avg_goals': 2.75, 'home_advantage': 1.14},
-            'La Liga': {'avg_goals': 2.55, 'home_advantage': 1.16},
-            'Bundesliga': {'avg_goals': 3.10, 'home_advantage': 1.12},
-            'Serie A': {'avg_goals': 2.55, 'home_advantage': 1.15},
-            'Ligue 1': {'avg_goals': 2.45, 'home_advantage': 1.13}
-        }
-    
-    def _build_team_profile(self, team_data, is_home=True):
-        """Build team profile from realistic available data"""
-        profile = {
-            'name': team_data['name'],
-            'is_home': is_home,
+    # ------------------------- Utility math -------------------------
+    def _poisson_prob(self, lam, k):
+        """Compute Poisson probability P(X=k) for mean lam"""
+        return (lam ** k) * exp(-lam) / factorial(k)
+
+    # ------------------------- Base expectations -------------------------
+    def _calculate_base_expected_goals(self, home_profile, away_profile, context=None):
+        """Compute naive base xG for home & away."""
+        home_xg = home_profile.get('xg_per_game', 1.0)
+        away_xg = away_profile.get('xg_per_game', 1.0)
+
+        # Home advantage
+        home_adv_multiplier = 1.0 + 0.14 * (1 if home_profile.get('is_home', True) else 0)
+        base_home = home_xg * home_adv_multiplier
+        base_away = away_xg
+
+        return {'home': base_home, 'away': base_away}
+
+    # ------------------------- Constraint layer -------------------------
+    def _apply_football_constraints(self, base_xg, home_profile, away_profile):
+        constrained = base_xg.copy()
+
+        # CONSTRAINT 1: possession zero-sum
+        if self.constraints['possession_zero_sum']:
+            home_pos = home_profile.get('possession', None)
+            away_pos = away_profile.get('possession', None)
+            if home_pos is not None and away_pos is not None and (home_pos + away_pos) > 100:
+                scale = 100.0 / (home_pos + away_pos)
+                constrained['home'] *= scale
+                constrained['away'] *= scale
+
+        # CONSTRAINT 2: style interaction caps
+        home_style = home_profile.get('style', '').upper()
+        away_style = away_profile.get('style', '').upper()
+
+        # High press (away) vs Counter (home)
+        if home_style == 'COUNTER' and away_style == 'HIGH_PRESS':
+            cap = self.constraints['style_interaction_caps'].get('HIGH_PRESS_VS_COUNTER', 1.25)
+            style_boost = min(cap, 1.0 + 0.15 * (base_xg['home'] / max(0.5, base_xg['home'])))
+            constrained['home'] *= style_boost
+
+        # CONSTRAINT 3: total xg cap
+        total_xg = constrained['home'] + constrained['away']
+        if total_xg > self.constraints['max_total_xg']:
+            excess = total_xg - self.constraints['max_total_xg']
+            damping = 1.0 / (1.0 + excess * 0.3)
+            constrained['home'] *= damping
+            constrained['away'] *= damping
+
+        # CONSTRAINT 4: open play transition cap
+        open_styles = {'HIGH_PRESS', 'ATTACKING', 'POSSESSION', 'OPEN'}
+        open_play = 0
+        if home_style in open_styles:
+            open_play += 1
+        if away_style in open_styles:
+            open_play += 1
             
-            # Core available metrics
-            'xg_offense': team_data['overall']['xg_per_game'],
-            'xg_defense': team_data['overall']['xga_per_game'],
-            'goals_scored': team_data['overall']['goals_per_game'],
-            'goals_conceded': team_data['overall']['goals_against_per_game'],
-            'possession': team_data.get('possession', 50),
-            
-            # Inferred tactical style from observable patterns
-            'tactical_style': self._infer_tactical_style(team_data),
-            
-            # Form and momentum from available data
-            'recent_form': team_data.get('recent_form', 'average'),
-            'finishing_efficiency': team_data['overall'].get('finishing_efficiency', 1.0),
-            
-            # Contextual factors
-            'home_advantage': 1.14 if is_home else 1.0,
-            'momentum': team_data.get('momentum', 0)
-        }
-        
-        return profile
-    
-    def _infer_tactical_style(self, team_data):
-        """Infer tactical style from available stats and observable patterns"""
-        styles = []
-        
-        # Inference from possession stats
-        possession = team_data.get('possession', 50)
-        if possession > 60:
-            styles.append('POSSESSION')
-        elif possession < 45:
-            styles.append('COUNTER_ATTACK')
-        
-        # Inference from goals vs xG (finishing efficiency)
-        finishing_eff = team_data['overall'].get('finishing_efficiency', 1.0)
-        if finishing_eff > 1.1:
-            styles.append('EFFICIENT')
-        elif finishing_eff < 0.9:
-            styles.append('INEFFICIENT')
-        
-        # Inference from observable patterns (user input)
-        observable = team_data.get('observable_patterns', [])
-        if 'presses_high' in observable:
-            styles.append('HIGH_PRESS')
-        if 'sits_deep' in observable:
-            styles.append('DEFENSIVE')
-        if 'counters_quickly' in observable:
-            styles.append('COUNTER_ATTACK')
-        if 'wing_play' in observable:
-            styles.append('WING_FOCUS')
-        
-        return styles if styles else ['BALANCED']
-    
-    def _calculate_expected_goals(self, home_profile, away_profile, context):
-        """Calculate expected goals using realistic available data"""
-        league = context.get('league', 'EPL')
-        baselines = self.league_baselines[league]
-        
-        # Base expected goals from team strengths
-        home_attack = home_profile['xg_offense']
-        away_defense = away_profile['xg_defense']
-        away_attack = away_profile['xg_offense'] 
-        home_defense = home_profile['xg_defense']
-        
-        # Adjust for home advantage
-        home_advantage = baselines['home_advantage']
-        
-        # Calculate expected goals
-        lambda_home = (home_attack * away_defense) * home_advantage
-        lambda_away = (away_attack * home_defense) / home_advantage
-        
-        # Apply finishing efficiency
-        lambda_home *= home_profile['finishing_efficiency']
-        lambda_away *= away_profile['finishing_efficiency']
-        
-        # Context adjustments
-        lambda_home, lambda_away = self._apply_context_adjustments(
-            lambda_home, lambda_away, home_profile, away_profile, context
-        )
-        
-        return lambda_home, lambda_away
-    
-    def _apply_context_adjustments(self, lambda_home, lambda_away, home_profile, away_profile, context):
-        """Apply context adjustments based on realistic factors"""
-        
-        # Recent form adjustments
-        home_form = home_profile.get('recent_form', 'average')
-        away_form = away_profile.get('recent_form', 'average')
-        
-        form_multipliers = {
-            'excellent': 1.15,
-            'good': 1.08,
-            'average': 1.0,
-            'poor': 0.92,
-            'terrible': 0.85
-        }
-        
-        lambda_home *= form_multipliers.get(home_form, 1.0)
-        lambda_away *= form_multipliers.get(away_form, 1.0)
-        
-        # Injury impacts
-        home_injuries = context.get('home_injuries', [])
-        away_injuries = context.get('away_injuries', [])
-        
-        lambda_home *= (1 - len(home_injuries) * 0.05)
-        lambda_away *= (1 - len(away_injuries) * 0.05)
-        
-        # Match importance
-        importance = context.get('match_importance', 'normal')
-        if importance == 'high':
-            # High importance often reduces scoring
-            lambda_home *= 0.95
-            lambda_away *= 0.95
-        
-        return max(0.1, lambda_home), max(0.1, lambda_away)
-    
-    def _simulate_style_interactions(self, home_profile, away_profile):
-        """Simulate how different playing styles interact"""
-        home_styles = home_profile['tactical_style']
-        away_styles = away_profile['tactical_style']
-        
-        home_boost = 1.0
-        away_boost = 1.0
-        btts_boost = 1.0
-        
-        # Style interaction logic based on realistic observations
-        if 'HIGH_PRESS' in home_styles and 'POSSESSION' in away_styles:
-            home_boost *= 1.1  # Pressing disrupts possession teams
-        if 'COUNTER_ATTACK' in home_styles and 'HIGH_PRESS' in away_styles:
-            home_boost *= 1.15  # Counter effective against high press
-        if 'DEFENSIVE' in home_styles and 'POSSESSION' in away_styles:
-            away_boost *= 0.9  # Defense can frustrate possession teams
-        
-        # Both teams pressing often leads to more goals
-        if 'HIGH_PRESS' in home_styles and 'HIGH_PRESS' in away_styles:
-            btts_boost *= 1.2
-        
-        return {
-            'home_xg_boost': home_boost,
-            'away_xg_boost': away_boost,
-            'btts_boost': btts_boost
-        }
-    
-    def predict_match(self, home_data, away_data, context):
-        """Main prediction method using realistic data"""
-        
-        # Build profiles from available data
-        home_profile = self._build_team_profile(home_data, is_home=True)
-        away_profile = self._build_team_profile(away_data, is_home=False)
-        
-        # Calculate base expected goals
-        lambda_home, lambda_away = self._calculate_expected_goals(
-            home_profile, away_profile, context
-        )
-        
-        # Apply style interactions
-        style_effects = self._simulate_style_interactions(home_profile, away_profile)
-        lambda_home *= style_effects['home_xg_boost']
-        lambda_away *= style_effects['away_xg_boost']
-        
-        # Generate outcome probabilities
-        outcome_probs = self._calculate_outcome_probabilities(lambda_home, lambda_away)
-        
-        # Calculate additional markets
-        additional_markets = self._calculate_additional_markets(lambda_home, lambda_away)
-        additional_markets['btts_yes'] *= style_effects['btts_boost']
-        additional_markets['btts_no'] = 1 - additional_markets['btts_yes']
-        
-        # Calculate confidence
-        confidence = self._calculate_confidence(home_profile, away_profile, outcome_probs)
-        
-        return {
-            'match_outcome': outcome_probs,
-            'additional_markets': additional_markets,
-            'expected_goals': {'home': lambda_home, 'away': lambda_away},
-            'confidence': confidence,
-            'team_profiles': {'home': home_profile, 'away': away_profile},
-            'style_effects': style_effects
-        }
-    
-    def _calculate_outcome_probabilities(self, lambda_home, lambda_away):
-        """Calculate match outcome probabilities using Poisson distribution"""
-        home_win = 0
-        draw = 0
-        away_win = 0
-        
-        for i in range(8):  # Home goals
-            for j in range(8):  # Away goals
-                prob = poisson.pmf(i, lambda_home) * poisson.pmf(j, lambda_away)
-                if i > j:
-                    home_win += prob
-                elif i == j:
-                    draw += prob
-                else:
-                    away_win += prob
-        
+        if open_play == 2:
+            constrained_total = constrained['home'] + constrained['away']
+            max_reasonable = 4.0
+            if constrained_total > max_reasonable:
+                constrained['home'] *= (max_reasonable / constrained_total)
+                constrained['away'] *= (max_reasonable / constrained_total)
+
+        # Ensure non-negative
+        constrained['home'] = max(0.01, constrained['home'])
+        constrained['away'] = max(0.01, constrained['away'])
+
+        return constrained
+
+    # ------------------------- Game flow simulation -------------------------
+    def _simulate_game_flow(self, xg_estimates, home_profile, away_profile):
+        """Simulate plausible game-state scenarios"""
+        scenarios = []
+
+        home_style = home_profile.get('style', '').upper()
+        away_style = away_profile.get('style', '').upper()
+
+        # Base scenario probabilities
+        base_home_first = 0.34
+        base_away_first = 0.33
+        base_gfh = 0.33
+
+        # Style-based adjustments
+        if home_style == 'COUNTER' and away_style == 'HIGH_PRESS':
+            base_home_first += 0.06
+            base_gfh -= 0.03
+            base_away_first -= 0.03
+
         # Normalize
-        total = home_win + draw + away_win
-        return {
-            'home_win': home_win / total,
-            'draw': draw / total,
-            'away_win': away_win / total
-        }
-    
-    def _calculate_additional_markets(self, lambda_home, lambda_away):
-        """Calculate over/under and BTTS probabilities"""
-        # Over/Under 2.5
-        over_2_5 = 0
-        for i in range(8):
-            for j in range(8):
-                if i + j > 2.5:
-                    prob = poisson.pmf(i, lambda_home) * poisson.pmf(j, lambda_away)
-                    over_2_5 += prob
+        total = base_home_first + base_away_first + base_gfh
+        base_home_first /= total
+        base_away_first /= total
+        base_gfh /= total
+
+        # Scenario 1: Home scores first
+        scenarios.append({
+            'prob': base_home_first,
+            'home_xg': xg_estimates['home'] * 0.80,
+            'away_xg': xg_estimates['away'] * 1.10
+        })
+
+        # Scenario 2: Away scores first
+        scenarios.append({
+            'prob': base_away_first,
+            'home_xg': xg_estimates['home'] * 1.20,
+            'away_xg': xg_estimates['away'] * 0.90
+        })
+
+        # Scenario 3: Goalless first half
+        scenarios.append({
+            'prob': base_gfh,
+            'home_xg': xg_estimates['home'] * 1.10,
+            'away_xg': xg_estimates['away'] * 1.10
+        })
+
+        final_home = sum(s['prob'] * s['home_xg'] for s in scenarios)
+        final_away = sum(s['prob'] * s['away_xg'] for s in scenarios)
+
+        # Apply final damping if needed
+        total = final_home + final_away
+        if total > 4.0:
+            excess = total - 4.0
+            damping = 1.0 / (1.0 + excess * 0.25)
+            final_home *= damping
+            final_away *= damping
+
+        return {'home': final_home, 'away': final_away}
+
+    # ------------------------- Enhanced Probability Conversion -------------------------
+    def _xg_to_match_outcome_probs(self, home_xg, away_xg, home_profile, away_profile, max_goals=6):
+        """Convert xG to probabilities with correlation awareness and style adjustments"""
         
-        # Both Teams to Score
-        btts_yes = 0
-        for i in range(1, 8):  # Home scores at least 1
-            for j in range(1, 8):  # Away scores at least 1
-                prob = poisson.pmf(i, lambda_home) * poisson.pmf(j, lambda_away)
-                btts_yes += prob
+        # Step 1: Independent Poisson (traditional approach)
+        home_probs = [self._poisson_prob(home_xg, k) for k in range(0, max_goals + 1)]
+        away_probs = [self._poisson_prob(away_xg, k) for k in range(0, max_goals + 1)]
+
+        # Handle tail mass
+        home_tail = 1.0 - sum(home_probs)
+        away_tail = 1.0 - sum(away_probs)
+        home_probs[-1] += home_tail
+        away_probs[-1] += away_tail
+
+        # Compute independent probabilities
+        home_win_ind = 0.0
+        draw_ind = 0.0
+        away_win_ind = 0.0
+
+        for i, ph in enumerate(home_probs):
+            for j, pa in enumerate(away_probs):
+                p = ph * pa
+                if i > j:
+                    home_win_ind += p
+                elif i == j:
+                    draw_ind += p
+                else:
+                    away_win_ind += p
+
+        # Step 2: Dixon-Coles style correlation adjustment
+        xg_ratio = min(home_xg, away_xg) / max(home_xg, away_xg)
+        if xg_ratio > self.constraints['draw_correlation_threshold']:
+            draw_boost = self.constraints['draw_boost_amount']
+            # Reduce both win probabilities to boost draw
+            reduction_factor = 1 - (draw_boost / (1 - draw_ind))
+            home_win_adj = home_win_ind * reduction_factor
+            away_win_adj = away_win_ind * reduction_factor
+            draw_adj = draw_ind + draw_boost
+        else:
+            home_win_adj, draw_adj, away_win_adj = home_win_ind, draw_ind, away_win_ind
+
+        # Step 3: Style-based win probability adjustments
+        home_style = home_profile.get('style', '').upper()
+        away_style = away_profile.get('style', '').upper()
+        
+        style_advantage = 0.0
+        style_key = f"{home_style}_VS_{away_style}"
+        
+        if style_key in self.constraints['style_win_advantages']:
+            style_advantage = self.constraints['style_win_advantages'][style_key]
+            home_win_adj += style_advantage
+            # Reduce opponent's win probability more than draw
+            away_win_adj -= style_advantage * 0.7
+            draw_adj -= style_advantage * 0.3
+
+        # Ensure probabilities are valid
+        home_win_adj = max(0.0, home_win_adj)
+        away_win_adj = max(0.0, away_win_adj)
+        draw_adj = max(0.0, draw_adj)
+
+        # Normalize
+        total = home_win_adj + draw_adj + away_win_adj
+        if total > 0:
+            home_win_adj /= total
+            draw_adj /= total
+            away_win_adj /= total
+
+        return {
+            'home_win': home_win_adj,
+            'draw': draw_adj,
+            'away_win': away_win_adj
+        }
+
+    # ------------------------- Uncertainty calibration -------------------------
+    def _apply_uncertainty_calibration(self, probs):
+        max_prob = max(probs.values())
+        threshold = self.constraints['uncertainty_compression_threshold']
+        factor = self.constraints['uncertainty_compression_factor']
+        
+        if max_prob > threshold:
+            compressed = {}
+            largest = max(probs, key=probs.get)
+            for k, v in probs.items():
+                if k == largest:
+                    compressed[k] = v * factor
+                else:
+                    # Distribute the reduction proportionally
+                    compressed[k] = v + (v / (1 - probs[largest] + 1e-12)) * (v * (1 - factor))
+            
+            # Normalize
+            total = sum(compressed.values())
+            for k in compressed:
+                compressed[k] /= total
+            return compressed
+        
+        return probs
+
+    # ------------------------- Additional Market Calculations -------------------------
+    def _calculate_additional_markets(self, home_xg, away_xg, max_goals=6):
+        """Calculate Over/Under and BTTS probabilities"""
+        over_2_5 = 0.0
+        btts_yes = 0.0
+        
+        for i in range(max_goals + 1):
+            for j in range(max_goals + 1):
+                prob = self._poisson_prob(home_xg, i) * self._poisson_prob(away_xg, j)
+                # Over 2.5
+                if i + j > 2.5:
+                    over_2_5 += prob
+                # Both Teams to Score
+                if i > 0 and j > 0:
+                    btts_yes += prob
         
         return {
             'over_2.5': over_2_5,
@@ -254,417 +279,161 @@ class RealisticPrecisionEngine:
             'btts_yes': btts_yes,
             'btts_no': 1 - btts_yes
         }
-    
-    def _calculate_confidence(self, home_profile, away_profile, outcome_probs):
-        """Calculate prediction confidence based on data quality and clarity"""
-        confidence_factors = []
+
+    # ------------------------- Public API -------------------------
+    def predict_match(self, home_profile, away_profile, context=None):
+        """Main prediction method - returns comprehensive match analysis"""
         
-        # Data completeness
-        if (home_profile['xg_offense'] > 0 and away_profile['xg_offense'] > 0):
-            confidence_factors.append(0.8)
+        # 1. Base expected goals
+        base = self._calculate_base_expected_goals(home_profile, away_profile, context)
+
+        # 2. Apply football constraints
+        constrained = self._apply_football_constraints(base, home_profile, away_profile)
+
+        # 3. Simulate game flow dynamics
+        dynamic = self._simulate_game_flow(constrained, home_profile, away_profile)
+
+        # 4. Convert to outcome probabilities with enhanced model
+        raw_probs = self._xg_to_match_outcome_probs(
+            dynamic['home'], dynamic['away'], home_profile, away_profile
+        )
+
+        # 5. Calibrate uncertainty
+        calibrated_probs = self._apply_uncertainty_calibration(raw_probs)
+
+        # 6. Calculate additional markets
+        additional_markets = self._calculate_additional_markets(dynamic['home'], dynamic['away'])
+
+        # 7. Calculate confidence
+        confidence = self._calculate_confidence(calibrated_probs, dynamic)
+
+        # Build comprehensive output
+        output = {
+            'expected_goals': {
+                'base': base,
+                'constrained': constrained,
+                'final': dynamic
+            },
+            'probabilities': {
+                'raw': raw_probs,
+                'calibrated': calibrated_probs
+            },
+            'additional_markets': additional_markets,
+            'confidence': confidence,
+            'key_insights': self._generate_insights(home_profile, away_profile, calibrated_probs, dynamic)
+        }
         
-        # Outcome clarity
-        max_prob = max(outcome_probs.values())
-        if max_prob > 0.5:
-            confidence_factors.append(0.7)
-        elif max_prob > 0.4:
-            confidence_factors.append(0.5)
-        else:
-            confidence_factors.append(0.3)
+        return output
+
+    def _calculate_confidence(self, probs, xg_data):
+        """Calculate prediction confidence score"""
+        max_prob = max(probs.values())
+        xg_diff = abs(xg_data['home'] - xg_data['away'])
+        total_xg = xg_data['home'] + xg_data['away']
         
-        # Form consistency
-        if (home_profile.get('recent_form', 'average') != 'average' and 
-            away_profile.get('recent_form', 'average') != 'average'):
-            confidence_factors.append(0.6)
+        # Confidence factors
+        clarity_score = max_prob  # Higher max probability = more clarity
+        xg_balance_score = 1.0 - (xg_diff / max(total_xg, 1.0))  # More balanced = less confident
         
-        avg_confidence = np.mean(confidence_factors) if confidence_factors else 0.5
+        # Combined confidence (weighted)
+        confidence_score = (clarity_score * 0.7) + (xg_balance_score * 0.3)
         
-        if avg_confidence >= 0.7:
+        if confidence_score >= 0.7:
             return "HIGH"
-        elif avg_confidence >= 0.5:
+        elif confidence_score >= 0.5:
             return "MEDIUM"
         else:
             return "LOW"
 
-# =============================================================================
-# REALISTIC STREAMLIT INTERFACE
-# =============================================================================
+    def _generate_insights(self, home_profile, away_profile, probs, xg_data):
+        """Generate tactical insights about the match"""
+        insights = []
+        
+        home_style = home_profile.get('style', '').upper()
+        away_style = away_profile.get('style', '').upper()
+        
+        # Style matchup insights
+        if home_style == 'COUNTER' and away_style == 'HIGH_PRESS':
+            insights.append("Tottenham's counter-attacking style perfectly exploits United's high press")
+        
+        if xg_data['home'] + xg_data['away'] > 3.5:
+            insights.append("High expected goal total suggests an open, entertaining match")
+        
+        if probs['draw'] > 0.25:
+            insights.append("Close match expected with significant draw probability")
+        
+        # Confidence insights
+        max_prob = max(probs.values())
+        if max_prob > 0.45:
+            winning_team = "Tottenham" if probs['home_win'] == max_prob else "Man United"
+            insights.append(f"{winning_team} has a clear advantage in this matchup")
+        
+        return insights
 
-def create_realistic_interface():
-    """Create interface using only realistically available data"""
+# ------------------------- Demo Execution -------------------------
+def run_demo():
+    """Run the Tottenham vs Man United demo"""
+    print("⚽ HYBRID PRECISION ENGINE - COMPLETE DEMO")
+    print("=" * 50)
     
-    st.markdown("""
-    <style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-        font-weight: bold;
-    }
-    .team-section {
-        background: #f8f9fa;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border-left: 4px solid #1f77b4;
-        margin-bottom: 1rem;
-    }
-    .confidence-high { color: #00a650; font-weight: bold; }
-    .confidence-medium { color: #ffa500; font-weight: bold; }
-    .confidence-low { color: #ff4b4b; font-weight: bold; }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    st.markdown('<div class="main-header">⚽ Precision Prediction Engine</div>', unsafe_allow_html=True)
-    
-    # League selection
-    league = st.selectbox("🏆 Select League", ["EPL", "La Liga", "Bundesliga", "Serie A", "Ligue 1"])
-    
-    # Team selection
-    teams = get_teams_for_league(league)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown('<div class="team-section">🏠 Home Team</div>', unsafe_allow_html=True)
-        home_team = st.selectbox("Home Team", teams, key="home")
-        
-        # Realistic stats input
-        st.subheader("📊 Basic Stats (From ESPN/FotMob)")
-        h_matches = st.number_input("Matches Played", min_value=1, max_value=38, value=10, key="h_m")
-        h_goals = st.number_input("Goals Scored", min_value=0, max_value=100, value=22, key="h_g")
-        h_conceded = st.number_input("Goals Conceded", min_value=0, max_value=100, value=8, key="h_c")
-        h_xg = st.number_input("Expected Goals (xG)", min_value=0.0, max_value=50.0, value=20.1, key="h_xg")
-        h_xga = st.number_input("Expected Goals Against (xGA)", min_value=0.0, max_value=50.0, value=9.8, key="h_xga")
-        h_possession = st.slider("Average Possession %", 0, 100, 65, key="h_poss")
-        
-        # Recent form
-        st.subheader("📈 Recent Form (Last 5 Games)")
-        h_form = st.selectbox("Form", ["Excellent", "Good", "Average", "Poor", "Terrible"], key="h_form")
-        h_last5_goals = st.number_input("Goals in Last 5", min_value=0, max_value=30, value=11, key="h_l5g")
-        h_last5_conceded = st.number_input("Conceded in Last 5", min_value=0, max_value=30, value=3, key="h_l5c")
-        
-        # Observable patterns
-        st.subheader("👀 Observable Style")
-        h_patterns = st.multiselect(
-            "What you've seen in recent games:",
-            ["Dominates possession", "Presses high", "Sits deep and counters", 
-             "Creates many chances", "Struggles to score", "Strong at home",
-             "Poor away form", "Vulnerable to counters", "Solid defense"],
-            key="h_patterns"
-        )
-    
-    with col2:
-        st.markdown('<div class="team-section">✈️ Away Team</div>', unsafe_allow_html=True)
-        away_team = st.selectbox("Away Team", teams, key="away")
-        
-        # Realistic stats input
-        st.subheader("📊 Basic Stats (From ESPN/FotMob)")
-        a_matches = st.number_input("Matches Played", min_value=1, max_value=38, value=10, key="a_m")
-        a_goals = st.number_input("Goals Scored", min_value=0, max_value=100, value=18, key="a_g")
-        a_conceded = st.number_input("Goals Conceded", min_value=0, max_value=100, value=12, key="a_c")
-        a_xg = st.number_input("Expected Goals (xG)", min_value=0.0, max_value=50.0, value=17.5, key="a_xg")
-        a_xga = st.number_input("Expected Goals Against (xGA)", min_value=0.0, max_value=50.0, value=11.2, key="a_xga")
-        a_possession = st.slider("Average Possession %", 0, 100, 55, key="a_poss")
-        
-        # Recent form
-        st.subheader("📈 Recent Form (Last 5 Games)")
-        a_form = st.selectbox("Form", ["Excellent", "Good", "Average", "Poor", "Terrible"], key="a_form")
-        a_last5_goals = st.number_input("Goals in Last 5", min_value=0, max_value=30, value=8, key="a_l5g")
-        a_last5_conceded = st.number_input("Conceded in Last 5", min_value=0, max_value=30, value=6, key="a_l5c")
-        
-        # Observable patterns
-        st.subheader("👀 Observable Style")
-        a_patterns = st.multiselect(
-            "What you've seen in recent games:",
-            ["Dominates possession", "Presses high", "Sits deep and counters", 
-             "Creates many chances", "Struggles to score", "Strong away form",
-             "Poor away form", "Vulnerable to counters", "Solid defense"],
-            key="a_patterns"
-        )
-    
-    # Context factors
-    st.markdown("---")
-    st.subheader("🎭 Match Context")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        match_importance = st.selectbox(
-            "Match Importance",
-            ["Normal", "Relegation Battle", "Title Decider", "Cup Final", "Dead Rubber"]
-        )
-        home_injuries = st.text_input("Home Key Injuries", placeholder="e.g., Davies, Kimmich")
-    
-    with col2:
-        weather = st.selectbox(
-            "Conditions",
-            ["Normal", "Poor Pitch", "Extreme Weather", "Perfect Conditions"]
-        )
-        away_injuries = st.text_input("Away Key Injuries", placeholder="e.g., De Bruyne, Salah")
-    
-    with col3:
-        crowd_impact = st.selectbox(
-            "Crowd Impact", 
-            ["Normal", "Electric Home Crowd", "Hostile Away"]
-        )
-        referee = st.selectbox("Referee Style", ["Normal", "Lenient", "Strict"])
-    
-    return {
-        'league': league,
-        'home_team': home_team,
-        'away_team': away_team,
-        'home_data': {
-            'matches': h_matches,
-            'goals': h_goals,
-            'conceded': h_conceded,
-            'xg': h_xg,
-            'xga': h_xga,
-            'possession': h_possession,
-            'form': h_form,
-            'last5_goals': h_last5_goals,
-            'last5_conceded': h_last5_conceded,
-            'patterns': h_patterns
-        },
-        'away_data': {
-            'matches': a_matches,
-            'goals': a_goals,
-            'conceded': a_conceded,
-            'xg': a_xg,
-            'xga': a_xga,
-            'possession': a_possession,
-            'form': a_form,
-            'last5_goals': a_last5_goals,
-            'last5_conceded': a_last5_conceded,
-            'patterns': a_patterns
-        },
-        'context': {
-            'match_importance': match_importance,
-            'home_injuries': [inj.strip() for inj in home_injuries.split(',')] if home_injuries else [],
-            'away_injuries': [inj.strip() for inj in away_injuries.split(',')] if away_injuries else [],
-            'weather': weather,
-            'crowd_impact': crowd_impact,
-            'referee': referee
-        }
+    engine = HybridPrecisionEngine()
+
+    # Tottenham (Home) - using stats from our conversation
+    tottenham = {
+        'name': 'Tottenham',
+        'xg_per_game': 1.01,     # 10.10 xG / 10 games
+        'possession': 53,
+        'style': 'COUNTER',
+        'is_home': True
     }
 
-def prepare_team_data(raw_data, is_home=True):
-    """Convert raw input data to engine-ready format"""
-    # Calculate per-game averages
-    matches = raw_data['matches']
-    
-    # Calculate finishing efficiency (goals vs xG)
-    finishing_efficiency = raw_data['goals'] / raw_data['xg'] if raw_data['xg'] > 0 else 1.0
-    
-    # Convert observable patterns to tactical indicators
-    observable_patterns = []
-    pattern_mapping = {
-        'Dominates possession': 'high_possession',
-        'Presses high': 'presses_high', 
-        'Sits deep and counters': 'sits_deep',
-        'Creates many chances': 'creative',
-        'Struggles to score': 'inefficient',
-        'Strong at home': 'strong_home' if is_home else 'strong_away',
-        'Poor away form': 'poor_away',
-        'Vulnerable to counters': 'vulnerable_counters',
-        'Solid defense': 'solid_defense'
-    }
-    
-    for pattern in raw_data['patterns']:
-        if pattern in pattern_mapping:
-            observable_patterns.append(pattern_mapping[pattern])
-    
-    return {
-        'name': 'Home Team' if is_home else 'Away Team',
-        'overall': {
-            'matches': matches,
-            'goals_scored': raw_data['goals'],
-            'goals_conceded': raw_data['conceded'],
-            'xG': raw_data['xg'],
-            'xGA': raw_data['xga'],
-            'goals_per_game': raw_data['goals'] / matches,
-            'goals_against_per_game': raw_data['conceded'] / matches,
-            'xg_per_game': raw_data['xg'] / matches,
-            'xga_per_game': raw_data['xga'] / matches,
-            'finishing_efficiency': finishing_efficiency
-        },
-        'possession': raw_data['possession'],
-        'recent_form': raw_data['form'].lower(),
-        'observable_patterns': observable_patterns,
-        'momentum': 1 if raw_data['form'] in ['Excellent', 'Good'] else -1 if raw_data['form'] in ['Poor', 'Terrible'] else 0
+    # Man United (Away)
+    manunited = {
+        'name': 'Man United', 
+        'xg_per_game': 1.78,     # 17.80 xG / 10 games
+        'possession': 51,
+        'style': 'HIGH_PRESS',
+        'is_home': False
     }
 
-def display_realistic_results(prediction, input_data):
-    """Display results using realistic data"""
+    print("🏠 HOME: Tottenham")
+    print(f"   xG/game: {tottenham['xg_per_game']}, Possession: {tottenham['possession']}%, Style: {tottenham['style']}")
     
-    st.markdown("---")
-    st.markdown('<div class="main-header">🎯 Prediction Results</div>', unsafe_allow_html=True)
+    print("✈️ AWAY: Man United")
+    print(f"   xG/game: {manunited['xg_per_game']}, Possession: {manunited['possession']}%, Style: {manunited['style']}")
     
-    # Confidence display
-    confidence = prediction['confidence']
-    if confidence == "HIGH":
-        st.markdown('<p class="confidence-high">🟢 High Confidence Prediction</p>', unsafe_allow_html=True)
-    elif confidence == "MEDIUM":
-        st.markdown('<p class="confidence-medium">🟡 Medium Confidence Prediction</p>', unsafe_allow_html=True)
-    else:
-        st.markdown('<p class="confidence-low">🔴 Low Confidence Prediction</p>', unsafe_allow_html=True)
-    
-    # Main predictions
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.subheader("🏆 Match Outcome")
-        outcome = prediction['match_outcome']
-        
-        fig = go.Figure(data=[
-            go.Bar(x=['Home', 'Draw', 'Away'],
-                  y=[outcome['home_win'], outcome['draw'], outcome['away_win']],
-                  marker_color=['#1f77b4', '#ff7f0e', '#2ca02c'])
-        ])
-        fig.update_layout(height=300, showlegend=False, yaxis_tickformat=".0%")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.write(f"**{input_data['home_team']}**: {outcome['home_win']:.1%}")
-        st.write(f"**Draw**: {outcome['draw']:.1%}")
-        st.write(f"**{input_data['away_team']}**: {outcome['away_win']:.1%}")
-    
-    with col2:
-        st.subheader("📊 Over/Under 2.5")
-        markets = prediction['additional_markets']
-        
-        fig = go.Figure(data=[
-            go.Bar(x=['Over 2.5', 'Under 2.5'],
-                  y=[markets['over_2.5'], markets['under_2.5']],
-                  marker_color=['#ff6b6b', '#4ecdc4'])
-        ])
-        fig.update_layout(height=300, showlegend=False, yaxis_tickformat=".0%")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.write(f"**Over 2.5**: {markets['over_2.5']:.1%}")
-        st.write(f"**Under 2.5**: {markets['under_2.5']:.1%}")
-    
-    with col3:
-        st.subheader("⚽ Both Teams to Score")
-        btts = prediction['additional_markets']
-        
-        fig = go.Figure(data=[
-            go.Bar(x=['Yes', 'No'],
-                  y=[btts['btts_yes'], btts['btts_no']],
-                  marker_color=['#a05195', '#f95d6a'])
-        ])
-        fig.update_layout(height=300, showlegend=False, yaxis_tickformat=".0%")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.write(f"**Yes**: {btts['btts_yes']:.1%}")
-        st.write(f"**No**: {btts['btts_no']:.1%}")
-    
-    # Additional insights
-    st.markdown("---")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📈 Expected Score")
-        exp_goals = prediction['expected_goals']
-        st.metric(
-            "Expected Goals",
-            f"{exp_goals['home']:.1f} - {exp_goals['away']:.1f}",
-            delta=f"Total: {exp_goals['home'] + exp_goals['away']:.1f} goals"
-        )
-        
-        st.subheader("🔍 Style Analysis")
-        home_styles = prediction['team_profiles']['home']['tactical_style']
-        away_styles = prediction['team_profiles']['away']['tactical_style']
-        
-        st.write(f"**{input_data['home_team']}**: {', '.join(home_styles)}")
-        st.write(f"**{input_data['away_team']}**: {', '.join(away_styles)}")
-        
-        effects = prediction['style_effects']
-        st.write(f"**Style Impact**: Home {effects['home_xg_boost']:.2f}x, Away {effects['away_xg_boost']:.2f}x")
-    
-    with col2:
-        st.subheader("🎯 Key Factors")
-        factors = []
-        
-        # Home form advantage
-        if input_data['home_data']['form'] in ['Excellent', 'Good']:
-            factors.append(f"✅ {input_data['home_team']} in good form")
-        elif input_data['home_data']['form'] in ['Poor', 'Terrible']:
-            factors.append(f"⚠️ {input_data['home_team']} in poor form")
-        
-        # Away form
-        if input_data['away_data']['form'] in ['Excellent', 'Good']:
-            factors.append(f"✅ {input_data['away_team']} in good form")
-        elif input_data['away_data']['form'] in ['Poor', 'Terrible']:
-            factors.append(f"⚠️ {input_data['away_team']} in poor form")
-        
-        # Observable patterns
-        if 'presses_high' in prediction['team_profiles']['home']['tactical_style']:
-            factors.append(f"✅ {input_data['home_team']} presses high")
-        if 'solid_defense' in prediction['team_profiles']['away']['tactical_style']:
-            factors.append(f"🛡️ {input_data['away_team']} solid defensively")
-        
-        for factor in factors[:5]:  # Show top 5 factors
-            st.write(factor)
-        
-        # Recommendation
-        best_bet = max([
-            ('Home Win', prediction['match_outcome']['home_win']),
-            ('Draw', prediction['match_outcome']['draw']),
-            ('Away Win', prediction['match_outcome']['away_win']),
-            ('Over 2.5', prediction['additional_markets']['over_2.5']),
-            ('Under 2.5', prediction['additional_markets']['under_2.5']),
-            ('BTTS Yes', prediction['additional_markets']['btts_yes']),
-            ('BTTS No', prediction['additional_markets']['btts_no'])
-        ], key=lambda x: x[1])
-        
-        st.success(f"**Strongest Value**: {best_bet[0]} ({best_bet[1]:.1%})")
+    print("\n" + "=" * 50)
+    print("🎯 GENERATING PREDICTION...")
+    print("=" * 50)
 
-def get_teams_for_league(league):
-    """Get teams for selected league"""
-    leagues = {
-        "EPL": ["Arsenal", "Man City", "Liverpool", "Chelsea", "Tottenham", "Man United", 
-                "Newcastle", "Brighton", "West Ham", "Aston Villa", "Crystal Palace"],
-        "La Liga": ["Real Madrid", "Barcelona", "Atletico Madrid", "Sevilla", "Valencia",
-                   "Villarreal", "Real Sociedad", "Athletic Bilbao", "Betis"],
-        "Bundesliga": ["Bayern Munich", "Borussia Dortmund", "RB Leipzig", "Bayer Leverkusen",
-                      "Eintracht Frankfurt", "Wolfsburg", "Borussia M'gladbach"],
-        "Serie A": ["Inter", "Juventus", "AC Milan", "Napoli", "Roma", "Lazio", "Atalanta"],
-        "Ligue 1": ["PSG", "Marseille", "Lyon", "Monaco", "Lille", "Nice", "Rennes"]
-    }
-    return leagues.get(league, leagues["EPL"])
+    result = engine.predict_match(tottenham, manunited)
 
-# =============================================================================
-# MAIN APPLICATION
-# =============================================================================
+    # Display results
+    print("\n📊 EXPECTED GOALS PROGRESSION:")
+    print(f"   Base:        Tottenham {result['expected_goals']['base']['home']:.2f} - {result['expected_goals']['base']['away']:.2f} Man United")
+    print(f"   Constrained: Tottenham {result['expected_goals']['constrained']['home']:.2f} - {result['expected_goals']['constrained']['away']:.2f} Man United")
+    print(f"   Final:       Tottenham {result['expected_goals']['final']['home']:.2f} - {result['expected_goals']['final']['away']:.2f} Man United")
+    print(f"   Total xG:    {result['expected_goals']['final']['home'] + result['expected_goals']['final']['away']:.2f}")
 
-def main():
-    st.set_page_config(
-        page_title="Precision Prediction Engine",
-        page_icon="⚽",
-        layout="wide"
-    )
-    
-    # Initialize engine
-    engine = RealisticPrecisionEngine()
-    
-    # Create interface
-    input_data = create_realistic_interface()
-    
-    # Prediction button
-    if st.button("🎯 Generate Prediction", type="primary", use_container_width=True):
-        with st.spinner("Analyzing match data..."):
-            # Prepare team data
-            home_team_data = prepare_team_data(input_data['home_data'], is_home=True)
-            away_team_data = prepare_team_data(input_data['away_data'], is_home=False)
-            
-            home_team_data['name'] = input_data['home_team']
-            away_team_data['name'] = input_data['away_team']
-            
-            # Generate prediction
-            prediction = engine.predict_match(home_team_data, away_team_data, input_data['context'])
-            
-            # Display results
-            display_realistic_results(prediction, input_data)
+    print(f"\n🏆 MATCH OUTCOME PROBABILITIES ({result['confidence']} CONFIDENCE):")
+    print(f"   Tottenham Win: {result['probabilities']['calibrated']['home_win']:.1%}")
+    print(f"   Draw:          {result['probabilities']['calibrated']['draw']:.1%}") 
+    print(f"   Man United Win: {result['probabilities']['calibrated']['away_win']:.1%}")
 
-if __name__ == "__main__":
-    main()
+    print(f"\n📈 ADDITIONAL MARKETS:")
+    print(f"   Over 2.5 Goals:  {result['additional_markets']['over_2.5']:.1%}")
+    print(f"   Under 2.5 Goals: {result['additional_markets']['under_2.5']:.1%}")
+    print(f"   BTTS Yes:        {result['additional_markets']['btts_yes']:.1%}")
+    print(f"   BTTS No:         {result['additional_markets']['btts_no']:.1%}")
+
+    print(f"\n💡 KEY INSIGHTS:")
+    for insight in result['key_insights']:
+        print(f"   • {insight}")
+
+    print(f"\n🎪 COMPARISON WITH ORIGINAL APP:")
+    print(f"   Our Total xG: {result['expected_goals']['final']['home'] + result['expected_goals']['final']['away']:.1f} vs App's 5.2")
+    print(f"   Our Tottenham Win: {result['probabilities']['calibrated']['home_win']:.1%} vs App's 52.7%")
+    print(f"   Our Over 2.5: {result['additional_markets']['over_2.5']:.1%} vs App's 87.6%")
+
+if __name__ == '__main__':
+    run_demo()
