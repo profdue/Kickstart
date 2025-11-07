@@ -100,6 +100,22 @@ st.markdown("""
         margin: 0.5rem 0;
         border: 2px solid #ff4757;
     }
+    .disclaimer-box {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        border-radius: 5px;
+        padding: 1rem;
+        margin: 1rem 0;
+        color: #721c24;
+    }
+    .kelly-recommendation {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 0.5rem;
+        border-radius: 5px;
+        margin: 0.25rem 0;
+        font-size: 0.9rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -115,22 +131,22 @@ class ProfessionalPredictionEngine:
         # Enhanced injury impact weights with performance multipliers
         self.injury_weights = {
             "None": {"attack_mult": 1.00, "defense_mult": 1.00, "description": "No impact"},
-            "Minor (1-2 rotational)": {"attack_mult": 0.92, "defense_mult": 0.95, "description": "Slight impact"},
-            "Moderate (1-2 key starters)": {"attack_mult": 0.85, "defense_mult": 0.88, "description": "Moderate impact"},
-            "Significant (3-4 key players)": {"attack_mult": 0.75, "defense_mult": 0.80, "description": "Significant impact"},
-            "Crisis (5+ starters)": {"attack_mult": 0.60, "defense_mult": 0.70, "description": "Severe impact"}
+            "Minor (1-2 rotational)": {"attack_mult": 0.95, "defense_mult": 0.97, "description": "Slight impact"},
+            "Moderate (1-2 key starters)": {"attack_mult": 0.88, "defense_mult": 0.90, "description": "Moderate impact"},
+            "Significant (3-4 key players)": {"attack_mult": 0.78, "defense_mult": 0.82, "description": "Significant impact"},
+            "Crisis (5+ starters)": {"attack_mult": 0.65, "defense_mult": 0.72, "description": "Severe impact"}
         }
         
         # Enhanced fatigue multipliers with progressive scaling
         self.fatigue_multipliers = {
-            2: 0.82, 3: 0.85, 4: 0.88, 5: 0.91, 6: 0.94, 
-            7: 0.97, 8: 1.00, 9: 1.02, 10: 1.03, 11: 1.04,
-            12: 1.04, 13: 1.04, 14: 1.04
+            2: 0.85, 3: 0.88, 4: 0.91, 5: 0.94, 6: 0.96, 
+            7: 0.98, 8: 1.00, 9: 1.01, 10: 1.02, 11: 1.03,
+            12: 1.03, 13: 1.03, 14: 1.03
         }
         
         # Opponent strength adjustment factors
         self.opponent_strength = {
-            "Elite": 1.2, "Strong": 1.1, "Average": 1.0, "Weak": 0.9, "Very Weak": 0.8
+            "Elite": 1.15, "Strong": 1.08, "Average": 1.0, "Weak": 0.92, "Very Weak": 0.85
         }
 
     def _initialize_complete_database(self):
@@ -284,11 +300,11 @@ class ProfessionalPredictionEngine:
             value = inputs.get(field)
             if value is not None:
                 if field in ['home_xg_total', 'home_xga_total', 'away_xg_total', 'away_xga_total']:
-                    if not (0.0 <= value <= 25.0):
-                        errors.append(f"{field} must be between 0.0 and 25.0 (Understat format)")
+                    if not (0.0 <= value <= 20.0):  # More realistic range
+                        errors.append(f"{field} must be between 0.0 and 20.0 (Understat format)")
                     elif value == 0:
                         warnings.append(f"{field} is 0 - this seems unusual for a team's last 5 matches")
-                    elif value > 20.0:
+                    elif value > 15.0:
                         warnings.append(f"{field} is very high ({value}) - please verify data quality")
                 elif field in ['home_rest', 'away_rest']:
                     if not (2 <= value <= 14):
@@ -313,6 +329,12 @@ class ProfessionalPredictionEngine:
                 errors.append(f"{field} must be at least 1.01")
             elif value is not None and value > 100.0:
                 warnings.append(f"{field} is very high ({value}) - please verify")
+        
+        # Check bookmaker overround
+        if all(inputs.get(field) for field in odds_fields):
+            total_implied = sum(1/inputs[field] for field in odds_fields[:3])  # 1x2 markets
+            if total_implied > 1.10:  # More than 10% overround
+                warnings.append(f"High bookmaker margin detected ({total_implied:.1%}) - value harder to find")
         
         # Data quality and contradiction checks
         if inputs.get('home_xg_total') and inputs.get('home_xga_total'):
@@ -342,10 +364,10 @@ class ProfessionalPredictionEngine:
         fatigue_mult = self.fatigue_multipliers.get(rest_days, 1.0)
         
         # Enhanced form trend impact
-        form_mult = 1 + (form_trend * 0.25)  # Increased form impact
+        form_mult = 1 + (form_trend * 0.2)  # More realistic form impact
         
         # Home advantage
-        home_mult = 1.1 if is_home else 1.0
+        home_mult = 1.08 if is_home else 1.0  # More realistic home advantage
         
         # Apply modifiers with position-specific impacts
         xg_modified = base_xg * attack_injury_mult * fatigue_mult * form_mult * home_mult
@@ -354,10 +376,10 @@ class ProfessionalPredictionEngine:
         return max(0.1, xg_modified), max(0.1, xga_modified)
 
     def calculate_rest_advantage(self, home_rest, away_rest):
-        """Calculate rest advantage impact"""
+        """Calculate rest advantage impact with more realistic coefficients"""
         rest_diff = home_rest - away_rest
-        advantage_mult = 1.0 + (rest_diff * 0.03)  # 3% per day advantage
-        return max(0.85, min(1.15, advantage_mult))
+        advantage_mult = 1.0 + (rest_diff * 0.02)  # More realistic 2% per day advantage
+        return max(0.9, min(1.1, advantage_mult))
 
     def dixon_coles_probabilities(self, home_exp, away_exp, max_goals=8):
         """Calculate match probabilities with Dixon-Coles adjustment"""
@@ -383,10 +405,23 @@ class ProfessionalPredictionEngine:
         # Normalize probabilities
         joint_probs = joint_probs / joint_probs.sum()
         
+        # Validate probability sum
+        total_prob = joint_probs.sum()
+        if abs(total_prob - 1.0) > 0.001:
+            joint_probs = joint_probs / total_prob  # Re-normalize
+        
         # Calculate outcome probabilities
         home_win = np.sum(np.triu(joint_probs, 1))
         draw = np.sum(np.diag(joint_probs))
         away_win = np.sum(np.tril(joint_probs, -1))
+        
+        # Validate outcome probabilities sum to 1
+        outcome_sum = home_win + draw + away_win
+        if abs(outcome_sum - 1.0) > 0.001:
+            # Normalize outcomes
+            home_win /= outcome_sum
+            draw /= outcome_sum
+            away_win /= outcome_sum
         
         # Calculate over/under probabilities
         over_25 = 1 - np.sum(joint_probs[:3, :3])  # Sum probabilities for 0-2 goals
@@ -403,7 +438,7 @@ class ProfessionalPredictionEngine:
         }
 
     def calculate_confidence(self, home_xg_per_match, away_xg_per_match, home_xga_per_match, away_xga_per_match, inputs):
-        """Enhanced confidence calculation with multiple factors"""
+        """Realistic confidence calculation with multiple factors"""
         factors = {}
         
         # Data quality factor
@@ -422,86 +457,77 @@ class ProfessionalPredictionEngine:
         
         # Rest advantage factor
         rest_diff = abs(inputs['home_rest'] - inputs['away_rest'])
-        rest_factor = 1 - (rest_diff * 0.05)  # More rest difference = less confidence
+        rest_factor = 1 - (rest_diff * 0.03)  # More rest difference = less confidence
         factors['rest_balance'] = rest_factor
         
-        # Calculate weighted confidence
+        # Market efficiency factor
+        if all(inputs.get(field) for field in ['home_odds', 'draw_odds', 'away_odds']):
+            total_implied = sum(1/inputs[field] for field in ['home_odds', 'draw_odds', 'away_odds'])
+            market_efficiency = 1 - (total_implied - 1.0)  # Lower overround = more efficient
+            factors['market_efficiency'] = max(0.7, market_efficiency)
+        else:
+            factors['market_efficiency'] = 0.8
+        
+        # Calculate weighted confidence - MORE REALISTIC RANGE
         weights = {
-            'data_quality': 0.3,
-            'predictability': 0.3, 
-            'injury_stability': 0.25,
-            'rest_balance': 0.15
+            'data_quality': 0.25,
+            'predictability': 0.25, 
+            'injury_stability': 0.20,
+            'rest_balance': 0.15,
+            'market_efficiency': 0.15
         }
         
-        confidence = sum(factors[factor] * weights[factor] for factor in factors) * 100
+        base_confidence = 55  # Realistic base for sports prediction
+        adjustment = sum(factors[factor] * weights[factor] for factor in factors) * 30
         
-        return min(95, max(50, confidence)), factors
+        confidence = base_confidence + adjustment
+        
+        return min(80, max(45, confidence)), factors  # More realistic range
+
+    def calculate_true_value(self, probability, odds):
+        """PROPER value calculation using correct mathematics"""
+        if odds <= 1.0:
+            return {'ev': -1, 'kelly_fraction': 0, 'value_ratio': 0, 'rating': 'invalid'}
+        
+        # Proper Expected Value calculation
+        ev = (probability * (odds - 1)) - (1 - probability)
+        
+        # Kelly Criterion for optimal stake sizing
+        kelly_fraction = (probability * odds - 1) / (odds - 1) if probability * odds > 1 else 0
+        
+        # Value ratio (how much edge we have)
+        value_ratio = probability * odds
+        
+        # Realistic value rating based on professional standards
+        if ev > 0.08 and value_ratio > 1.12:
+            rating = "excellent"
+        elif ev > 0.04 and value_ratio > 1.06:
+            rating = "good"
+        elif ev > 0.01 and value_ratio > 1.02:
+            rating = "fair"
+        else:
+            rating = "poor"
+        
+        return {
+            'ev': ev,
+            'kelly_fraction': max(0, kelly_fraction),
+            'value_ratio': value_ratio,
+            'rating': rating,
+            'implied_prob': 1 / odds,
+            'model_prob': probability
+        }
 
     def calculate_value_bets(self, probabilities, odds):
-        """Enhanced value betting calculation with thresholds"""
+        """Enhanced value betting calculation with PROPER mathematics"""
         value_bets = {}
         
-        # Home win value
-        home_implied = 1 / odds['home']
-        home_value = probabilities['home_win'] / home_implied
-        home_ev = (probabilities['home_win'] * odds['home']) - 1
-        
-        # Draw value
-        draw_implied = 1 / odds['draw']
-        draw_value = probabilities['draw'] / draw_implied
-        draw_ev = (probabilities['draw'] * odds['draw']) - 1
-        
-        # Away win value
-        away_implied = 1 / odds['away']
-        away_value = probabilities['away_win'] / away_implied
-        away_ev = (probabilities['away_win'] * odds['away']) - 1
-        
-        # Over 2.5 value
-        over_implied = 1 / odds['over_2.5']
-        over_value = probabilities['over_2.5'] / over_implied
-        over_ev = (probabilities['over_2.5'] * odds['over_2.5']) - 1
-        
-        value_bets['home'] = {
-            'value_ratio': home_value,
-            'ev': home_ev,
-            'implied_prob': home_implied,
-            'model_prob': probabilities['home_win'],
-            'rating': self._get_value_rating(home_value, home_ev)
-        }
-        value_bets['draw'] = {
-            'value_ratio': draw_value,
-            'ev': draw_ev,
-            'implied_prob': draw_implied,
-            'model_prob': probabilities['draw'],
-            'rating': self._get_value_rating(draw_value, draw_ev)
-        }
-        value_bets['away'] = {
-            'value_ratio': away_value,
-            'ev': away_ev,
-            'implied_prob': away_implied,
-            'model_prob': probabilities['away_win'],
-            'rating': self._get_value_rating(away_value, away_ev)
-        }
-        value_bets['over_2.5'] = {
-            'value_ratio': over_value,
-            'ev': over_ev,
-            'implied_prob': over_implied,
-            'model_prob': probabilities['over_2.5'],
-            'rating': self._get_value_rating(over_value, over_ev)
-        }
+        # Calculate true value for each market
+        value_bets['home'] = self.calculate_true_value(probabilities['home_win'], odds['home'])
+        value_bets['draw'] = self.calculate_true_value(probabilities['draw'], odds['draw'])
+        value_bets['away'] = self.calculate_true_value(probabilities['away_win'], odds['away'])
+        value_bets['over_2.5'] = self.calculate_true_value(probabilities['over_2.5'], odds['over_2.5'])
         
         return value_bets
-
-    def _get_value_rating(self, value_ratio, ev):
-        """Get value bet rating"""
-        if value_ratio > 1.15 and ev > 0.15:
-            return "excellent"
-        elif value_ratio > 1.08 and ev > 0.08:
-            return "good" 
-        elif value_ratio > 1.02 and ev > 0.02:
-            return "fair"
-        else:
-            return "poor"
 
     def detect_contradictions(self, inputs, probabilities, home_expected, away_expected):
         """Detect contradictions in predictions and insights"""
@@ -515,7 +541,7 @@ class ProfessionalPredictionEngine:
         
         # Check if strong home advantage but low home win probability
         home_adv = probabilities['home_win'] - probabilities['away_win']
-        if home_adv < -0.1:  # Home team is underdog despite advantage
+        if home_adv < -0.15:  # Home team is significant underdog
             contradictions.append(f"CONTRADICTION: Home team has advantage but is significant underdog")
         
         # Check injury impact vs prediction
@@ -525,10 +551,16 @@ class ProfessionalPredictionEngine:
         if home_injury_severity > 0.2 and probabilities['home_win'] > 0.6:
             contradictions.append(f"CONTRADICTION: {inputs['home_team']} has significant injuries but high win probability")
         
+        # Check market efficiency contradictions
+        if all(inputs.get(field) for field in ['home_odds', 'draw_odds', 'away_odds']):
+            total_implied = sum(1/inputs[field] for field in ['home_odds', 'draw_odds', 'away_odds'])
+            if total_implied > 1.10 and any(v['rating'] == 'excellent' for v in self.calculate_value_bets(probabilities, inputs).values() if isinstance(v, dict)):
+                contradictions.append("CONTRADICTION: High bookmaker margin but excellent value bets identified - verify calculations")
+        
         return contradictions
 
     def predict_match(self, inputs):
-        """Enhanced main prediction function"""
+        """Enhanced main prediction function with PROPER mathematics"""
         # Validate inputs first
         errors, warnings = self.validate_inputs(inputs)
         if errors:
@@ -573,13 +605,13 @@ class ProfessionalPredictionEngine:
         # Calculate probabilities
         probabilities = self.dixon_coles_probabilities(home_expected, away_expected)
         
-        # Calculate enhanced confidence
+        # Calculate REALISTIC confidence
         confidence, confidence_factors = self.calculate_confidence(
             home_xg_per_match, away_xg_per_match,
             home_xga_per_match, away_xga_per_match, inputs
         )
         
-        # Calculate value bets
+        # Calculate value bets with PROPER mathematics
         odds = {
             'home': inputs['home_odds'],
             'draw': inputs['draw_odds'],
@@ -616,9 +648,9 @@ class ProfessionalPredictionEngine:
         
         # Home advantage insight
         home_adv = probabilities['home_win'] - probabilities['away_win']
-        if home_adv > 0.15:
+        if home_adv > 0.10:
             insights.append(f"🏠 Strong home advantage for {inputs['home_team']} (+{home_adv:.1%})")
-        elif home_adv < -0.1:
+        elif home_adv < -0.08:
             insights.append(f"✈️ Strong away advantage for {inputs['away_team']} ({home_adv:+.1%})")
         
         # Enhanced injury impact
@@ -633,33 +665,29 @@ class ProfessionalPredictionEngine:
         # Enhanced fatigue analysis
         rest_diff = inputs['home_rest'] - inputs['away_rest']
         if rest_diff >= 3:
-            insights.append(f"🕐 {inputs['home_team']} has {rest_diff} extra rest days (significant advantage)")
+            insights.append(f"🕐 {inputs['home_team']} has {rest_diff} extra rest days (advantage)")
         elif rest_diff <= -3:
-            insights.append(f"🕐 {inputs['away_team']} has {-rest_diff} extra rest days (significant advantage)")
-        elif abs(rest_diff) >= 2:
-            insights.append(f"⚖️ {abs(rest_diff)} day rest difference between teams")
+            insights.append(f"🕐 {inputs['away_team']} has {-rest_diff} extra rest days (advantage)")
         
         # Enhanced expected goals analysis
         total_goals = home_expected + away_expected
-        if total_goals > 3.5:
-            insights.append(f"⚽ Very high-scoring match expected ({total_goals:.2f} total xG)")
-        elif total_goals > 3.0:
+        if total_goals > 3.2:
             insights.append(f"⚽ High-scoring match expected ({total_goals:.2f} total xG)")
         elif total_goals < 2.0:
             insights.append(f"🔒 Defensive battle anticipated ({total_goals:.2f} total xG)")
         
         # Enhanced form analysis
-        if home_xg_per_match > 2.0:
+        if home_xg_per_match > 2.2:
             insights.append(f"📈 {inputs['home_team']} in strong attacking form ({home_xg_per_match:.2f} xG/match)")
         elif home_xg_per_match < 1.0:
             insights.append(f"📉 {inputs['home_team']} in poor attacking form ({home_xg_per_match:.2f} xG/match)")
             
-        if away_xg_per_match > 2.0:
+        if away_xg_per_match > 2.2:
             insights.append(f"📈 {inputs['away_team']} in strong attacking form ({away_xg_per_match:.2f} xG/match)")
         elif away_xg_per_match < 1.0:
             insights.append(f"📉 {inputs['away_team']} in poor attacking form ({away_xg_per_match:.2f} xG/match)")
         
-        # Enhanced defensive form analysis (FIXED: using xGA instead of xG)
+        # Enhanced defensive form analysis
         if home_xga_per_match < 1.0:
             insights.append(f"🛡️ {inputs['home_team']} showing excellent defense ({home_xga_per_match:.2f} xGA/match)")
         elif home_xga_per_match > 2.0:
@@ -671,11 +699,17 @@ class ProfessionalPredictionEngine:
             insights.append(f"🚨 {inputs['away_team']} defensive concerns ({away_xga_per_match:.2f} xGA/match)")
         
         # Value bet insights
-        excellent_bets = [k for k, v in probabilities.items() if isinstance(v, dict) and v.get('rating') == 'excellent']
+        excellent_bets = [k for k, v in self.calculate_value_bets(probabilities, inputs).items() if v['rating'] == 'excellent']
         if excellent_bets:
             insights.append("💰 Excellent value betting opportunities identified")
-        elif any(v.get('rating') == 'good' for k, v in probabilities.items() if isinstance(v, dict)):
+        elif any(v['rating'] == 'good' for v in self.calculate_value_bets(probabilities, inputs).values()):
             insights.append("💰 Good value betting opportunities available")
+        
+        # Market efficiency insight
+        if all(inputs.get(field) for field in ['home_odds', 'draw_odds', 'away_odds']):
+            total_implied = sum(1/inputs[field] for field in ['home_odds', 'draw_odds', 'away_odds'])
+            if total_implied > 1.08:
+                insights.append(f"📊 High bookmaker margin ({total_implied:.1%}) - value harder to find")
         
         return insights
 
@@ -710,6 +744,16 @@ def get_default_inputs():
 def display_understat_input_form(engine):
     """Display the main input form with Understat format"""
     st.markdown('<div class="main-header">🎯 Professional Football Prediction Engine</div>', unsafe_allow_html=True)
+    
+    # CRITICAL DISCLAIMER
+    st.markdown("""
+    <div class="disclaimer-box">
+    <strong>⚠️ IMPORTANT DISCLAIMER:</strong><br>
+    This tool is for <strong>EDUCATIONAL AND ANALYTICAL PURPOSES ONLY</strong>. Sports prediction is inherently uncertain.<br>
+    <strong>NEVER bet more than you can afford to lose.</strong> Past performance does not guarantee future results.<br>
+    Always practice responsible gambling and seek help if needed.
+    </div>
+    """, unsafe_allow_html=True)
     
     # Use existing inputs or defaults
     if st.session_state.input_data:
@@ -785,7 +829,7 @@ def display_understat_input_form(engine):
             home_xg_total = st.number_input(
                 "Total xG Scored",
                 min_value=0.0,
-                max_value=25.0,
+                max_value=20.0,
                 value=current_inputs['home_xg_total'],
                 step=0.1,
                 key="home_xg_total_input",
@@ -795,7 +839,7 @@ def display_understat_input_form(engine):
             home_xga_total = st.number_input(
                 "Total xGA Conceded",
                 min_value=0.0,
-                max_value=25.0,
+                max_value=20.0,
                 value=current_inputs['home_xga_total'],
                 step=0.1,
                 key="home_xga_total_input",
@@ -838,7 +882,7 @@ def display_understat_input_form(engine):
             away_xg_total = st.number_input(
                 "Total xG Scored",
                 min_value=0.0,
-                max_value=25.0,
+                max_value=20.0,
                 value=current_inputs['away_xg_total'],
                 step=0.1,
                 key="away_xg_total_input",
@@ -848,7 +892,7 @@ def display_understat_input_form(engine):
             away_xga_total = st.number_input(
                 "Total xGA Conceded",
                 min_value=0.0,
-                max_value=25.0,
+                max_value=20.0,
                 value=current_inputs['away_xga_total'],
                 step=0.1,
                 key="away_xga_total_input",
@@ -1028,10 +1072,10 @@ def display_prediction_results(engine, result, inputs):
     st.markdown(f'<h1 style="font-size: 4rem; margin: 1rem 0;">{expected_home:.1f} - {expected_away:.1f}</h1>', unsafe_allow_html=True)
     st.markdown('<p style="font-size: 1.2rem;">Expected Final Score</p>', unsafe_allow_html=True)
     
-    # Enhanced confidence badge with factors
+    # REALISTIC confidence badge with factors
     confidence = result['confidence']
-    confidence_stars = "★" * int(confidence / 20) + "☆" * (5 - int(confidence / 20))
-    confidence_text = "Low" if confidence < 60 else "Medium" if confidence < 75 else "High" if confidence < 85 else "Very High"
+    confidence_stars = "★" * int((confidence - 45) / 7) + "☆" * (5 - int((confidence - 45) / 7))
+    confidence_text = "Low" if confidence < 55 else "Medium" if confidence < 65 else "High" if confidence < 75 else "Very High"
     
     st.markdown(f'<div style="margin-top: 1rem;">', unsafe_allow_html=True)
     st.markdown(f'<span style="background: rgba(255,255,255,0.3); padding: 0.5rem 1rem; border-radius: 20px; font-weight: bold;">Confidence: {confidence_stars} ({confidence:.0f}% - {confidence_text})</span>', unsafe_allow_html=True)
@@ -1043,6 +1087,7 @@ def display_prediction_results(engine, result, inputs):
         st.write("**Confidence Factors:**")
         for factor, value in factors.items():
             st.write(f"- {factor.replace('_', ' ').title()}: {value:.1%}")
+        st.info("ℹ️ Confidence scores are calibrated to realistic sports prediction ranges (45-80%)")
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
@@ -1122,7 +1167,7 @@ def display_prediction_results(engine, result, inputs):
     
     st.markdown("---")
     
-    # Recommended Bets
+    # Recommended Bets with Kelly Sizing
     st.markdown('<div class="section-header">💰 Recommended Value Bets</div>', unsafe_allow_html=True)
     
     # Find best value bets
@@ -1136,7 +1181,8 @@ def display_prediction_results(engine, result, inputs):
                 'odds': inputs[f"{bet_type}_odds" if bet_type != 'over_2.5' else 'over_odds'],
                 'model_prob': data['model_prob'],
                 'implied_prob': data['implied_prob'],
-                'rating': data['rating']
+                'rating': data['rating'],
+                'kelly_fraction': data['kelly_fraction']
             })
     
     # Sort by value ratio
@@ -1160,6 +1206,12 @@ def display_prediction_results(engine, result, inputs):
             st.markdown(f"**Model Probability:** {bet['model_prob']:.1%} | **Market Implied:** {bet['implied_prob']:.1%}")
             st.markdown(f"**Value Ratio:** {bet['value_ratio']:.2f}x | **Expected Value:** {bet['ev']:.1%}")
             
+            # Kelly Criterion stake sizing
+            if bet['kelly_fraction'] > 0:
+                st.markdown(f'<div class="kelly-recommendation">', unsafe_allow_html=True)
+                st.markdown(f"**Kelly Recommended Stake:** {bet['kelly_fraction']:.1%} of bankroll")
+                st.markdown('</div>', unsafe_allow_html=True)
+            
             if bet['rating'] == 'excellent':
                 st.markdown("**🎯 EXCELLENT VALUE BET**")
             else:
@@ -1169,7 +1221,7 @@ def display_prediction_results(engine, result, inputs):
     else:
         st.markdown('<div class="warning-box">', unsafe_allow_html=True)
         st.markdown("**No strong value bets identified**")
-        st.markdown("All market odds appear efficient for this match. Consider waiting for line movement.")
+        st.markdown("All market odds appear efficient for this match. Consider waiting for line movement or reviewing other matches.")
         st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
@@ -1193,6 +1245,19 @@ def display_prediction_results(engine, result, inputs):
     
     st.markdown("---")
     
+    # Bankroll Management Advice
+    st.markdown('<div class="section-header">💼 Bankroll Management</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="warning-box">
+    <strong>Responsible Betting Guidelines:</strong><br>
+    • <strong>Never bet more than 1-2% of your total bankroll on a single bet</strong><br>
+    • Use Kelly Criterion fractions as maximum stakes, not recommendations<br>
+    • Maintain detailed records of all bets and results<br>
+    • Set stop-loss limits and stick to them<br>
+    • Remember: Even the best models have losing streaks
+    </div>
+    """, unsafe_allow_html=True)
+    
     # Action Buttons
     col1, col2, col3 = st.columns(3)
     
@@ -1213,17 +1278,18 @@ def display_prediction_results(engine, result, inputs):
             st.info("Advanced analytics feature coming soon!")
 
 def _display_value_analysis(value_data):
-    """Display value analysis for a bet"""
+    """Display value analysis for a bet with PROPER mathematics"""
     if value_data['rating'] == 'excellent':
-        st.success(f"**Excellent Value:** {value_data['value_ratio']:.2f}x")
+        st.success(f"**Excellent Value:** EV {value_data['ev']:.1%}")
     elif value_data['rating'] == 'good':
-        st.info(f"**Good Value:** {value_data['value_ratio']:.2f}x")
+        st.info(f"**Good Value:** EV {value_data['ev']:.1%}")
     elif value_data['rating'] == 'fair':
-        st.warning(f"**Fair Value:** {value_data['value_ratio']:.2f}x")
+        st.warning(f"**Fair Value:** EV {value_data['ev']:.1%}")
     else:
-        st.error(f"**Poor Value:** {value_data['value_ratio']:.2f}x")
+        st.error(f"**Poor Value:** EV {value_data['ev']:.1%}")
         
-    st.write(f"**Expected Value:** {value_data['ev']:.1%}")
+    if value_data['kelly_fraction'] > 0:
+        st.write(f"**Kelly Stake:** {value_data['kelly_fraction']:.1%}")
 
 def main():
     """Main application function"""
