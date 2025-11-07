@@ -26,17 +26,71 @@ st.markdown("""
         color: #2e86ab;
         margin-top: 1.5rem;
         margin-bottom: 1rem;
+        font-weight: bold;
     }
-    .value-bet-box {
-        background-color: #f0f8ff;
-        padding: 1rem;
+    .prediction-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 15px;
+        text-align: center;
+        margin: 1rem 0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .expected-score {
+        font-size: 4rem;
+        font-weight: bold;
+        margin: 1rem 0;
+        color: white;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+    .prediction-card {
+        background: white;
+        padding: 1.5rem;
         border-radius: 10px;
-        border-left: 4px solid #1f77b4;
+        border-left: 5px solid #1f77b4;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         margin: 0.5rem 0;
+        height: 100%;
     }
-    .strong-value {
-        background-color: #e6f7ff;
-        border-left: 4px solid #0066cc;
+    .value-bet-card {
+        background: linear-gradient(135deg, #00b09b 0%, #96c93d 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .probability-badge {
+        background-color: #1f77b4;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-weight: bold;
+        margin: 0.3rem;
+        display: inline-block;
+        font-size: 0.9rem;
+    }
+    .team-analysis-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        border: 2px solid #e9ecef;
+        margin: 0.5rem 0;
+        height: 100%;
+    }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+        margin: 1rem 0;
+    }
+    .stat-item {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        text-align: center;
+        border-left: 4px solid #1f77b4;
     }
     .confidence-high {
         color: #00a86b;
@@ -50,47 +104,12 @@ st.markdown("""
         color: #ff4444;
         font-weight: bold;
     }
-    .team-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1.5rem;
-        border-radius: 15px;
+    .insight-box {
+        background: #e3f2fd;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #2196f3;
         margin: 0.5rem 0;
-    }
-    .input-section {
-        background-color: #f8f9fa;
-        padding: 2rem;
-        border-radius: 15px;
-        border: 2px solid #e9ecef;
-        margin-bottom: 2rem;
-    }
-    .prediction-section {
-        background-color: #ffffff;
-        padding: 2rem;
-        border-radius: 15px;
-        border: 2px solid #1f77b4;
-        margin-bottom: 2rem;
-    }
-    .prediction-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 2rem;
-        border-radius: 15px;
-        text-align: center;
-        margin: 1rem 0;
-    }
-    .expected-score {
-        font-size: 3rem;
-        font-weight: bold;
-        margin: 1rem 0;
-    }
-    .probability-badge {
-        background-color: #1f77b4;
-        color: white;
-        padding: 0.5rem 1rem;
-        border-radius: 25px;
-        font-weight: bold;
-        margin: 0.5rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -145,68 +164,6 @@ class EnhancedPredictionEngine:
             "Cadiz": {"league": "La Liga", "xg": 1.10, "xga": 1.80, "possession": 40, "tactical_style": "DEFENSIVE"},
             "Granada": {"league": "La Liga", "xg": 1.05, "xga": 2.10, "possession": 48, "tactical_style": "DEFENSIVE"},
             "Almeria": {"league": "La Liga", "xg": 1.00, "xga": 2.20, "possession": 50, "tactical_style": "POSSESSION"},
-            
-            # Bundesliga Teams
-            "Bayer Leverkusen": {"league": "Bundesliga", "xg": 2.25, "xga": 0.85, "possession": 61, "tactical_style": "POSSESSION"},
-            "Bayern Munich": {"league": "Bundesliga", "xg": 2.40, "xga": 0.95, "possession": 63, "tactical_style": "HIGH_PRESS"},
-            "Stuttgart": {"league": "Bundesliga", "xg": 2.00, "xga": 1.15, "possession": 55, "tactical_style": "HIGH_PRESS"},
-            "RB Leipzig": {"league": "Bundesliga", "xg": 2.10, "xga": 1.25, "possession": 58, "tactical_style": "GEGENPRESS"},
-            "Borussia Dortmund": {"league": "Bundesliga", "xg": 2.05, "xga": 1.30, "possession": 59, "tactical_style": "HIGH_PRESS"},
-            "Eintracht Frankfurt": {"league": "Bundesliga", "xg": 1.70, "xga": 1.40, "possession": 51, "tactical_style": "COUNTER_ATTACK"},
-            "Freiburg": {"league": "Bundesliga", "xg": 1.65, "xga": 1.45, "possession": 50, "tactical_style": "BALANCED"},
-            "Hoffenheim": {"league": "Bundesliga", "xg": 1.75, "xga": 1.60, "possession": 53, "tactical_style": "HIGH_PRESS"},
-            "Heidenheim": {"league": "Bundesliga", "xg": 1.40, "xga": 1.55, "possession": 46, "tactical_style": "DEFENSIVE"},
-            "Wolfsburg": {"league": "Bundesliga", "xg": 1.55, "xga": 1.65, "possession": 52, "tactical_style": "TRANSITION"},
-            "Augsburg": {"league": "Bundesliga", "xg": 1.50, "xga": 1.70, "possession": 47, "tactical_style": "COUNTER_ATTACK"},
-            "Borussia M'gladbach": {"league": "Bundesliga", "xg": 1.60, "xga": 1.75, "possession": 54, "tactical_style": "HIGH_PRESS"},
-            "Werder Bremen": {"league": "Bundesliga", "xg": 1.45, "xga": 1.80, "possession": 49, "tactical_style": "COUNTER_ATTACK"},
-            "Bochum": {"league": "Bundesliga", "xg": 1.30, "xga": 1.85, "possession": 44, "tactical_style": "DEFENSIVE"},
-            "Union Berlin": {"league": "Bundesliga", "xg": 1.25, "xga": 1.90, "possession": 45, "tactical_style": "DEFENSIVE"},
-            "Mainz": {"league": "Bundesliga", "xg": 1.35, "xga": 1.95, "possession": 48, "tactical_style": "HIGH_PRESS"},
-            "Koln": {"league": "Bundesliga", "xg": 1.20, "xga": 2.00, "possession": 50, "tactical_style": "POSSESSION"},
-            "Darmstadt": {"league": "Bundesliga", "xg": 1.15, "xga": 2.20, "possession": 47, "tactical_style": "DEFENSIVE"},
-            
-            # Serie A Teams
-            "Inter Milan": {"league": "Serie A", "xg": 2.15, "xga": 0.75, "possession": 57, "tactical_style": "HIGH_PRESS"},
-            "Juventus": {"league": "Serie A", "xg": 1.85, "xga": 0.95, "possession": 52, "tactical_style": "DEFENSIVE"},
-            "AC Milan": {"league": "Serie A", "xg": 2.00, "xga": 1.10, "possession": 56, "tactical_style": "HIGH_PRESS"},
-            "Fiorentina": {"league": "Serie A", "xg": 1.75, "xga": 1.25, "possession": 58, "tactical_style": "POSSESSION"},
-            "Atalanta": {"league": "Serie A", "xg": 1.90, "xga": 1.35, "possession": 54, "tactical_style": "HIGH_PRESS"},
-            "Lazio": {"league": "Serie A", "xg": 1.70, "xga": 1.20, "possession": 55, "tactical_style": "POSSESSION"},
-            "Napoli": {"league": "Serie A", "xg": 1.80, "xga": 1.40, "possession": 53, "tactical_style": "COUNTER_ATTACK"},
-            "Roma": {"league": "Serie A", "xg": 1.65, "xga": 1.30, "possession": 52, "tactical_style": "DEFENSIVE"},
-            "Bologna": {"league": "Serie A", "xg": 1.60, "xga": 1.25, "possession": 51, "tactical_style": "HIGH_PRESS"},
-            "Monza": {"league": "Serie A", "xg": 1.35, "xga": 1.45, "possession": 48, "tactical_style": "DEFENSIVE"},
-            "Torino": {"league": "Serie A", "xg": 1.40, "xga": 1.35, "possession": 49, "tactical_style": "DEFENSIVE"},
-            "Genoa": {"league": "Serie A", "xg": 1.30, "xga": 1.50, "possession": 47, "tactical_style": "DEFENSIVE"},
-            "Lecce": {"league": "Serie A", "xg": 1.25, "xga": 1.55, "possession": 46, "tactical_style": "DEFENSIVE"},
-            "Sassuolo": {"league": "Serie A", "xg": 1.45, "xga": 1.80, "possession": 53, "tactical_style": "POSSESSION"},
-            "Frosinone": {"league": "Serie A", "xg": 1.20, "xga": 1.85, "possession": 50, "tactical_style": "HIGH_PRESS"},
-            "Udinese": {"league": "Serie A", "xg": 1.35, "xga": 1.65, "possession": 49, "tactical_style": "DEFENSIVE"},
-            "Empoli": {"league": "Serie A", "xg": 1.15, "xga": 1.75, "possession": 48, "tactical_style": "DEFENSIVE"},
-            "Cagliari": {"league": "Serie A", "xg": 1.10, "xga": 1.90, "possession": 46, "tactical_style": "DEFENSIVE"},
-            "Verona": {"league": "Serie A", "xg": 1.05, "xga": 1.95, "possession": 44, "tactical_style": "DEFENSIVE"},
-            "Salernitana": {"league": "Serie A", "xg": 1.00, "xga": 2.10, "possession": 45, "tactical_style": "DEFENSIVE"},
-            
-            # Ligue 1 Teams
-            "PSG": {"league": "Ligue 1", "xg": 2.30, "xga": 0.90, "possession": 64, "tactical_style": "POSSESSION"},
-            "Nice": {"league": "Ligue 1", "xg": 1.80, "xga": 0.85, "possession": 52, "tactical_style": "DEFENSIVE"},
-            "Monaco": {"league": "Ligue 1", "xg": 2.00, "xga": 1.40, "possession": 56, "tactical_style": "HIGH_PRESS"},
-            "Lille": {"league": "Ligue 1", "xg": 1.75, "xga": 1.20, "possession": 53, "tactical_style": "DEFENSIVE"},
-            "Brest": {"league": "Ligue 1", "xg": 1.60, "xga": 1.25, "possession": 49, "tactical_style": "DEFENSIVE"},
-            "Lens": {"league": "Ligue 1", "xg": 1.70, "xga": 1.35, "possession": 51, "tactical_style": "HIGH_PRESS"},
-            "Marseille": {"league": "Ligue 1", "xg": 1.85, "xga": 1.50, "possession": 55, "tactical_style": "HIGH_PRESS"},
-            "Rennes": {"league": "Ligue 1", "xg": 1.65, "xga": 1.45, "possession": 54, "tactical_style": "POSSESSION"},
-            "Reims": {"league": "Ligue 1", "xg": 1.55, "xga": 1.55, "possession": 50, "tactical_style": "HIGH_PRESS"},
-            "Strasbourg": {"league": "Ligue 1", "xg": 1.45, "xga": 1.60, "possession": 48, "tactical_style": "DEFENSIVE"},
-            "Montpellier": {"league": "Ligue 1", "xg": 1.50, "xga": 1.70, "possession": 49, "tactical_style": "COUNTER_ATTACK"},
-            "Nantes": {"league": "Ligue 1", "xg": 1.35, "xga": 1.65, "possession": 47, "tactical_style": "DEFENSIVE"},
-            "Le Havre": {"league": "Ligue 1", "xg": 1.25, "xga": 1.55, "possession": 46, "tactical_style": "DEFENSIVE"},
-            "Toulouse": {"league": "Ligue 1", "xg": 1.40, "xga": 1.75, "possession": 51, "tactical_style": "HIGH_PRESS"},
-            "Lorient": {"league": "Ligue 1", "xg": 1.30, "xga": 1.85, "possession": 49, "tactical_style": "COUNTER_ATTACK"},
-            "Clermont Foot": {"league": "Ligue 1", "xg": 1.15, "xga": 1.90, "possession": 47, "tactical_style": "DEFENSIVE"},
-            "Metz": {"league": "Ligue 1", "xg": 1.20, "xga": 2.00, "possession": 45, "tactical_style": "DEFENSIVE"},
-            "Lyon": {"league": "Ligue 1", "xg": 1.45, "xga": 1.80, "possession": 53, "tactical_style": "POSSESSION"},
         }
         
         # Enhanced tactical style effects
@@ -432,7 +389,6 @@ def display_input_section(engine):
 
 def display_prediction_section(engine, input_data):
     """Display the prediction results section"""
-    st.markdown('<div class="prediction-section">', unsafe_allow_html=True)
     
     # Convert injury tiers to numerical values
     injury_tier_map = {
@@ -442,11 +398,6 @@ def display_prediction_section(engine, input_data):
     
     home_injury_tier = injury_tier_map[input_data['home_injuries']]
     away_injury_tier = injury_tier_map[input_data['away_injuries']]
-    
-    # Main Prediction Header
-    st.markdown(f'<div class="prediction-card">', unsafe_allow_html=True)
-    st.markdown(f'<h1 style="text-align: center; color: white; margin-bottom: 1rem;">🎯 PREDICTION RESULTS</h1>', unsafe_allow_html=True)
-    st.markdown(f'<h2 style="text-align: center; color: white; margin-bottom: 2rem;">{input_data["home_team"]} vs {input_data["away_team"]}</h2>', unsafe_allow_html=True)
     
     # Apply injury modifiers
     home_xg_adj, home_xga_adj = engine.apply_injury_modifier(input_data['home_xg'], input_data['home_xga'], home_injury_tier)
@@ -487,84 +438,133 @@ def display_prediction_section(engine, input_data):
     draw_prob = round((draw_prob / total) * 100, 1)
     away_win_prob = round((away_win_prob / total) * 100, 1)
     
-    # Expected Score Display
+    # Over/Under and BTTS probabilities
+    over_25_prob = round(min(95, max(25, (total_xg / 2.5) * 65)), 1)
+    under_25_prob = round(100 - over_25_prob, 1)
+    
+    btts_yes_prob = round(min(90, max(25, ((home_xg_final * 0.7 + away_xg_final * 0.7) / 2) * 85)), 1)
+    btts_no_prob = round(100 - btts_yes_prob, 1)
+    
+    # Expected Score
     expected_home_goals = round(home_xg_final, 1)
     expected_away_goals = round(away_xg_final, 1)
     
+    # HEADER SECTION
+    st.markdown('<div class="prediction-header">', unsafe_allow_html=True)
+    st.markdown('<h1 style="text-align: center; color: white; margin-bottom: 1rem;">🎯 PREDICTION RESULTS</h1>', unsafe_allow_html=True)
+    st.markdown(f'<h2 style="text-align: center; color: white; margin-bottom: 2rem;">{input_data["home_team"]} vs {input_data["away_team"]}</h2>', unsafe_allow_html=True)
     st.markdown(f'<div class="expected-score">{expected_home_goals} - {expected_away_goals}</div>', unsafe_allow_html=True)
     st.markdown(f'<p style="text-align: center; color: white; font-size: 1.2rem;">Expected Final Score</p>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Quick Stats Row
+    # QUICK STATS ROW
     st.markdown("---")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Home Win Probability", f"{home_win_prob}%")
+        st.metric("🏠 Home Win", f"{home_win_prob}%")
     with col2:
-        st.metric("Draw Probability", f"{draw_prob}%")
+        st.metric("🤝 Draw", f"{draw_prob}%")
     with col3:
-        st.metric("Away Win Probability", f"{away_win_prob}%")
+        st.metric("✈️ Away Win", f"{away_win_prob}%")
     with col4:
-        over_25_prob = round(min(95, max(25, (total_xg / 2.5) * 65)), 1)
-        st.metric("Over 2.5 Goals", f"{over_25_prob}%")
+        st.metric("⚽ Over 2.5", f"{over_25_prob}%")
     
-    # Main Prediction Cards
+    # MAIN PREDICTION CARDS
     st.markdown("---")
     st.markdown('<div class="section-header">📊 Detailed Predictions</div>', unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown('<div class="team-card">', unsafe_allow_html=True)
+        st.markdown('<div class="prediction-card">', unsafe_allow_html=True)
         st.subheader("🏆 Match Outcome")
         st.markdown(f'<div style="text-align: center; margin: 1rem 0;">')
-        st.markdown(f'<span class="probability-badge">{input_data["home_team"]} Win: {home_win_prob}%</span>', unsafe_allow_html=True)
-        st.markdown(f'<span class="probability-badge">Draw: {draw_prob}%</span>', unsafe_allow_html=True)
-        st.markdown(f'<span class="probability-badge">{input_data["away_team"]} Win: {away_win_prob}%</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="probability-badge" style="background-color: #1f77b4;">{input_data["home_team"]}: {home_win_prob}%</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="probability-badge" style="background-color: #ff7f0e;">Draw: {draw_prob}%</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="probability-badge" style="background-color: #d62728;">{input_data["away_team"]}: {away_win_prob}%</span>', unsafe_allow_html=True)
         st.markdown('</div>')
+        
+        # Outcome pie chart
+        fig_outcome = go.Figure(data=[go.Pie(
+            labels=[f'{input_data["home_team"]}', 'Draw', f'{input_data["away_team"]}'],
+            values=[home_win_prob, draw_prob, away_win_prob],
+            hole=.3,
+            marker_colors=['#1f77b4', '#ff7f0e', '#d62728']
+        )])
+        fig_outcome.update_layout(height=300, showlegend=True)
+        st.plotly_chart(fig_outcome, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
-        st.markdown('<div class="team-card">', unsafe_allow_html=True)
+        st.markdown('<div class="prediction-card">', unsafe_allow_html=True)
         st.subheader("⚽ Goals Market")
-        under_25_prob = round(100 - over_25_prob, 1)
         st.markdown(f'<div style="text-align: center; margin: 1rem 0;">')
-        st.markdown(f'<span class="probability-badge">Over 2.5: {over_25_prob}%</span>', unsafe_allow_html=True)
-        st.markdown(f'<span class="probability-badge">Under 2.5: {under_25_prob}%</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="probability-badge" style="background-color: #2ca02c;">Over 2.5: {over_25_prob}%</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="probability-badge" style="background-color: #ff7f0e;">Under 2.5: {under_25_prob}%</span>', unsafe_allow_html=True)
         st.markdown('</div>')
         
-        btts_yes_prob = round(min(90, max(25, ((home_xg_final * 0.7 + away_xg_final * 0.7) / 2) * 85)), 1)
-        btts_no_prob = round(100 - btts_yes_prob, 1)
         st.markdown(f'<div style="text-align: center; margin: 1rem 0;">')
-        st.markdown(f'<span class="probability-badge">BTTS Yes: {btts_yes_prob}%</span>', unsafe_allow_html=True)
-        st.markdown(f'<span class="probability-badge">BTTS No: {btts_no_prob}%</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="probability-badge" style="background-color: #9467bd;">BTTS Yes: {btts_yes_prob}%</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="probability-badge" style="background-color: #8c564b;">BTTS No: {btts_no_prob}%</span>', unsafe_allow_html=True)
         st.markdown('</div>')
+        
+        # Goals market chart
+        fig_goals = go.Figure()
+        fig_goals.add_trace(go.Bar(
+            x=['Over 2.5', 'Under 2.5', 'BTTS Yes', 'BTTS No'],
+            y=[over_25_prob, under_25_prob, btts_yes_prob, btts_no_prob],
+            marker_color=['#2ca02c', '#ff7f0e', '#9467bd', '#8c564b']
+        ))
+        fig_goals.update_layout(
+            height=300,
+            yaxis_title='Probability (%)',
+            showlegend=False
+        )
+        st.plotly_chart(fig_goals, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col3:
-        st.markdown('<div class="team-card">', unsafe_allow_html=True)
-        st.subheader("💰 Value Bets")
-        
         # Calculate value bets
         odds_dict = {'home': input_data['home_odds'], 'draw': input_data['draw_odds'], 'over_2.5': input_data['over_odds']}
         probs_dict = {'home': home_win_prob/100, 'draw': draw_prob/100, 'over_2.5': over_25_prob/100}
         value_bets = engine.calculate_value_bets(probs_dict, odds_dict)
         
-        st.markdown(f'<div style="text-align: center; margin: 1rem 0;">')
-        if value_bets['home']['value'] > 1.1:
-            st.markdown(f'<span class="probability-badge" style="background-color: #00a86b;">{input_data["home_team"]} Win ✅</span>', unsafe_allow_html=True)
-        if value_bets['draw']['value'] > 1.1:
-            st.markdown(f'<span class="probability-badge" style="background-color: #00a86b;">Draw ✅</span>', unsafe_allow_html=True)
-        if value_bets['over_2.5']['value'] > 1.1:
-            st.markdown(f'<span class="probability-badge" style="background-color: #00a86b;">Over 2.5 ✅</span>', unsafe_allow_html=True)
+        st.markdown('<div class="value-bet-card">', unsafe_allow_html=True)
+        st.subheader("💰 Value Bets")
+        st.markdown('<p style="color: white; text-align: center;">Recommended bets based on model vs market odds</p>', unsafe_allow_html=True)
         
-        if all(value['value'] <= 1.1 for value in value_bets.values()):
-            st.markdown(f'<span class="probability-badge" style="background-color: #ff4444;">No Value Bets ❌</span>', unsafe_allow_html=True)
-        st.markdown('</div>')
+        value_found = False
+        if value_bets['home']['value'] > 1.1:
+            st.markdown(f'<div style="background: rgba(255,255,255,0.2); padding: 1rem; border-radius: 8px; margin: 0.5rem 0;">', unsafe_allow_html=True)
+            st.markdown(f'<h4 style="color: white; margin: 0;">🏠 {input_data["home_team"]} Win</h4>', unsafe_allow_html=True)
+            st.markdown(f'<p style="color: white; margin: 0;">Value: {value_bets["home"]["value"]}x | EV: {value_bets["home"]["ev"]}</p>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            value_found = True
+        
+        if value_bets['draw']['value'] > 1.1:
+            st.markdown(f'<div style="background: rgba(255,255,255,0.2); padding: 1rem; border-radius: 8px; margin: 0.5rem 0;">', unsafe_allow_html=True)
+            st.markdown(f'<h4 style="color: white; margin: 0;">🤝 Draw</h4>', unsafe_allow_html=True)
+            st.markdown(f'<p style="color: white; margin: 0;">Value: {value_bets["draw"]["value"]}x | EV: {value_bets["draw"]["ev"]}</p>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            value_found = True
+        
+        if value_bets['over_2.5']['value'] > 1.1:
+            st.markdown(f'<div style="background: rgba(255,255,255,0.2); padding: 1rem; border-radius: 8px; margin: 0.5rem 0;">', unsafe_allow_html=True)
+            st.markdown(f'<h4 style="color: white; margin: 0;">⚽ Over 2.5 Goals</h4>', unsafe_allow_html=True)
+            st.markdown(f'<p style="color: white; margin: 0;">Value: {value_bets["over_2.5"]["value"]}x | EV: {value_bets["over_2.5"]["ev"]}</p>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            value_found = True
+        
+        if not value_found:
+            st.markdown(f'<div style="background: rgba(255,255,255,0.2); padding: 1rem; border-radius: 8px; margin: 0.5rem 0;">', unsafe_allow_html=True)
+            st.markdown(f'<h4 style="color: white; margin: 0;">📊 No Strong Value</h4>', unsafe_allow_html=True)
+            st.markdown(f'<p style="color: white; margin: 0;">Market odds align closely with predictions</p>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Team Analysis
+    # TEAM ANALYSIS SECTION
     st.markdown("---")
     st.markdown('<div class="section-header">🔍 Team Analysis</div>', unsafe_allow_html=True)
     
@@ -572,94 +572,133 @@ def display_prediction_section(engine, input_data):
     
     with col1:
         home_defense, home_attack = engine.team_strength_snapshot(input_data['home_xg'], input_data['home_xga'])
+        st.markdown('<div class="team-analysis-card">', unsafe_allow_html=True)
         st.subheader(f"🏠 {input_data['home_team']}")
-        st.write(f"**Defensive Strength**: {home_defense}/10")
-        st.write(f"**Attacking Strength**: {home_attack}/10")
+        
+        # Home team stats
+        col1a, col2a = st.columns(2)
+        with col1a:
+            st.metric("Defensive Strength", f"{home_defense}/10")
+        with col2a:
+            st.metric("Attacking Strength", f"{home_attack}/10")
+        
         st.write(f"**Tactical Style**: {input_data['home_tactical'].replace('_', ' ').title()}")
         st.write(f"**Injuries**: {input_data['home_injuries']}")
+        st.write(f"**Base xG**: {input_data['home_xg']}")
+        st.write(f"**Base xGA**: {input_data['home_xga']}")
         
-        # Home team strength gauge
+        # Home team gauge
         fig_home = go.Figure(go.Indicator(
-            mode = "gauge+number+delta",
+            mode = "gauge+number",
             value = home_attack,
             domain = {'x': [0, 1], 'y': [0, 1]},
-            title = {'text': "Attacking Strength"},
+            title = {'text': "Attack Rating"},
             gauge = {
                 'axis': {'range': [None, 10]},
                 'bar': {'color': "darkblue"},
                 'steps': [
                     {'range': [0, 4], 'color': "lightgray"},
-                    {'range': [4, 7], 'color': "yellow"},
+                    {'range': [4, 7], 'color': "lightyellow"},
                     {'range': [7, 10], 'color': "lightgreen"}
                 ]
             }
         ))
-        fig_home.update_layout(height=300)
+        fig_home.update_layout(height=250)
         st.plotly_chart(fig_home, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
         away_defense, away_attack = engine.team_strength_snapshot(input_data['away_xg'], input_data['away_xga'])
+        st.markdown('<div class="team-analysis-card">', unsafe_allow_html=True)
         st.subheader(f"✈️ {input_data['away_team']}")
-        st.write(f"**Defensive Strength**: {away_defense}/10")
-        st.write(f"**Attacking Strength**: {away_attack}/10")
+        
+        # Away team stats
+        col1a, col2a = st.columns(2)
+        with col1a:
+            st.metric("Defensive Strength", f"{away_defense}/10")
+        with col2a:
+            st.metric("Attacking Strength", f"{away_attack}/10")
+        
         st.write(f"**Tactical Style**: {input_data['away_tactical'].replace('_', ' ').title()}")
         st.write(f"**Injuries**: {input_data['away_injuries']}")
+        st.write(f"**Base xG**: {input_data['away_xg']}")
+        st.write(f"**Base xGA**: {input_data['away_xga']}")
         
-        # Away team strength gauge
+        # Away team gauge
         fig_away = go.Figure(go.Indicator(
-            mode = "gauge+number+delta",
+            mode = "gauge+number",
             value = away_attack,
             domain = {'x': [0, 1], 'y': [0, 1]},
-            title = {'text': "Attacking Strength"},
+            title = {'text': "Attack Rating"},
             gauge = {
                 'axis': {'range': [None, 10]},
                 'bar': {'color': "darkred"},
                 'steps': [
                     {'range': [0, 4], 'color': "lightgray"},
-                    {'range': [4, 7], 'color': "yellow"},
+                    {'range': [4, 7], 'color': "lightyellow"},
                     {'range': [7, 10], 'color': "lightgreen"}
                 ]
             }
         ))
-        fig_away.update_layout(height=300)
+        fig_away.update_layout(height=250)
         st.plotly_chart(fig_away, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     
-    # Model Insights
+    # MODEL INSIGHTS SECTION
     st.markdown("---")
     st.markdown('<div class="section-header">🧠 Model Insights</div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.write("**Expected Goals Progression**")
+        st.markdown('<div class="insight-box">', unsafe_allow_html=True)
+        st.subheader("📈 Expected Goals Progression")
+        
         progress_data = {
             'Stage': ['Base xG', 'After Injuries', 'Tactical Adjust', 'Final xG'],
-            f'{input_data["home_team"]}': [input_data['home_xg'], home_xg_adj, home_xg_final, round(home_xg_final, 2)],
-            f'{input_data["away_team"]}': [input_data['away_xg'], away_xg_adj, away_xg_final, round(away_xg_final, 2)]
+            f'{input_data["home_team"]}': [input_data['home_xg'], round(home_xg_adj, 2), round(home_xg_final, 2), round(home_xg_final, 2)],
+            f'{input_data["away_team"]}': [input_data['away_xg'], round(away_xg_adj, 2), round(away_xg_final, 2), round(away_xg_final, 2)]
         }
-        st.dataframe(pd.DataFrame(progress_data), use_container_width=True)
+        
+        df_progress = pd.DataFrame(progress_data)
+        st.dataframe(df_progress, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
-        st.write("**Key Factors**")
+        st.markdown('<div class="insight-box">', unsafe_allow_html=True)
+        st.subheader("🔑 Key Factors")
+        
+        factors = []
+        factors.append("🏠 Home advantage: +10% boost")
+        factors.append(f"📊 Total expected goals: {round(total_xg, 2)}")
+        
         if home_injury_tier > 0:
-            st.write(f"• {input_data['home_team']} injuries: {input_data['home_injuries']}")
+            factors.append(f"🩹 {input_data['home_team']} injuries: {input_data['home_injuries']}")
         if away_injury_tier > 0:
-            st.write(f"• {input_data['away_team']} injuries: {input_data['away_injuries']}")
+            factors.append(f"🩹 {input_data['away_team']} injuries: {input_data['away_injuries']}")
+        
         if tactical_explanations:
             for explanation in tactical_explanations:
-                st.write(f"• {explanation}")
-        st.write(f"• Home advantage: +10% boost")
-        st.write(f"• Total expected goals: {round(total_xg, 2)}")
+                factors.append(f"🎯 {explanation}")
+        
+        for factor in factors:
+            st.write(f"• {factor}")
+        
+        # Confidence calculation
+        outcome_probs = {'home': home_win_prob/100, 'draw': draw_prob/100, 'away': away_win_prob/100}
+        confidence = engine.calculate_confidence_score(outcome_probs)
+        conf_class, conf_label = engine.get_confidence_label(confidence)
+        
+        st.markdown(f"**Model Confidence**: <span class='{conf_class}'>{confidence}/100 - {conf_label}</span>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     
-    # New Analysis Button
+    # NEW ANALYSIS BUTTON
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("🔄 PERFORM NEW ANALYSIS", use_container_width=True, type="primary"):
             st.session_state.show_prediction = False
             st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
 
 def main():
     st.markdown('<h1 class="main-header">🎯 Enhanced Hybrid Precision Prediction Engine</h1>', unsafe_allow_html=True)
