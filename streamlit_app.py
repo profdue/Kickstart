@@ -8,8 +8,241 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # =============================================================================
-# HYBRID PRECISION ENGINE - COMPLETE IMPLEMENTATION
+# ENHANCED HYBRID PRECISION ENGINE - COMPLETE IMPLEMENTATION
 # =============================================================================
+
+class InjuryImpactAssessor:
+    def __init__(self):
+        self.player_impact_db = {
+            # Premier League
+            'MARTIN ØDEGAARD': {'creativity': 0.85, 'xg_contribution': 0.80, 'possession_impact': 0.90},
+            'BEN WHITE': {'defense': 0.90, 'xg_allowed_impact': 1.10},
+            'JORDAN PICKFORD': {'goalkeeping': 0.70, 'xg_allowed_impact': 1.25},
+            'KEVIN DE BRUYNE': {'creativity': 0.80, 'xg_contribution': 0.75, 'assist_impact': 0.70},
+            'ERLING HAALAND': {'xg_contribution': 0.70, 'finishing': 0.65},
+            'VIRGIL VAN DIJK': {'defense': 0.75, 'xg_allowed_impact': 1.20, 'leadership': 0.80},
+            'ALISSON': {'goalkeeping': 0.70, 'xg_allowed_impact': 1.30},
+            'HARRY KANE': {'xg_contribution': 0.75, 'finishing': 0.70},
+            'SON HEUNG-MIN': {'xg_contribution': 0.80, 'creativity': 0.85},
+            'BRUNO FERNANDES': {'creativity': 0.85, 'xg_contribution': 0.80},
+            
+            # La Liga
+            'JUDE BELLINGHAM': {'xg_contribution': 0.80, 'creativity': 0.85},
+            'VINICIUS JR': {'xg_contribution': 0.75, 'creativity': 0.80},
+            'ROBERT LEWANDOWSKI': {'xg_contribution': 0.70, 'finishing': 0.75},
+            'TER STEGEN': {'goalkeeping': 0.75, 'xg_allowed_impact': 1.25},
+            'ANTOINE GRIEZMANN': {'creativity': 0.85, 'xg_contribution': 0.80},
+            
+            # Bundesliga
+            'HARRY KANE': {'xg_contribution': 0.70, 'finishing': 0.75},
+            'JAMAL MUSIALA': {'creativity': 0.85, 'xg_contribution': 0.80},
+            'LEROY SANE': {'xg_contribution': 0.80, 'creativity': 0.85},
+            
+            # Serie A
+            'LAUTARO MARTINEZ': {'xg_contribution': 0.75, 'finishing': 0.80},
+            'KHVICHA KVARATSKHELIA': {'creativity': 0.85, 'xg_contribution': 0.80},
+            'MIKE MAIGNAN': {'goalkeeping': 0.75, 'xg_allowed_impact': 1.25},
+            
+            # Ligue 1
+            'KYLIAN MBAPPE': {'xg_contribution': 0.65, 'finishing': 0.70},
+            'GIANLUIGI DONNARUMMA': {'goalkeeping': 0.80, 'xg_allowed_impact': 1.20},
+        }
+    
+    def calculate_team_impact(self, injury_list, team_profile):
+        if not injury_list:
+            return {'xg_boost': 1.0, 'xga_boost': 1.0, 'possession_impact': 1.0}
+        
+        total_impact = {'xg_boost': 1.0, 'xga_boost': 1.0, 'possession_impact': 1.0}
+        impact_count = 0
+        
+        for injury in injury_list:
+            player_impact = self.player_impact_db.get(injury.upper())
+            if player_impact:
+                if 'xg_contribution' in player_impact:
+                    total_impact['xg_boost'] *= player_impact['xg_contribution']
+                if 'xg_allowed_impact' in player_impact:
+                    total_impact['xga_boost'] *= player_impact['xg_allowed_impact']
+                if 'possession_impact' in player_impact:
+                    total_impact['possession_impact'] *= player_impact['possession_impact']
+                impact_count += 1
+        
+        # Normalize if multiple impacts
+        if impact_count > 1:
+            for key in total_impact:
+                total_impact[key] = 1 - (1 - total_impact[key]) * 0.8  # Diminishing returns
+        
+        return total_impact
+
+class ContextModulator:
+    def __init__(self):
+        self.factors = {
+            'crowd_impact': {
+                'Electric Home Crowd': {'home_win_boost': 0.045, 'away_win_reduction': 0.035},
+                'Hostile Away': {'away_win_reduction': 0.040, 'home_win_boost': 0.025},
+                'Normal': {}
+            },
+            'referee_style': {
+                'Lenient': {'total_goals_boost': 1.06, 'btts_boost': 1.04},
+                'Strict': {'total_goals_dampen': 0.94, 'btts_dampen': 0.96},
+                'Normal': {}
+            },
+            'match_importance': {
+                'Title Decider': {'draw_boost': 0.055, 'total_goals_dampen': 0.92},
+                'Relegation Battle': {'btts_dampen': 0.94, 'under_25_boost': 1.06},
+                'Cup Final': {'draw_boost': 0.065, 'total_goals_dampen': 0.90},
+                'Dead Rubber': {'total_goals_boost': 1.08, 'btts_boost': 1.05},
+                'Normal': {}
+            },
+            'weather': {
+                'Poor Pitch': {'total_goals_dampen': 0.88, 'btts_dampen': 0.92},
+                'Extreme Weather': {'total_goals_dampen': 0.85, 'draw_boost': 0.06},
+                'Perfect Conditions': {'total_goals_boost': 1.05, 'btts_boost': 1.03},
+                'Normal': {}
+            }
+        }
+    
+    def apply_context_effects(self, prediction, context):
+        """Apply context as final probability adjustment"""
+        if not context:
+            return prediction
+        
+        adjusted_prediction = prediction.copy()
+        effects = self._aggregate_context_effects(context)
+        
+        if effects:
+            adjusted_prediction = self._apply_aggregated_effects(adjusted_prediction, effects)
+        
+        return self._normalize_probabilities(adjusted_prediction)
+    
+    def _aggregate_context_effects(self, context):
+        """Combine all context effects"""
+        aggregated = {}
+        
+        for factor, value in context.items():
+            if factor in self.factors and value in self.factors[factor]:
+                factor_effects = self.factors[factor][value]
+                for effect, magnitude in factor_effects.items():
+                    if effect in aggregated:
+                        aggregated[effect] *= magnitude
+                    else:
+                        aggregated[effect] = magnitude
+        
+        return aggregated
+    
+    def _apply_aggregated_effects(self, prediction, effects):
+        """Apply all effects to prediction"""
+        adjusted = prediction.copy()
+        
+        # Apply to match outcomes
+        if 'home_win_boost' in effects:
+            adjusted['match_outcome']['home_win'] *= (1 + effects['home_win_boost'])
+        if 'away_win_reduction' in effects:
+            adjusted['match_outcome']['away_win'] *= (1 - effects['away_win_reduction'])
+        if 'draw_boost' in effects:
+            adjusted['match_outcome']['draw'] *= (1 + effects['draw_boost'])
+        
+        # Apply to additional markets
+        if 'total_goals_boost' in effects:
+            boost = effects['total_goals_boost']
+            adjusted['additional_markets']['over_2.5'] *= boost
+            adjusted['additional_markets']['under_2.5'] = 1 - adjusted['additional_markets']['over_2.5']
+        
+        if 'total_goals_dampen' in effects:
+            dampen = effects['total_goals_dampen']
+            adjusted['additional_markets']['over_2.5'] *= dampen
+            adjusted['additional_markets']['under_2.5'] = 1 - adjusted['additional_markets']['over_2.5']
+        
+        if 'btts_boost' in effects:
+            boost = effects['btts_boost']
+            adjusted['additional_markets']['btts_yes'] *= boost
+            adjusted['additional_markets']['btts_no'] = 1 - adjusted['additional_markets']['btts_yes']
+        
+        if 'btts_dampen' in effects:
+            dampen = effects['btts_dampen']
+            adjusted['additional_markets']['btts_yes'] *= dampen
+            adjusted['additional_markets']['btts_no'] = 1 - adjusted['additional_markets']['btts_yes']
+        
+        return adjusted
+    
+    def _normalize_probabilities(self, prediction):
+        """Ensure all probabilities sum to 1"""
+        # Normalize match outcomes
+        total = sum(prediction['match_outcome'].values())
+        for key in prediction['match_outcome']:
+            prediction['match_outcome'][key] /= total
+        
+        # Ensure additional markets are valid
+        prediction['additional_markets']['over_2.5'] = max(0.01, min(0.99, prediction['additional_markets']['over_2.5']))
+        prediction['additional_markets']['under_2.5'] = 1 - prediction['additional_markets']['over_2.5']
+        prediction['additional_markets']['btts_yes'] = max(0.01, min(0.99, prediction['additional_markets']['btts_yes']))
+        prediction['additional_markets']['btts_no'] = 1 - prediction['additional_markets']['btts_yes']
+        
+        return prediction
+
+class ValueFinder:
+    def calculate_true_value(self, our_probability, market_odds):
+        """Calculate if a bet offers positive expected value"""
+        if not market_odds or market_odds <= 1.0:
+            return None
+        
+        implied_probability = 1.0 / market_odds
+        value_ratio = our_probability / implied_probability
+        expected_value = (our_probability * (market_odds - 1)) - (1 - our_probability)
+        
+        if value_ratio > 1.20:
+            recommendation = 'STRONG VALUE 💎'
+        elif value_ratio > 1.10:
+            recommendation = 'GOOD VALUE ✅'
+        elif value_ratio > 1.05:
+            recommendation = 'MARGINAL VALUE ⚠️'
+        else:
+            recommendation = 'NO VALUE ❌'
+        
+        return {
+            'value_ratio': value_ratio,
+            'expected_value': expected_value,
+            'implied_probability': implied_probability,
+            'recommendation': recommendation
+        }
+    
+    def find_best_bets(self, prediction, market_odds=None):
+        """Find true value bets based on market odds"""
+        if not market_odds:
+            return self._fallback_best_bet(prediction)
+        
+        value_analysis = {}
+        markets = [
+            ('home_win', prediction['match_outcome']['home_win']),
+            ('draw', prediction['match_outcome']['draw']),
+            ('away_win', prediction['match_outcome']['away_win']),
+            ('over_2.5', prediction['additional_markets']['over_2.5']),
+            ('under_2.5', prediction['additional_markets']['under_2.5']),
+            ('btts_yes', prediction['additional_markets']['btts_yes']),
+            ('btts_no', prediction['additional_markets']['btts_no'])
+        ]
+        
+        for market, our_prob in markets:
+            if market in market_odds:
+                analysis = self.calculate_true_value(our_prob, market_odds[market])
+                if analysis:
+                    value_analysis[market] = analysis
+        
+        # Return sorted by value ratio (best first)
+        return sorted([(k, v) for k, v in value_analysis.items()], 
+                     key=lambda x: x[1]['value_ratio'], reverse=True)
+    
+    def _fallback_best_bet(self, prediction):
+        """Fallback to highest probability if no odds provided"""
+        markets = [
+            ('Home Win', prediction['match_outcome']['home_win']),
+            ('Draw', prediction['match_outcome']['draw']),
+            ('Away Win', prediction['match_outcome']['away_win']),
+            ('Over 2.5', prediction['additional_markets']['over_2.5']),
+            ('Under 2.5', prediction['additional_markets']['under_2.5']),
+            ('BTTS Yes', prediction['additional_markets']['btts_yes']),
+            ('BTTS No', prediction['additional_markets']['btts_no'])
+        ]
+        return [(max(markets, key=lambda x: x[1]), {'recommendation': 'HIGHEST PROBABILITY'})]
 
 class HybridPrecisionEngine:
     def __init__(self, constraints=None):
@@ -27,6 +260,11 @@ class HybridPrecisionEngine:
         }
         if constraints:
             self.constraints.update(constraints)
+        
+        # Initialize enhancement modules
+        self.injury_assessor = InjuryImpactAssessor()
+        self.context_modulator = ContextModulator()
+        self.value_finder = ValueFinder()
 
     def _poisson_prob(self, lam, k):
         return (lam ** k) * np.exp(-lam) / np.math.factorial(k)
@@ -212,6 +450,25 @@ class HybridPrecisionEngine:
         return probs
 
     def predict_match(self, home_profile, away_profile, context=None):
+        # Apply injury impacts as pre-processing
+        if context:
+            home_impact = self.injury_assessor.calculate_team_impact(
+                context.get('home_injuries', []), home_profile
+            )
+            away_impact = self.injury_assessor.calculate_team_impact(
+                context.get('away_injuries', []), away_profile
+            )
+            
+            # Adjust profiles based on injuries
+            home_profile = home_profile.copy()
+            away_profile = away_profile.copy()
+            
+            home_profile['xg_per_game'] *= home_impact['xg_boost']
+            home_profile['xga_per_game'] *= home_impact['xga_boost']
+            away_profile['xg_per_game'] *= away_impact['xg_boost']
+            away_profile['xga_per_game'] *= away_impact['xga_boost']
+
+        # Original core logic
         base = self._calculate_base_expected_goals(home_profile, away_profile, context)
         constrained = self._apply_football_constraints(base, home_profile, away_profile)
         dynamic = self._simulate_game_flow(constrained, home_profile, away_profile)
@@ -223,7 +480,7 @@ class HybridPrecisionEngine:
 
         additional_markets = self._calculate_additional_markets(dynamic['home'], dynamic['away'])
 
-        return {
+        prediction = {
             'match_outcome': calibrated,
             'additional_markets': additional_markets,
             'expected_goals': dynamic,
@@ -234,6 +491,11 @@ class HybridPrecisionEngine:
                 'dynamic_xg': dynamic
             }
         }
+
+        # Apply context modulation as final layer
+        final_prediction = self.context_modulator.apply_context_effects(prediction, context)
+        
+        return final_prediction
 
     def _calculate_additional_markets(self, home_xg, away_xg):
         over_2_5 = 0
@@ -255,7 +517,7 @@ class HybridPrecisionEngine:
         }
 
 # =============================================================================
-# LEAGUE CONFIGURATIONS
+# ENHANCED LEAGUE CONFIGURATIONS
 # =============================================================================
 
 LEAGUE_CONFIGS = {
@@ -320,7 +582,7 @@ LEAGUE_CONFIGS = {
 }
 
 # =============================================================================
-# STREAMLIT APP
+# ENHANCED STREAMLIT APP
 # =============================================================================
 
 def main():
@@ -372,10 +634,17 @@ def main():
         text-align: center;
         font-weight: bold;
     }
+    .value-bet-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
+        margin: 0.5rem 0;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="main-header">🎯 Hybrid Precision Prediction Engine</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">🎯 Enhanced Hybrid Precision Prediction Engine</div>', unsafe_allow_html=True)
 
     # Initialize engine
     engine = HybridPrecisionEngine()
@@ -434,7 +703,7 @@ def main():
 
     # Context factors
     st.markdown("---")
-    st.subheader("🎭 Match Context")
+    st.subheader("🎭 Enhanced Match Context")
 
     col1, col2, col3 = st.columns(3)
 
@@ -443,14 +712,14 @@ def main():
             "Match Importance",
             ["Normal", "Relegation Battle", "Title Decider", "Cup Final", "Dead Rubber"]
         )
-        home_injuries = st.text_input("Home Key Injuries", placeholder="e.g., Davies, Kimmich")
+        home_injuries = st.text_input("Home Key Injuries", placeholder="e.g., De Bruyne, Salah", value="Jordan Pickford")
 
     with col2:
         weather = st.selectbox(
             "Conditions",
             ["Normal", "Poor Pitch", "Extreme Weather", "Perfect Conditions"]
         )
-        away_injuries = st.text_input("Away Key Injuries", placeholder="e.g., De Bruyne, Salah")
+        away_injuries = st.text_input("Away Key Injuries", placeholder="e.g., Davies, Kimmich", value="Martin Ødegaard, Ben White")
 
     with col3:
         crowd_impact = st.selectbox(
@@ -459,9 +728,34 @@ def main():
         )
         referee = st.selectbox("Referee Style", ["Normal", "Lenient", "Strict"])
 
+    # Market Odds Input
+    st.markdown("---")
+    st.subheader("💰 Market Odds (For Value Analysis)")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        home_win_odds = st.number_input(f"{home_team} Win Odds", min_value=1.0, max_value=100.0, value=2.5, step=0.1)
+    with col2:
+        draw_odds = st.number_input("Draw Odds", min_value=1.0, max_value=100.0, value=3.2, step=0.1)
+    with col3:
+        away_win_odds = st.number_input(f"{away_team} Win Odds", min_value=1.0, max_value=100.0, value=2.8, step=0.1)
+    with col4:
+        over_25_odds = st.number_input("Over 2.5 Goals Odds", min_value=1.0, max_value=100.0, value=1.9, step=0.1)
+
+    market_odds = {
+        'home_win': home_win_odds,
+        'draw': draw_odds,
+        'away_win': away_win_odds,
+        'over_2.5': over_25_odds,
+        'under_2.5': 1.0,  # Will be calculated
+        'btts_yes': 1.85,  # Default values
+        'btts_no': 1.95
+    }
+
     # Prediction button
-    if st.button("🎯 GENERATE PRECISION PREDICTION", type="primary", use_container_width=True):
-        with st.spinner("🔄 Running hybrid precision analysis..."):
+    if st.button("🎯 GENERATE ENHANCED PREDICTION", type="primary", use_container_width=True):
+        with st.spinner("🔄 Running enhanced hybrid precision analysis..."):
             # Prepare team profiles
             home_profile = {
                 'name': home_team,
@@ -498,11 +792,11 @@ def main():
             prediction = engine.predict_match(home_profile, away_profile, context)
 
             # Display results
-            display_results(prediction, home_team, away_team)
+            display_enhanced_results(prediction, home_team, away_team, market_odds, context)
 
-def display_results(prediction, home_team, away_team):
+def display_enhanced_results(prediction, home_team, away_team, market_odds, context):
     st.markdown("---")
-    st.markdown('<div class="main-header">🎯 PRECISION PREDICTION RESULTS</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">🎯 ENHANCED PRECISION PREDICTION RESULTS</div>', unsafe_allow_html=True)
 
     # Calculate confidence
     max_prob = max(prediction['match_outcome'].values())
@@ -567,12 +861,49 @@ def display_results(prediction, home_team, away_team):
         st.write(f"**Yes**: {btts['btts_yes']:.1%}")
         st.write(f"**No**: {btts['btts_no']:.1%}")
 
-    # Additional insights
+    # Value Betting Analysis
+    st.markdown("---")
+    st.subheader("💰 Smart Value Analysis")
+    
+    value_finder = HybridPrecisionEngine().value_finder
+    best_bets = value_finder.find_best_bets(prediction, market_odds)
+    
+    if best_bets:
+        st.success("**🎯 VALUE BETS IDENTIFIED**")
+        
+        for market, analysis in best_bets[:3]:  # Show top 3
+            market_name = market.replace('_', ' ').title()
+            if market == 'home_win':
+                market_name = f"{home_team} Win"
+            elif market == 'away_win':
+                market_name = f"{away_team} Win"
+            elif market == 'over_2.5':
+                market_name = "Over 2.5 Goals"
+            elif market == 'under_2.5':
+                market_name = "Under 2.5 Goals"
+            elif market == 'btts_yes':
+                market_name = "BTTS Yes"
+            elif market == 'btts_no':
+                market_name = "BTTS No"
+            
+            col1, col2, col3, col4 = st.columns([2,1,1,1])
+            with col1:
+                st.write(f"**{market_name}**")
+            with col2:
+                st.write(f"Value: {analysis['value_ratio']:.2f}x")
+            with col3:
+                st.write(f"EV: {analysis['expected_value']:.3f}")
+            with col4:
+                st.write(analysis['recommendation'])
+    else:
+        st.info("No strong value bets identified based on current market odds")
+
+    # Enhanced Insights
     st.markdown("---")
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("📈 Expected Score")
+        st.subheader("📈 Expected Score & Model Process")
         exp_goals = prediction['expected_goals']
         st.metric(
             "Expected Goals",
@@ -580,14 +911,21 @@ def display_results(prediction, home_team, away_team):
             delta=f"Total: {exp_goals['home'] + exp_goals['away']:.1f} goals"
         )
 
-        st.subheader("🔍 Model Process")
         model_data = prediction['model_data']
         st.write(f"**Base xG**: {model_data['base_xg']['home']:.2f} - {model_data['base_xg']['away']:.2f}")
         st.write(f"**Constrained xG**: {model_data['constrained_xg']['home']:.2f} - {model_data['constrained_xg']['away']:.2f}")
         st.write(f"**Dynamic xG**: {model_data['dynamic_xg']['home']:.2f} - {model_data['dynamic_xg']['away']:.2f}")
 
+        # Injury Impact Analysis
+        if context.get('home_injuries') or context.get('away_injuries'):
+            st.subheader("🏥 Injury Impact Assessment")
+            if context.get('home_injuries'):
+                st.write(f"**{home_team} Injuries**: {', '.join(context['home_injuries'])}")
+            if context.get('away_injuries'):
+                st.write(f"**{away_team} Injuries**: {', '.join(context['away_injuries'])}")
+
     with col2:
-        st.subheader("🎯 Key Factors")
+        st.subheader("🎯 Tactical & Context Analysis")
         home_style = prediction['team_profiles']['home']['tactical_style']
         away_style = prediction['team_profiles']['away']['tactical_style']
 
@@ -595,23 +933,34 @@ def display_results(prediction, home_team, away_team):
         st.write(f"**{away_team} Style**: {', '.join(away_style)}")
 
         # Style interaction analysis
+        tactical_insights = []
         if 'COUNTER' in home_style and 'HIGH_PRESS' in away_style:
-            st.success("✅ **Key Matchup**: Home counter-attacks vs away high press favors home team")
+            tactical_insights.append("✅ **Key Matchup**: Home counter-attacks vs away high press favors home team")
         if 'DEFENSIVE' in home_style and 'POSSESSION' in away_style:
-            st.info("🛡️ **Key Matchup**: Home defensive organization vs away possession")
+            tactical_insights.append("🛡️ **Key Matchup**: Home defensive organization vs away possession")
+        if 'HIGH_PRESS' in home_style and 'POSSESSION' in away_style:
+            tactical_insights.append("⚡ **Key Matchup**: Home high press could disrupt away possession game")
+        
+        for insight in tactical_insights:
+            st.write(insight)
 
-        # Best value bet
-        best_bet = max([
-            (f'{home_team} Win', prediction['match_outcome']['home_win']),
-            ('Draw', prediction['match_outcome']['draw']),
-            (f'{away_team} Win', prediction['match_outcome']['away_win']),
-            ('Over 2.5', prediction['additional_markets']['over_2.5']),
-            ('Under 2.5', prediction['additional_markets']['under_2.5']),
-            ('BTTS Yes', prediction['additional_markets']['btts_yes']),
-            ('BTTS No', prediction['additional_markets']['btts_no'])
-        ], key=lambda x: x[1])
-
-        st.success(f"**💎 STRONGEST VALUE**: {best_bet[0]} ({best_bet[1]:.1%} probability)")
+        # Context factors applied
+        st.subheader("🎭 Applied Context Factors")
+        context_factors = []
+        if context.get('crowd_impact') != 'Normal':
+            context_factors.append(f"**Crowd**: {context['crowd_impact']}")
+        if context.get('referee') != 'Normal':
+            context_factors.append(f"**Referee**: {context['referee']}")
+        if context.get('weather') != 'Normal':
+            context_factors.append(f"**Weather**: {context['weather']}")
+        if context.get('match_importance') != 'Normal':
+            context_factors.append(f"**Importance**: {context['match_importance']}")
+        
+        if context_factors:
+            for factor in context_factors:
+                st.write(factor)
+        else:
+            st.write("Standard match conditions applied")
 
 if __name__ == "__main__":
     main()
