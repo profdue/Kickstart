@@ -5,6 +5,10 @@ from scipy.stats import poisson
 import warnings
 warnings.filterwarnings('ignore')
 
+# Clear cache to ensure fresh start
+st.cache_data.clear()
+st.cache_resource.clear()
+
 # Page Configuration
 st.set_page_config(
     page_title="Professional Football Prediction Engine",
@@ -244,30 +248,50 @@ class ProfessionalPredictionEngine:
         
         return home_expected, away_expected
 
-    def calculate_probabilities(self, home_expected, away_expected, max_goals=8):
-        """Calculate probabilities using Poisson distribution"""
-        # Use Poisson for probability calculation
-        home_probs = [poisson.pmf(i, home_expected) for i in range(max_goals)]
-        away_probs = [poisson.pmf(i, away_expected) for i in range(max_goals)]
+    def calculate_probabilities(self, home_expected, away_expected):
+        """SIMPLE LOGICAL probability calculation - NO POISSON"""
+        # Calculate goal difference advantage
+        goal_diff_advantage = home_expected - away_expected
         
-        # Create joint probability matrix
-        joint_probs = np.outer(home_probs, away_probs)
+        # Base probabilities
+        if goal_diff_advantage > 0.3:  # Strong home advantage
+            home_prob = 0.48
+            away_prob = 0.24
+            draw_prob = 0.28
+        elif goal_diff_advantage > 0.1:  # Moderate home advantage
+            home_prob = 0.42
+            away_prob = 0.28
+            draw_prob = 0.30
+        elif goal_diff_advantage > -0.1:  # Even match
+            home_prob = 0.35
+            away_prob = 0.35
+            draw_prob = 0.30
+        elif goal_diff_advantage > -0.3:  # Moderate away advantage
+            home_prob = 0.28
+            away_prob = 0.42
+            draw_prob = 0.30
+        else:  # Strong away advantage
+            home_prob = 0.24
+            away_prob = 0.48
+            draw_prob = 0.28
         
-        # Normalize
-        joint_probs = joint_probs / joint_probs.sum()
-        
-        # Calculate outcome probabilities
-        home_win = np.sum(np.triu(joint_probs, 1))
-        draw = np.sum(np.diag(joint_probs))
-        away_win = np.sum(np.tril(joint_probs, -1))
-        
-        # Calculate over/under probabilities
-        over_25 = 1 - np.sum(joint_probs[:3, :3])
+        # Calculate over/under based on total expected goals
+        total_goals = home_expected + away_expected
+        if total_goals > 3.2:
+            over_25 = 0.70
+        elif total_goals > 2.8:
+            over_25 = 0.60
+        elif total_goals > 2.4:
+            over_25 = 0.50
+        elif total_goals > 2.0:
+            over_25 = 0.40
+        else:
+            over_25 = 0.30
         
         return {
-            'home_win': home_win,
-            'draw': draw,
-            'away_win': away_win,
+            'home_win': home_prob,
+            'draw': draw_prob,
+            'away_win': away_prob,
             'over_2.5': over_25,
             'under_2.5': 1 - over_25,
             'expected_home_goals': home_expected,
@@ -355,7 +379,7 @@ class ProfessionalPredictionEngine:
         return value_bets
 
     def predict_match(self, inputs):
-        """MAIN PREDICTION FUNCTION - SIMPLIFIED AND TRANSPARENT"""
+        """MAIN PREDICTION FUNCTION - SIMPLE AND LOGICAL"""
         # Calculate per-match averages from user inputs
         home_xg_per_match = inputs['home_xg_total'] / 5
         home_xga_per_match = inputs['home_xga_total'] / 5
@@ -380,7 +404,7 @@ class ProfessionalPredictionEngine:
             home_xg_adj, home_xga_adj, away_xg_adj, away_xga_adj
         )
         
-        # Calculate probabilities
+        # Calculate probabilities - SIMPLE LOGICAL METHOD
         probabilities = self.calculate_probabilities(home_expected, away_expected)
         
         # Calculate confidence
@@ -486,10 +510,10 @@ def get_default_inputs():
     return {
         'home_team': 'Werder Bremen',
         'away_team': 'Wolfsburg',
-        'home_xg_total': 6.50,
+        'home_xg_total': 6.52,
         'home_xga_total': 5.80,
-        'away_xg_total': 5.45,
-        'away_xga_total': 6.20,
+        'away_xg_total': 5.47,
+        'away_xga_total': 6.19,
         'home_injuries': 'None',
         'away_injuries': 'None',
         'home_rest': 7,
