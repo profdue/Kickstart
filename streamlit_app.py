@@ -215,6 +215,8 @@ class ProfessionalPredictionEngine:
             "Tottenham Home": {"league": "Premier League", "last_5_xg_total": 4.63, "last_5_xga_total": 7.71, "form_trend": -0.02},
             "Nottingham Forest Home": {"league": "Premier League", "last_5_xg_total": 7.50, "last_5_xga_total": 8.98, "form_trend": -0.10},
             "West Ham Home": {"league": "Premier League", "last_5_xg_total": 3.91, "last_5_xga_total": 11.79, "form_trend": -0.08},
+            "Sunderland Home": {"league": "Premier League", "last_5_xg_total": 5.44, "last_5_xga_total": 4.63, "form_trend": 0.06},
+            "Leeds Home": {"league": "Premier League", "last_5_xg_total": 8.81, "last_5_xga_total": 3.23, "form_trend": 0.02},
             "Wolverhampton Wanderers Home": {"league": "Premier League", "last_5_xg_total": 5.98, "last_5_xga_total": 7.73, "form_trend": 0.01},
 
             # Premier League - Away Data
@@ -235,6 +237,8 @@ class ProfessionalPredictionEngine:
             "Tottenham Away": {"league": "Premier League", "last_5_xg_total": 6.77, "last_5_xga_total": 5.23, "form_trend": -0.02},
             "Nottingham Forest Away": {"league": "Premier League", "last_5_xg_total": 3.10, "last_5_xga_total": 9.60, "form_trend": -0.10},
             "West Ham Away": {"league": "Premier League", "last_5_xg_total": 4.93, "last_5_xga_total": 7.63, "form_trend": -0.08},
+            "Sunderland Away": {"league": "Premier League", "last_5_xg_total": 5.77, "last_5_xga_total": 7.33, "form_trend": 0.06},
+            "Leeds Away": {"league": "Premier League", "last_5_xg_total": 4.13, "last_5_xga_total": 8.59, "form_trend": 0.02},
             "Wolverhampton Wanderers Away": {"league": "Premier League", "last_5_xg_total": 2.80, "last_5_xga_total": 6.73, "form_trend": 0.01},
 
             # La Liga - Home Data
@@ -256,6 +260,7 @@ class ProfessionalPredictionEngine:
             "Celta Vigo Home": {"league": "La Liga", "last_5_xg_total": 7.32, "last_5_xga_total": 7.44, "form_trend": -0.14},
             "Girona Home": {"league": "La Liga", "last_5_xg_total": 7.71, "last_5_xga_total": 14.78, "form_trend": -0.18},
             "Sevilla Home": {"league": "La Liga", "last_5_xg_total": 6.17, "last_5_xga_total": 8.95, "form_trend": 0.00},
+            "Real Oviedo Home": {"league": "La Liga", "last_5_xg_total": 5.26, "last_5_xga_total": 11.52, "form_trend": 0.00},
             "Levante Home": {"league": "La Liga", "last_5_xg_total": 7.59, "last_5_xga_total": 13.20, "form_trend": 0.00},
 
             # La Liga - Away Data
@@ -277,6 +282,7 @@ class ProfessionalPredictionEngine:
             "Celta Vigo Away": {"league": "La Liga", "last_5_xg_total": 6.49, "last_5_xga_total": 9.57, "form_trend": -0.14},
             "Girona Away": {"league": "La Liga", "last_5_xg_total": 5.65, "last_5_xga_total": 10.63, "form_trend": -0.18},
             "Sevilla Away": {"league": "La Liga", "last_5_xg_total": 4.62, "last_5_xga_total": 12.12, "form_trend": 0.00},
+            "Real Oviedo Away": {"league": "La Liga", "last_5_xg_total": 5.55, "last_5_xga_total": 9.10, "form_trend": 0.00},
             "Levante Away": {"league": "La Liga", "last_5_xg_total": 11.47, "last_5_xga_total": 7.38, "form_trend": 0.00},
 
             # Bundesliga - Home Data
@@ -295,6 +301,8 @@ class ProfessionalPredictionEngine:
             "Augsburg Home": {"league": "Bundesliga", "last_5_xg_total": 4.74, "last_5_xga_total": 10.45, "form_trend": -0.12},
             "Wolfsburg Home": {"league": "Bundesliga", "last_5_xg_total": 6.81, "last_5_xga_total": 10.29, "form_trend": -0.14},
             "Borussia M.Gladbach Home": {"league": "Bundesliga", "last_5_xg_total": 5.96, "last_5_xga_total": 9.66, "form_trend": -0.18},
+            "Hamburger SV Home": {"league": "Bundesliga", "last_5_xg_total": 8.13, "last_5_xga_total": 5.78, "form_trend": -0.04},
+            "St. Pauli Home": {"league": "Bundesliga", "last_5_xg_total": 5.91, "last_5_xga_total": 9.74, "form_trend": -0.10},
             "Mainz 05 Home": {"league": "Bundesliga", "last_5_xg_total": 6.14, "last_5_xga_total": 10.22, "form_trend": 0.00},
 
             # Bundesliga - Away Data
@@ -313,6 +321,8 @@ class ProfessionalPredictionEngine:
             "Augsburg Away": {"league": "Bundesliga", "last_5_xg_total": 3.98, "last_5_xga_total": 6.54, "form_trend": -0.12},
             "Wolfsburg Away": {"league": "Bundesliga", "last_5_xg_total": 6.15, "last_5_xga_total": 7.88, "form_trend": -0.14},
             "Borussia M.Gladbach Away": {"league": "Bundesliga", "last_5_xg_total": 7.16, "last_5_xga_total": 5.21, "form_trend": -0.18},
+            "Hamburger SV Away": {"league": "Bundesliga", "last_5_xg_total": 4.44, "last_5_xga_total": 10.63, "form_trend": -0.04},
+            "St. Pauli Away": {"league": "Bundesliga", "last_5_xg_total": 4.34, "last_5_xga_total": 7.74, "form_trend": -0.10},
             "Mainz 05 Away": {"league": "Bundesliga", "last_5_xg_total": 6.39, "last_5_xga_total": 4.81, "form_trend": 0.00},
 
             # Serie A - Home Data
@@ -331,6 +341,10 @@ class ProfessionalPredictionEngine:
             "Verona Home": {"league": "Serie A", "last_5_xg_total": 6.77, "last_5_xga_total": 4.13, "form_trend": -0.18},
             "Lecce Home": {"league": "Serie A", "last_5_xg_total": 5.41, "last_5_xga_total": 7.63, "form_trend": 0.00},
             "Genoa Home": {"league": "Serie A", "last_5_xg_total": 6.20, "last_5_xga_total": 7.28, "form_trend": 0.00},
+            "Como Home": {"league": "Serie A", "last_5_xg_total": 7.72, "last_5_xga_total": 5.97, "form_trend": 0.07},
+            "Cremonese Home": {"league": "Serie A", "last_5_xg_total": 6.51, "last_5_xga_total": 7.43, "form_trend": -0.08},
+            "Pisa Home": {"league": "Serie A", "last_5_xg_total": 5.32, "last_5_xga_total": 7.07, "form_trend": -0.06},
+            "Parma Calcio 1913 Home": {"league": "Serie A", "last_5_xg_total": 5.47, "last_5_xga_total": 6.39, "form_trend": -0.12},
             "Fiorentina Home": {"league": "Serie A", "last_5_xg_total": 8.20, "last_5_xga_total": 9.08, "form_trend": 0.00},
 
             # Serie A - Away Data
@@ -349,6 +363,10 @@ class ProfessionalPredictionEngine:
             "Verona Away": {"league": "Serie A", "last_5_xg_total": 6.11, "last_5_xga_total": 8.64, "form_trend": -0.18},
             "Lecce Away": {"league": "Serie A", "last_5_xg_total": 3.40, "last_5_xga_total": 7.18, "form_trend": 0.00},
             "Genoa Away": {"league": "Serie A", "last_5_xg_total": 7.84, "last_5_xga_total": 8.37, "form_trend": 0.00},
+            "Como Away": {"league": "Serie A", "last_5_xg_total": 5.13, "last_5_xga_total": 6.01, "form_trend": 0.07},
+            "Cremonese Away": {"league": "Serie A", "last_5_xg_total": 4.52, "last_5_xga_total": 12.87, "form_trend": -0.08},
+            "Pisa Away": {"league": "Serie A", "last_5_xg_total": 6.70, "last_5_xga_total": 10.13, "form_trend": -0.06},
+            "Parma Calcio 1913 Away": {"league": "Serie A", "last_5_xg_total": 4.91, "last_5_xga_total": 8.06, "form_trend": -0.12},
             "Fiorentina Away": {"league": "Serie A", "last_5_xg_total": 4.88, "last_5_xga_total": 8.04, "form_trend": 0.00},
 
             # Ligue 1 - Home Data
@@ -364,6 +382,11 @@ class ProfessionalPredictionEngine:
             "Toulouse Home": {"league": "Ligue 1", "last_5_xg_total": 11.07, "last_5_xga_total": 7.53, "form_trend": -0.03},
             "Le Havre Home": {"league": "Ligue 1", "last_5_xg_total": 8.57, "last_5_xga_total": 4.86, "form_trend": -0.01},
             "Brest Home": {"league": "Ligue 1", "last_5_xg_total": 11.15, "last_5_xga_total": 9.51, "form_trend": -0.12},
+            "Angers Home": {"league": "Ligue 1", "last_5_xg_total": 5.79, "last_5_xga_total": 7.44, "form_trend": -0.08},
+            "Lorient Home": {"league": "Ligue 1", "last_5_xg_total": 8.48, "last_5_xga_total": 7.53, "form_trend": -0.10},
+            "Paris FC Home": {"league": "Ligue 1", "last_5_xg_total": 10.90, "last_5_xga_total": 8.45, "form_trend": -0.06},
+            "Auxerre Home": {"league": "Ligue 1", "last_5_xg_total": 6.21, "last_5_xga_total": 7.67, "form_trend": -0.14},
+            "Metz Home": {"league": "Ligue 1", "last_5_xg_total": 5.62, "last_5_xga_total": 7.02, "form_trend": -0.18},
             "Nantes Home": {"league": "Ligue 1", "last_5_xg_total": 7.17, "last_5_xga_total": 12.13, "form_trend": 0.00},
 
             # Ligue 1 - Away Data
@@ -379,6 +402,11 @@ class ProfessionalPredictionEngine:
             "Toulouse Away": {"league": "Ligue 1", "last_5_xg_total": 5.19, "last_5_xga_total": 9.05, "form_trend": -0.03},
             "Le Havre Away": {"league": "Ligue 1", "last_5_xg_total": 4.30, "last_5_xga_total": 9.56, "form_trend": -0.01},
             "Brest Away": {"league": "Ligue 1", "last_5_xg_total": 4.99, "last_5_xga_total": 8.39, "form_trend": -0.12},
+            "Angers Away": {"league": "Ligue 1", "last_5_xg_total": 4.41, "last_5_xga_total": 14.13, "form_trend": -0.08},
+            "Lorient Away": {"league": "Ligue 1", "last_5_xg_total": 8.14, "last_5_xga_total": 12.92, "form_trend": -0.10},
+            "Paris FC Away": {"league": "Ligue 1", "last_5_xg_total": 6.87, "last_5_xga_total": 10.93, "form_trend": -0.06},
+            "Auxerre Away": {"league": "Ligue 1", "last_5_xg_total": 6.44, "last_5_xga_total": 11.24, "form_trend": -0.14},
+            "Metz Away": {"league": "Ligue 1", "last_5_xg_total": 6.54, "last_5_xga_total": 16.91, "form_trend": -0.18},
             "Nantes Away": {"league": "Ligue 1", "last_5_xg_total": 4.44, "last_5_xga_total": 8.55, "form_trend": 0.00},
 
             # Russian Premier League - Home Data
@@ -391,6 +419,11 @@ class ProfessionalPredictionEngine:
             "Baltika Home": {"league": "RFPL", "last_5_xg_total": 8.76, "last_5_xga_total": 4.39, "form_trend": 0.03},
             "Dinamo Moscow Home": {"league": "RFPL", "last_5_xg_total": 14.39, "last_5_xga_total": 11.36, "form_trend": -0.03},
             "FC Rostov Home": {"league": "RFPL", "last_5_xg_total": 8.61, "last_5_xga_total": 6.68, "form_trend": -0.01},
+            "Dynamo Makhachkala Home": {"league": "RFPL", "last_5_xg_total": 7.88, "last_5_xga_total": 4.78, "form_trend": -0.02},
+            "FK Akhmat Home": {"league": "RFPL", "last_5_xg_total": 8.36, "last_5_xga_total": 5.35, "form_trend": -0.04},
+            "FC Orenburg Home": {"league": "RFPL", "last_5_xg_total": 8.20, "last_5_xga_total": 9.42, "form_trend": -0.10},
+            "Nizhny Novgorod Home": {"league": "RFPL", "last_5_xg_total": 8.22, "last_5_xga_total": 8.82, "form_trend": -0.06},
+            "Akron Home": {"league": "RFPL", "last_5_xg_total": 8.18, "last_5_xga_total": 9.35, "form_trend": -0.12},
             "PFC Sochi Home": {"league": "RFPL", "last_5_xg_total": 3.31, "last_5_xga_total": 11.51, "form_trend": -0.14},
 
             # Russian Premier League - Away Data
@@ -403,6 +436,11 @@ class ProfessionalPredictionEngine:
             "Baltika Away": {"league": "RFPL", "last_5_xg_total": 9.95, "last_5_xga_total": 7.90, "form_trend": 0.03},
             "Dinamo Moscow Away": {"league": "RFPL", "last_5_xg_total": 8.72, "last_5_xga_total": 6.44, "form_trend": -0.03},
             "FC Rostov Away": {"league": "RFPL", "last_5_xg_total": 6.45, "last_5_xga_total": 7.47, "form_trend": -0.01},
+            "Dynamo Makhachkala Away": {"league": "RFPL", "last_5_xg_total": 5.29, "last_5_xga_total": 7.79, "form_trend": -0.02},
+            "FK Akhmat Away": {"league": "RFPL", "last_5_xg_total": 9.43, "last_5_xga_total": 13.90, "form_trend": -0.04},
+            "FC Orenburg Away": {"league": "RFPL", "last_5_xg_total": 7.61, "last_5_xga_total": 10.75, "form_trend": -0.10},
+            "Nizhny Novgorod Away": {"league": "RFPL", "last_5_xg_total": 3.56, "last_5_xga_total": 12.30, "form_trend": -0.06},
+            "Akron Away": {"league": "RFPL", "last_5_xg_total": 7.89, "last_5_xga_total": 11.22, "form_trend": -0.12},
             "PFC Sochi Away": {"league": "RFPL", "last_5_xg_total": 5.75, "last_5_xga_total": 13.51, "form_trend": -0.14},
         }
 
