@@ -128,10 +128,7 @@ st.markdown("""
 
 class ProfessionalPredictionEngine:
     def __init__(self):
-        self.league_avg_xg = 1.35
-        self.league_avg_xga = 1.35
-        
-        # Enhanced injury impact weights
+        # Injury impact weights
         self.injury_weights = {
             "None": {"attack_mult": 1.00, "defense_mult": 1.00, "description": "No impact"},
             "Minor (1-2 rotational)": {"attack_mult": 0.95, "defense_mult": 0.97, "description": "Slight impact"},
@@ -140,14 +137,14 @@ class ProfessionalPredictionEngine:
             "Crisis (5+ starters)": {"attack_mult": 0.65, "defense_mult": 0.72, "description": "Severe impact"}
         }
         
-        # Enhanced fatigue multipliers
+        # Fatigue multipliers
         self.fatigue_multipliers = {
             2: 0.85, 3: 0.88, 4: 0.91, 5: 0.94, 6: 0.96, 
             7: 0.98, 8: 1.00, 9: 1.01, 10: 1.02, 11: 1.03,
             12: 1.03, 13: 1.03, 14: 1.03
         }
         
-        # Team database with ALL original features
+        # Team database
         self.team_database = self._initialize_complete_database()
 
     def _initialize_complete_database(self):
@@ -213,41 +210,43 @@ class ProfessionalPredictionEngine:
         
         return team_data
 
-    def apply_modifiers(self, base_xg, base_xga, injury_level, rest_days, form_trend, is_home=True):
-        """Apply modifiers including injuries, fatigue, form - NO HOME ADVANTAGE"""
+    def apply_modifiers(self, base_xg, base_xga, injury_level, rest_days, form_trend):
+        """Apply modifiers - SIMPLIFIED AND TRANSPARENT"""
         injury_data = self.injury_weights[injury_level]
         
-        # Enhanced injury impact
-        attack_injury_mult = injury_data["attack_mult"]
-        defense_injury_mult = injury_data["defense_mult"]
+        # Apply injury impacts
+        attack_mult = injury_data["attack_mult"]
+        defense_mult = injury_data["defense_mult"]
         
-        # Enhanced fatigue impact
+        # Apply fatigue impact
         fatigue_mult = self.fatigue_multipliers.get(rest_days, 1.0)
         
-        # Enhanced form trend impact
+        # Apply form trend
         form_mult = 1 + (form_trend * 0.2)
         
-        # NO HOME ADVANTAGE - removed home multiplier
-        home_mult = 1.0
-        
-        # Apply modifiers
-        xg_modified = base_xg * attack_injury_mult * fatigue_mult * form_mult * home_mult
-        xga_modified = base_xga * defense_injury_mult * (1/fatigue_mult) * (1/form_mult) * home_mult
+        # Apply all modifiers
+        xg_modified = base_xg * attack_mult * fatigue_mult * form_mult
+        xga_modified = base_xga * defense_mult * (1/fatigue_mult) * (1/form_mult)
         
         return max(0.1, xg_modified), max(0.1, xga_modified)
 
-    def calculate_rest_advantage(self, home_rest, away_rest):
-        """Calculate rest advantage impact - NEUTRALIZED"""
-        # No rest advantage given to either team
-        return 1.0
-
-    def bivariate_poisson_probabilities(self, home_attack, away_attack, home_defense, away_defense, max_goals=8):
-        """BIVARIATE POISSON - NO HOME ADVANTAGE"""
-        # Calculate expected goals using team strengths - NO HOME ADVANTAGE
-        home_expected = home_attack * away_defense  # Removed home_advantage multiplier
-        away_expected = away_attack * home_defense
+    def calculate_expected_goals(self, home_xg, home_xga, away_xg, away_xga):
+        """SIMPLE AND TRANSPARENT expected goals calculation"""
+        # Home expected goals = home attack strength vs away defense weakness
+        home_expected = (home_xg + (away_xga - 1.35)) / 2
         
-        # Use pure Poisson for probability calculation
+        # Away expected goals = away attack strength vs home defense weakness  
+        away_expected = (away_xg + (home_xga - 1.35)) / 2
+        
+        # Ensure minimum values
+        home_expected = max(0.1, home_expected)
+        away_expected = max(0.1, away_expected)
+        
+        return home_expected, away_expected
+
+    def calculate_probabilities(self, home_expected, away_expected, max_goals=8):
+        """Calculate probabilities using Poisson distribution - TRANSPARENT"""
+        # Use Poisson for probability calculation
         home_probs = [poisson.pmf(i, home_expected) for i in range(max_goals)]
         away_probs = [poisson.pmf(i, away_expected) for i in range(max_goals)]
         
@@ -275,18 +274,6 @@ class ProfessionalPredictionEngine:
             'expected_away_goals': away_expected
         }
 
-    def calculate_team_strengths(self, home_xg, home_xga, away_xg, away_xga):
-        """Calculate team attack/defense strengths relative to league average"""
-        # Attack strength = team xG / league average
-        home_attack = home_xg / self.league_avg_xg
-        away_attack = away_xg / self.league_avg_xg
-        
-        # Defense weakness = team xGA / league average  
-        home_defense = home_xga / self.league_avg_xga
-        away_defense = away_xga / self.league_avg_xga
-        
-        return home_attack, away_attack, home_defense, away_defense
-
     def calculate_confidence(self, home_xg, away_xg, home_xga, away_xga, inputs):
         """Calculate confidence based on data quality"""
         factors = {}
@@ -305,8 +292,9 @@ class ProfessionalPredictionEngine:
         injury_factor = 1 - (home_injury_severity + away_injury_severity) / 2
         factors['injury_stability'] = injury_factor
         
-        # Rest advantage factor - NEUTRALIZED
-        rest_factor = 1.0
+        # Rest balance factor
+        rest_diff = abs(inputs['home_rest'] - inputs['away_rest'])
+        rest_factor = 1 - (rest_diff * 0.03)
         factors['rest_balance'] = rest_factor
         
         # Calculate weighted confidence
@@ -367,40 +355,33 @@ class ProfessionalPredictionEngine:
         return value_bets
 
     def predict_match(self, inputs):
-        """Main prediction function with BIVARIATE POISSON - NO ADVANTAGES"""
-        # Calculate per-match averages
+        """MAIN PREDICTION FUNCTION - SIMPLIFIED AND TRANSPARENT"""
+        # Calculate per-match averages from user inputs
         home_xg_per_match = inputs['home_xg_total'] / 5
         home_xga_per_match = inputs['home_xga_total'] / 5
         away_xg_per_match = inputs['away_xg_total'] / 5
         away_xga_per_match = inputs['away_xga_total'] / 5
         
-        # Apply modifiers - NO HOME ADVANTAGE
+        # Apply modifiers
         home_xg_adj, home_xga_adj = self.apply_modifiers(
             home_xg_per_match, home_xga_per_match,
             inputs['home_injuries'], inputs['home_rest'],
-            self.get_team_data(inputs['home_team'])['form_trend'], is_home=True
+            self.get_team_data(inputs['home_team'])['form_trend']
         )
         
         away_xg_adj, away_xga_adj = self.apply_modifiers(
             away_xg_per_match, away_xga_per_match,
             inputs['away_injuries'], inputs['away_rest'],
-            self.get_team_data(inputs['away_team'])['form_trend'], is_home=False
+            self.get_team_data(inputs['away_team'])['form_trend']
         )
         
-        # Apply rest advantage - NEUTRALIZED
-        rest_advantage = self.calculate_rest_advantage(inputs['home_rest'], inputs['away_rest'])
-        home_xg_adj *= rest_advantage
-        home_xga_adj *= rest_advantage  # Changed from division to multiplication for neutrality
-        
-        # Calculate team strengths for Bivariate Poisson
-        home_attack, away_attack, home_defense, away_defense = self.calculate_team_strengths(
+        # Calculate expected goals - SIMPLE AND TRANSPARENT
+        home_expected, away_expected = self.calculate_expected_goals(
             home_xg_adj, home_xga_adj, away_xg_adj, away_xga_adj
         )
         
-        # Use BIVARIATE POISSON for probabilities - NO HOME ADVANTAGE
-        probabilities = self.bivariate_poisson_probabilities(
-            home_attack, away_attack, home_defense, away_defense
-        )
+        # Calculate probabilities
+        probabilities = self.calculate_probabilities(home_expected, away_expected)
         
         # Calculate confidence
         confidence, confidence_factors = self.calculate_confidence(
@@ -417,7 +398,7 @@ class ProfessionalPredictionEngine:
         }
         value_bets = self.calculate_value_bets(probabilities, odds)
         
-        # Generate insights - REMOVED HOME/AWAY ADVANTAGE INSIGHTS
+        # Generate insights
         insights = self.generate_insights(inputs, probabilities, home_xg_per_match, away_xg_per_match, home_xga_per_match, away_xga_per_match)
         
         result = {
@@ -438,10 +419,8 @@ class ProfessionalPredictionEngine:
         return result, [], []
 
     def generate_insights(self, inputs, probabilities, home_xg, away_xg, home_xga, away_xga):
-        """Generate insights based on football statistics - NO HOME/AWAY ADVANTAGE"""
+        """Generate insights based on football statistics"""
         insights = []
-        
-        # REMOVED HOME ADVANTAGE ANALYSIS
         
         # Injury insights
         home_injury_data = self.injury_weights[inputs['home_injuries']]
@@ -452,7 +431,7 @@ class ProfessionalPredictionEngine:
         if inputs['away_injuries'] != "None":
             insights.append(f"🩹 {inputs['away_team']} affected by {inputs['away_injuries'].lower()} ({away_injury_data['description']})")
         
-        # Rest insights - NEUTRAL
+        # Rest insights
         rest_diff = inputs['home_rest'] - inputs['away_rest']
         if abs(rest_diff) >= 3:
             insights.append(f"⚖️ Rest difference: {abs(rest_diff)} days")
@@ -492,6 +471,8 @@ class ProfessionalPredictionEngine:
             insights.append("💰 Good value betting opportunities available")
         
         return insights
+
+# [REST OF THE CODE REMAINS EXACTLY THE SAME - initialize_session_state, get_default_inputs, display_understat_input_form, display_prediction_results, _display_value_analysis, main]
 
 def initialize_session_state():
     """Initialize session state variables"""
@@ -720,10 +701,12 @@ def display_understat_input_form(engine):
             help="Days since last match"
         )
         
-        # Show rest comparison - NEUTRAL
+        # Show rest comparison
         rest_diff = home_rest - away_rest
-        if abs(rest_diff) > 0:
-            st.info(f"⚖️ Rest difference: {abs(rest_diff)} days")
+        if rest_diff > 0:
+            st.success(f"🏠 {home_team} has {rest_diff} more rest days")
+        elif rest_diff < 0:
+            st.warning(f"✈️ {away_team} has {-rest_diff} more rest days")
         else:
             st.info("⚖️ Both teams have equal rest")
             
