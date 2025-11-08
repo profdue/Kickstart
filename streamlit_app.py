@@ -573,7 +573,7 @@ class ProfessionalPredictionEngine:
         away_xg_adj = away_xg * np.exp(-alpha * total_advantage)
         
         # Use Poisson with adjusted means
-        return self.calculate_poisson_probabilities(home_xg_adj, away_xg_adj)
+        return self.calculate_poisson_probabilities(home_xg_adj, home_xga_adj, away_xg_adj, away_xga_adj)
 
     def calculate_confidence(self, home_xg, away_xg, home_xga, away_xga, inputs):
         """Calculate confidence based on data quality"""
