@@ -146,6 +146,22 @@ st.markdown("""
         display: inline-block;
         margin: 0.2rem;
     }
+    .home-badge {
+        background: linear-gradient(135deg, #00b09b 0%, #96c93d 100%);
+        color: white;
+        padding: 0.2rem 0.6rem;
+        border-radius: 10px;
+        font-size: 0.7rem;
+        font-weight: bold;
+    }
+    .away-badge {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ffa8a8 100%);
+        color: white;
+        padding: 0.2rem 0.6rem;
+        border-radius: 10px;
+        font-size: 0.7rem;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -167,7 +183,7 @@ class ProfessionalPredictionEngine:
             12: 1.03, 13: 1.03, 14: 1.03
         }
         
-        # Team database with ALL leagues
+        # Team database with PROPER home/away separation
         self.team_database = self._initialize_complete_database()
         self.leagues = self._get_available_leagues()
 
@@ -179,136 +195,237 @@ class ProfessionalPredictionEngine:
         return sorted(list(leagues))
 
     def _initialize_complete_database(self):
-        """Initialize complete database with ALL leagues and teams"""
+        """Initialize complete database with PROPER home/away separation"""
         return {
             # Premier League - Home Data
-            "Arsenal": {"league": "Premier League", "last_5_xg_total": 10.25, "last_5_xga_total": 1.75, "form_trend": 0.08},
-            "Bournemouth": {"league": "Premier League", "last_5_xg_total": 5.77, "last_5_xga_total": 2.30, "form_trend": 0.12},
-            "Manchester City": {"league": "Premier League", "last_5_xg_total": 11.44, "last_5_xga_total": 5.00, "form_trend": 0.15},
-            "Manchester United": {"league": "Premier League", "last_5_xg_total": 10.64, "last_5_xga_total": 4.88, "form_trend": -0.05},
-            "Liverpool": {"league": "Premier League", "last_5_xg_total": 7.95, "last_5_xga_total": 5.75, "form_trend": 0.10},
-            "Sunderland": {"league": "Premier League", "last_5_xg_total": 5.44, "last_5_xga_total": 4.63, "form_trend": 0.06},
-            "Brighton": {"league": "Premier League", "last_5_xg_total": 8.55, "last_5_xga_total": 5.87, "form_trend": 0.03},
-            "Fulham": {"league": "Premier League", "last_5_xg_total": 6.73, "last_5_xga_total": 5.49, "form_trend": 0.04},
-            "Brentford": {"league": "Premier League", "last_5_xg_total": 9.06, "last_5_xga_total": 7.18, "form_trend": -0.05},
-            "Aston Villa": {"league": "Premier League", "last_5_xg_total": 5.47, "last_5_xga_total": 6.82, "form_trend": 0.10},
-            "Crystal Palace": {"league": "Premier League", "last_5_xg_total": 11.69, "last_5_xga_total": 7.65, "form_trend": -0.08},
-            "Newcastle United": {"league": "Premier League", "last_5_xg_total": 10.48, "last_5_xga_total": 4.95, "form_trend": 0.03},
-            "Leeds": {"league": "Premier League", "last_5_xg_total": 8.81, "last_5_xga_total": 3.23, "form_trend": 0.02},
-            "Everton": {"league": "Premier League", "last_5_xg_total": 8.15, "last_5_xga_total": 7.49, "form_trend": 0.02},
-            "Burnley": {"league": "Premier League", "last_5_xg_total": 3.50, "last_5_xga_total": 9.59, "form_trend": -0.15},
-            "Chelsea": {"league": "Premier League", "last_5_xg_total": 8.28, "last_5_xga_total": 7.86, "form_trend": 0.06},
-            "Tottenham": {"league": "Premier League", "last_5_xg_total": 4.63, "last_5_xga_total": 7.71, "form_trend": -0.02},
-            "Nottingham Forest": {"league": "Premier League", "last_5_xg_total": 7.50, "last_5_xga_total": 8.98, "form_trend": -0.10},
-            "West Ham": {"league": "Premier League", "last_5_xg_total": 3.91, "last_5_xga_total": 11.79, "form_trend": -0.08},
-            "Wolverhampton Wanderers": {"league": "Premier League", "last_5_xg_total": 5.98, "last_5_xga_total": 7.73, "form_trend": 0.01},
+            "Arsenal Home": {"league": "Premier League", "last_5_xg_total": 10.25, "last_5_xga_total": 1.75, "form_trend": 0.08},
+            "Bournemouth Home": {"league": "Premier League", "last_5_xg_total": 5.77, "last_5_xga_total": 2.30, "form_trend": 0.12},
+            "Manchester City Home": {"league": "Premier League", "last_5_xg_total": 11.44, "last_5_xga_total": 5.00, "form_trend": 0.15},
+            "Manchester United Home": {"league": "Premier League", "last_5_xg_total": 10.64, "last_5_xga_total": 4.88, "form_trend": -0.05},
+            "Liverpool Home": {"league": "Premier League", "last_5_xg_total": 7.95, "last_5_xga_total": 5.75, "form_trend": 0.10},
+            "Brighton Home": {"league": "Premier League", "last_5_xg_total": 8.55, "last_5_xga_total": 5.87, "form_trend": 0.03},
+            "Fulham Home": {"league": "Premier League", "last_5_xg_total": 6.73, "last_5_xga_total": 5.49, "form_trend": 0.04},
+            "Brentford Home": {"league": "Premier League", "last_5_xg_total": 9.06, "last_5_xga_total": 7.18, "form_trend": -0.05},
+            "Aston Villa Home": {"league": "Premier League", "last_5_xg_total": 5.47, "last_5_xga_total": 6.82, "form_trend": 0.10},
+            "Crystal Palace Home": {"league": "Premier League", "last_5_xg_total": 11.69, "last_5_xga_total": 7.65, "form_trend": -0.08},
+            "Newcastle United Home": {"league": "Premier League", "last_5_xg_total": 10.48, "last_5_xga_total": 4.95, "form_trend": 0.03},
+            "Everton Home": {"league": "Premier League", "last_5_xg_total": 8.15, "last_5_xga_total": 7.49, "form_trend": 0.02},
+            "Burnley Home": {"league": "Premier League", "last_5_xg_total": 3.50, "last_5_xga_total": 9.59, "form_trend": -0.15},
+            "Chelsea Home": {"league": "Premier League", "last_5_xg_total": 8.28, "last_5_xga_total": 7.86, "form_trend": 0.06},
+            "Tottenham Home": {"league": "Premier League", "last_5_xg_total": 4.63, "last_5_xga_total": 7.71, "form_trend": -0.02},
+            "Nottingham Forest Home": {"league": "Premier League", "last_5_xg_total": 7.50, "last_5_xga_total": 8.98, "form_trend": -0.10},
+            "West Ham Home": {"league": "Premier League", "last_5_xg_total": 3.91, "last_5_xga_total": 11.79, "form_trend": -0.08},
+            "Wolverhampton Wanderers Home": {"league": "Premier League", "last_5_xg_total": 5.98, "last_5_xga_total": 7.73, "form_trend": 0.01},
+
+            # Premier League - Away Data
+            "Arsenal Away": {"league": "Premier League", "last_5_xg_total": 8.48, "last_5_xga_total": 3.78, "form_trend": 0.08},
+            "Bournemouth Away": {"league": "Premier League", "last_5_xg_total": 7.70, "last_5_xga_total": 11.60, "form_trend": 0.12},
+            "Manchester City Away": {"league": "Premier League", "last_5_xg_total": 8.02, "last_5_xga_total": 4.98, "form_trend": 0.15},
+            "Manchester United Away": {"league": "Premier League", "last_5_xg_total": 8.75, "last_5_xga_total": 10.60, "form_trend": -0.05},
+            "Liverpool Away": {"league": "Premier League", "last_5_xg_total": 10.72, "last_5_xga_total": 10.17, "form_trend": 0.10},
+            "Brighton Away": {"league": "Premier League", "last_5_xg_total": 7.52, "last_5_xga_total": 7.60, "form_trend": 0.03},
+            "Fulham Away": {"league": "Premier League", "last_5_xg_total": 4.96, "last_5_xga_total": 9.34, "form_trend": 0.04},
+            "Brentford Away": {"league": "Premier League", "last_5_xg_total": 7.88, "last_5_xga_total": 5.85, "form_trend": -0.05},
+            "Aston Villa Away": {"league": "Premier League", "last_5_xg_total": 3.06, "last_5_xga_total": 6.95, "form_trend": 0.10},
+            "Crystal Palace Away": {"league": "Premier League", "last_5_xg_total": 8.50, "last_5_xga_total": 6.04, "form_trend": -0.08},
+            "Newcastle United Away": {"league": "Premier League", "last_5_xg_total": 3.66, "last_5_xga_total": 3.82, "form_trend": 0.03},
+            "Everton Away": {"league": "Premier League", "last_5_xg_total": 5.24, "last_5_xga_total": 8.05, "form_trend": 0.02},
+            "Burnley Away": {"league": "Premier League", "last_5_xg_total": 4.62, "last_5_xga_total": 13.54, "form_trend": -0.15},
+            "Chelsea Away": {"league": "Premier League", "last_5_xg_total": 11.08, "last_5_xga_total": 5.70, "form_trend": 0.06},
+            "Tottenham Away": {"league": "Premier League", "last_5_xg_total": 6.77, "last_5_xga_total": 5.23, "form_trend": -0.02},
+            "Nottingham Forest Away": {"league": "Premier League", "last_5_xg_total": 3.10, "last_5_xga_total": 9.60, "form_trend": -0.10},
+            "West Ham Away": {"league": "Premier League", "last_5_xg_total": 4.93, "last_5_xga_total": 7.63, "form_trend": -0.08},
+            "Wolverhampton Wanderers Away": {"league": "Premier League", "last_5_xg_total": 2.80, "last_5_xga_total": 6.73, "form_trend": 0.01},
 
             # La Liga - Home Data
-            "Real Madrid": {"league": "La Liga", "last_5_xg_total": 15.97, "last_5_xga_total": 4.09, "form_trend": 0.11},
-            "Villarreal": {"league": "La Liga", "last_5_xg_total": 14.71, "last_5_xga_total": 6.50, "form_trend": 0.13},
-            "Atletico Madrid": {"league": "La Liga", "last_5_xg_total": 16.16, "last_5_xga_total": 4.99, "form_trend": 0.09},
-            "Barcelona": {"league": "La Liga", "last_5_xg_total": 14.66, "last_5_xga_total": 3.54, "form_trend": 0.07},
-            "Espanyol": {"league": "La Liga", "last_5_xg_total": 12.54, "last_5_xga_total": 8.27, "form_trend": 0.10},
-            "Real Betis": {"league": "La Liga", "last_5_xg_total": 10.74, "last_5_xga_total": 5.36, "form_trend": 0.05},
-            "Elche": {"league": "La Liga", "last_5_xg_total": 9.67, "last_5_xga_total": 6.21, "form_trend": 0.03},
-            "Alaves": {"league": "La Liga", "last_5_xg_total": 9.58, "last_5_xga_total": 4.62, "form_trend": -0.02},
-            "Osasuna": {"league": "La Liga", "last_5_xg_total": 6.53, "last_5_xga_total": 5.02, "form_trend": -0.04},
-            "Real Sociedad": {"league": "La Liga", "last_5_xg_total": 11.66, "last_5_xga_total": 7.12, "form_trend": -0.03},
-            "Athletic Club": {"league": "La Liga", "last_5_xg_total": 9.35, "last_5_xga_total": 3.56, "form_trend": -0.01},
-            "Getafe": {"league": "La Liga", "last_5_xg_total": 4.29, "last_5_xga_total": 6.55, "form_trend": -0.08},
-            "Valencia": {"league": "La Liga", "last_5_xg_total": 7.50, "last_5_xga_total": 5.93, "form_trend": -0.10},
-            "Mallorca": {"league": "La Liga", "last_5_xg_total": 4.64, "last_5_xga_total": 7.95, "form_trend": -0.06},
-            "Rayo Vallecano": {"league": "La Liga", "last_5_xg_total": 6.63, "last_5_xga_total": 5.63, "form_trend": -0.12},
-            "Celta Vigo": {"league": "La Liga", "last_5_xg_total": 7.32, "last_5_xga_total": 7.44, "form_trend": -0.14},
-            "Girona": {"league": "La Liga", "last_5_xg_total": 7.71, "last_5_xga_total": 14.78, "form_trend": -0.18},
-            "Sevilla": {"league": "La Liga", "last_5_xg_total": 6.17, "last_5_xga_total": 8.95, "form_trend": 0.00},
-            "Real Oviedo": {"league": "La Liga", "last_5_xg_total": 5.26, "last_5_xga_total": 11.52, "form_trend": 0.00},
-            "Levante": {"league": "La Liga", "last_5_xg_total": 7.59, "last_5_xga_total": 13.20, "form_trend": 0.00},
+            "Real Madrid Home": {"league": "La Liga", "last_5_xg_total": 15.97, "last_5_xga_total": 4.09, "form_trend": 0.11},
+            "Villarreal Home": {"league": "La Liga", "last_5_xg_total": 14.71, "last_5_xga_total": 6.50, "form_trend": 0.13},
+            "Atletico Madrid Home": {"league": "La Liga", "last_5_xg_total": 16.16, "last_5_xga_total": 4.99, "form_trend": 0.09},
+            "Barcelona Home": {"league": "La Liga", "last_5_xg_total": 14.66, "last_5_xga_total": 3.54, "form_trend": 0.07},
+            "Espanyol Home": {"league": "La Liga", "last_5_xg_total": 12.54, "last_5_xga_total": 8.27, "form_trend": 0.10},
+            "Real Betis Home": {"league": "La Liga", "last_5_xg_total": 10.74, "last_5_xga_total": 5.36, "form_trend": 0.05},
+            "Elche Home": {"league": "La Liga", "last_5_xg_total": 9.67, "last_5_xga_total": 6.21, "form_trend": 0.03},
+            "Alaves Home": {"league": "La Liga", "last_5_xg_total": 9.58, "last_5_xga_total": 4.62, "form_trend": -0.02},
+            "Osasuna Home": {"league": "La Liga", "last_5_xg_total": 6.53, "last_5_xga_total": 5.02, "form_trend": -0.04},
+            "Real Sociedad Home": {"league": "La Liga", "last_5_xg_total": 11.66, "last_5_xga_total": 7.12, "form_trend": -0.03},
+            "Athletic Club Home": {"league": "La Liga", "last_5_xg_total": 9.35, "last_5_xga_total": 3.56, "form_trend": -0.01},
+            "Getafe Home": {"league": "La Liga", "last_5_xg_total": 4.29, "last_5_xga_total": 6.55, "form_trend": -0.08},
+            "Valencia Home": {"league": "La Liga", "last_5_xg_total": 7.50, "last_5_xga_total": 5.93, "form_trend": -0.10},
+            "Mallorca Home": {"league": "La Liga", "last_5_xg_total": 4.64, "last_5_xga_total": 7.95, "form_trend": -0.06},
+            "Rayo Vallecano Home": {"league": "La Liga", "last_5_xg_total": 6.63, "last_5_xga_total": 5.63, "form_trend": -0.12},
+            "Celta Vigo Home": {"league": "La Liga", "last_5_xg_total": 7.32, "last_5_xga_total": 7.44, "form_trend": -0.14},
+            "Girona Home": {"league": "La Liga", "last_5_xg_total": 7.71, "last_5_xga_total": 14.78, "form_trend": -0.18},
+            "Sevilla Home": {"league": "La Liga", "last_5_xg_total": 6.17, "last_5_xga_total": 8.95, "form_trend": 0.00},
+            "Levante Home": {"league": "La Liga", "last_5_xg_total": 7.59, "last_5_xga_total": 13.20, "form_trend": 0.00},
+
+            # La Liga - Away Data
+            "Real Madrid Away": {"league": "La Liga", "last_5_xg_total": 11.60, "last_5_xga_total": 8.51, "form_trend": 0.11},
+            "Villarreal Away": {"league": "La Liga", "last_5_xg_total": 7.62, "last_5_xga_total": 8.19, "form_trend": 0.13},
+            "Atletico Madrid Away": {"league": "La Liga", "last_5_xg_total": 5.93, "last_5_xga_total": 6.41, "form_trend": 0.09},
+            "Barcelona Away": {"league": "La Liga", "last_5_xg_total": 12.54, "last_5_xga_total": 12.85, "form_trend": 0.07},
+            "Espanyol Away": {"league": "La Liga", "last_5_xg_total": 9.30, "last_5_xga_total": 7.96, "form_trend": 0.10},
+            "Real Betis Away": {"league": "La Liga", "last_5_xg_total": 6.84, "last_5_xga_total": 5.96, "form_trend": 0.05},
+            "Elche Away": {"league": "La Liga", "last_5_xg_total": 4.47, "last_5_xga_total": 10.56, "form_trend": 0.03},
+            "Alaves Away": {"league": "La Liga", "last_5_xg_total": 4.72, "last_5_xga_total": 6.18, "form_trend": -0.02},
+            "Osasuna Away": {"league": "La Liga", "last_5_xg_total": 5.72, "last_5_xga_total": 10.51, "form_trend": -0.04},
+            "Real Sociedad Away": {"league": "La Liga", "last_5_xg_total": 7.14, "last_5_xga_total": 9.11, "form_trend": -0.03},
+            "Athletic Club Away": {"league": "La Liga", "last_5_xg_total": 4.54, "last_5_xga_total": 7.26, "form_trend": -0.01},
+            "Getafe Away": {"league": "La Liga", "last_5_xg_total": 5.66, "last_5_xga_total": 7.14, "form_trend": -0.08},
+            "Valencia Away": {"league": "La Liga", "last_5_xg_total": 4.56, "last_5_xga_total": 12.84, "form_trend": -0.10},
+            "Mallorca Away": {"league": "La Liga", "last_5_xg_total": 6.14, "last_5_xga_total": 13.16, "form_trend": -0.06},
+            "Rayo Vallecano Away": {"league": "La Liga", "last_5_xg_total": 10.65, "last_5_xga_total": 13.26, "form_trend": -0.12},
+            "Celta Vigo Away": {"league": "La Liga", "last_5_xg_total": 6.49, "last_5_xga_total": 9.57, "form_trend": -0.14},
+            "Girona Away": {"league": "La Liga", "last_5_xg_total": 5.65, "last_5_xga_total": 10.63, "form_trend": -0.18},
+            "Sevilla Away": {"league": "La Liga", "last_5_xg_total": 4.62, "last_5_xga_total": 12.12, "form_trend": 0.00},
+            "Levante Away": {"league": "La Liga", "last_5_xg_total": 11.47, "last_5_xga_total": 7.38, "form_trend": 0.00},
 
             # Bundesliga - Home Data
-            "Bayern Munich": {"league": "Bundesliga", "last_5_xg_total": 15.76, "last_5_xga_total": 3.17, "form_trend": 0.11},
-            "RasenBallsport Leipzig": {"league": "Bundesliga", "last_5_xg_total": 9.98, "last_5_xga_total": 4.73, "form_trend": 0.13},
-            "VfB Stuttgart": {"league": "Bundesliga", "last_5_xg_total": 6.49, "last_5_xga_total": 4.36, "form_trend": 0.09},
-            "Bayer Leverkusen": {"league": "Bundesliga", "last_5_xg_total": 11.14, "last_5_xga_total": 4.34, "form_trend": 0.07},
-            "Borussia Dortmund": {"league": "Bundesliga", "last_5_xg_total": 5.83, "last_5_xga_total": 3.79, "form_trend": 0.10},
-            "Werder Bremen": {"league": "Bundesliga", "last_5_xg_total": 8.22, "last_5_xga_total": 6.48, "form_trend": 0.05},
-            "Union Berlin": {"league": "Bundesliga", "last_5_xg_total": 8.03, "last_5_xga_total": 8.05, "form_trend": 0.03},
-            "FC Cologne": {"league": "Bundesliga", "last_5_xg_total": 7.32, "last_5_xga_total": 5.45, "form_trend": -0.02},
-            "Hamburger SV": {"league": "Bundesliga", "last_5_xg_total": 8.13, "last_5_xga_total": 5.78, "form_trend": -0.04},
-            "Eintracht Frankfurt": {"league": "Bundesliga", "last_5_xg_total": 7.85, "last_5_xga_total": 5.57, "form_trend": -0.03},
-            "Freiburg": {"league": "Bundesliga", "last_5_xg_total": 6.34, "last_5_xga_total": 4.87, "form_trend": -0.01},
-            "FC Heidenheim": {"league": "Bundesliga", "last_5_xg_total": 6.78, "last_5_xga_total": 9.13, "form_trend": -0.08},
-            "St. Pauli": {"league": "Bundesliga", "last_5_xg_total": 5.91, "last_5_xga_total": 9.74, "form_trend": -0.10},
-            "Hoffenheim": {"league": "Bundesliga", "last_5_xg_total": 6.17, "last_5_xga_total": 6.75, "form_trend": -0.06},
-            "Augsburg": {"league": "Bundesliga", "last_5_xg_total": 4.74, "last_5_xga_total": 10.45, "form_trend": -0.12},
-            "Wolfsburg": {"league": "Bundesliga", "last_5_xg_total": 6.81, "last_5_xga_total": 10.29, "form_trend": -0.14},
-            "Borussia M.Gladbach": {"league": "Bundesliga", "last_5_xg_total": 5.96, "last_5_xga_total": 9.66, "form_trend": -0.18},
-            "Mainz 05": {"league": "Bundesliga", "last_5_xg_total": 6.14, "last_5_xga_total": 10.22, "form_trend": 0.00},
+            "Bayern Munich Home": {"league": "Bundesliga", "last_5_xg_total": 15.76, "last_5_xga_total": 3.17, "form_trend": 0.11},
+            "RasenBallsport Leipzig Home": {"league": "Bundesliga", "last_5_xg_total": 9.98, "last_5_xga_total": 4.73, "form_trend": 0.13},
+            "VfB Stuttgart Home": {"league": "Bundesliga", "last_5_xg_total": 6.49, "last_5_xga_total": 4.36, "form_trend": 0.09},
+            "Bayer Leverkusen Home": {"league": "Bundesliga", "last_5_xg_total": 11.14, "last_5_xga_total": 4.34, "form_trend": 0.07},
+            "Borussia Dortmund Home": {"league": "Bundesliga", "last_5_xg_total": 5.83, "last_5_xga_total": 3.79, "form_trend": 0.10},
+            "Werder Bremen Home": {"league": "Bundesliga", "last_5_xg_total": 8.22, "last_5_xga_total": 6.48, "form_trend": 0.05},
+            "Union Berlin Home": {"league": "Bundesliga", "last_5_xg_total": 8.03, "last_5_xga_total": 8.05, "form_trend": 0.03},
+            "FC Cologne Home": {"league": "Bundesliga", "last_5_xg_total": 7.32, "last_5_xga_total": 5.45, "form_trend": -0.02},
+            "Eintracht Frankfurt Home": {"league": "Bundesliga", "last_5_xg_total": 7.85, "last_5_xga_total": 5.57, "form_trend": -0.03},
+            "Freiburg Home": {"league": "Bundesliga", "last_5_xg_total": 6.34, "last_5_xga_total": 4.87, "form_trend": -0.01},
+            "FC Heidenheim Home": {"league": "Bundesliga", "last_5_xg_total": 6.78, "last_5_xga_total": 9.13, "form_trend": -0.08},
+            "Hoffenheim Home": {"league": "Bundesliga", "last_5_xg_total": 6.17, "last_5_xga_total": 6.75, "form_trend": -0.06},
+            "Augsburg Home": {"league": "Bundesliga", "last_5_xg_total": 4.74, "last_5_xga_total": 10.45, "form_trend": -0.12},
+            "Wolfsburg Home": {"league": "Bundesliga", "last_5_xg_total": 6.81, "last_5_xga_total": 10.29, "form_trend": -0.14},
+            "Borussia M.Gladbach Home": {"league": "Bundesliga", "last_5_xg_total": 5.96, "last_5_xga_total": 9.66, "form_trend": -0.18},
+            "Mainz 05 Home": {"league": "Bundesliga", "last_5_xg_total": 6.14, "last_5_xga_total": 10.22, "form_trend": 0.00},
+
+            # Bundesliga - Away Data
+            "Bayern Munich Away": {"league": "Bundesliga", "last_5_xg_total": 10.97, "last_5_xga_total": 2.86, "form_trend": 0.11},
+            "RasenBallsport Leipzig Away": {"league": "Bundesliga", "last_5_xg_total": 8.47, "last_5_xga_total": 7.97, "form_trend": 0.13},
+            "VfB Stuttgart Away": {"league": "Bundesliga", "last_5_xg_total": 8.02, "last_5_xga_total": 5.42, "form_trend": 0.09},
+            "Bayer Leverkusen Away": {"league": "Bundesliga", "last_5_xg_total": 8.14, "last_5_xga_total": 7.05, "form_trend": 0.07},
+            "Borussia Dortmund Away": {"league": "Bundesliga", "last_5_xg_total": 8.71, "last_5_xga_total": 6.08, "form_trend": 0.10},
+            "Werder Bremen Away": {"league": "Bundesliga", "last_5_xg_total": 5.87, "last_5_xga_total": 13.99, "form_trend": 0.05},
+            "Union Berlin Away": {"league": "Bundesliga", "last_5_xg_total": 4.89, "last_5_xga_total": 8.08, "form_trend": 0.03},
+            "FC Cologne Away": {"league": "Bundesliga", "last_5_xg_total": 6.78, "last_5_xga_total": 10.43, "form_trend": -0.02},
+            "Eintracht Frankfurt Away": {"league": "Bundesliga", "last_5_xg_total": 8.40, "last_5_xga_total": 7.69, "form_trend": -0.03},
+            "Freiburg Away": {"league": "Bundesliga", "last_5_xg_total": 5.69, "last_5_xga_total": 7.40, "form_trend": -0.01},
+            "FC Heidenheim Away": {"league": "Bundesliga", "last_5_xg_total": 4.80, "last_5_xga_total": 10.15, "form_trend": -0.08},
+            "Hoffenheim Away": {"league": "Bundesliga", "last_5_xg_total": 9.62, "last_5_xga_total": 7.67, "form_trend": -0.06},
+            "Augsburg Away": {"league": "Bundesliga", "last_5_xg_total": 3.98, "last_5_xga_total": 6.54, "form_trend": -0.12},
+            "Wolfsburg Away": {"league": "Bundesliga", "last_5_xg_total": 6.15, "last_5_xga_total": 7.88, "form_trend": -0.14},
+            "Borussia M.Gladbach Away": {"league": "Bundesliga", "last_5_xg_total": 7.16, "last_5_xga_total": 5.21, "form_trend": -0.18},
+            "Mainz 05 Away": {"league": "Bundesliga", "last_5_xg_total": 6.39, "last_5_xga_total": 4.81, "form_trend": 0.00},
 
             # Serie A - Home Data
-            "Napoli": {"league": "Serie A", "last_5_xg_total": 6.75, "last_5_xga_total": 7.10, "form_trend": 0.11},
-            "AC Milan": {"league": "Serie A", "last_5_xg_total": 11.95, "last_5_xga_total": 6.95, "form_trend": 0.13},
-            "Inter": {"league": "Serie A", "last_5_xg_total": 14.93, "last_5_xga_total": 4.23, "form_trend": 0.09},
-            "Como": {"league": "Serie A", "last_5_xg_total": 7.72, "last_5_xga_total": 5.97, "form_trend": 0.07},
-            "Juventus": {"league": "Serie A", "last_5_xg_total": 9.23, "last_5_xga_total": 4.88, "form_trend": 0.10},
-            "Lazio": {"league": "Serie A", "last_5_xg_total": 7.58, "last_5_xga_total": 6.74, "form_trend": 0.05},
-            "Bologna": {"league": "Serie A", "last_5_xg_total": 7.34, "last_5_xga_total": 2.14, "form_trend": 0.03},
-            "Roma": {"league": "Serie A", "last_5_xg_total": 7.12, "last_5_xga_total": 4.74, "form_trend": -0.02},
-            "Udinese": {"league": "Serie A", "last_5_xg_total": 6.56, "last_5_xga_total": 3.93, "form_trend": -0.04},
-            "Torino": {"league": "Serie A", "last_5_xg_total": 7.32, "last_5_xga_total": 8.47, "form_trend": -0.03},
-            "Atalanta": {"league": "Serie A", "last_5_xg_total": 10.08, "last_5_xga_total": 3.37, "form_trend": -0.01},
-            "Cremonese": {"league": "Serie A", "last_5_xg_total": 6.51, "last_5_xga_total": 7.43, "form_trend": -0.08},
-            "Sassuolo": {"league": "Serie A", "last_5_xg_total": 6.09, "last_5_xga_total": 7.70, "form_trend": -0.10},
-            "Pisa": {"league": "Serie A", "last_5_xg_total": 5.32, "last_5_xga_total": 7.07, "form_trend": -0.06},
-            "Parma Calcio 1913": {"league": "Serie A", "last_5_xg_total": 5.47, "last_5_xga_total": 6.39, "form_trend": -0.12},
-            "Cagliari": {"league": "Serie A", "last_5_xg_total": 4.97, "last_5_xga_total": 9.15, "form_trend": -0.14},
-            "Verona": {"league": "Serie A", "last_5_xg_total": 6.77, "last_5_xga_total": 4.13, "form_trend": -0.18},
-            "Lecce": {"league": "Serie A", "last_5_xg_total": 5.41, "last_5_xga_total": 7.63, "form_trend": 0.00},
-            "Genoa": {"league": "Serie A", "last_5_xg_total": 6.20, "last_5_xga_total": 7.28, "form_trend": 0.00},
-            "Fiorentina": {"league": "Serie A", "last_5_xg_total": 8.20, "last_5_xga_total": 9.08, "form_trend": 0.00},
+            "Napoli Home": {"league": "Serie A", "last_5_xg_total": 6.75, "last_5_xga_total": 7.10, "form_trend": 0.11},
+            "AC Milan Home": {"league": "Serie A", "last_5_xg_total": 11.95, "last_5_xga_total": 6.95, "form_trend": 0.13},
+            "Inter Home": {"league": "Serie A", "last_5_xg_total": 14.93, "last_5_xga_total": 4.23, "form_trend": 0.09},
+            "Juventus Home": {"league": "Serie A", "last_5_xg_total": 9.23, "last_5_xga_total": 4.88, "form_trend": 0.10},
+            "Lazio Home": {"league": "Serie A", "last_5_xg_total": 7.58, "last_5_xga_total": 6.74, "form_trend": 0.05},
+            "Bologna Home": {"league": "Serie A", "last_5_xg_total": 7.34, "last_5_xga_total": 2.14, "form_trend": 0.03},
+            "Roma Home": {"league": "Serie A", "last_5_xg_total": 7.12, "last_5_xga_total": 4.74, "form_trend": -0.02},
+            "Udinese Home": {"league": "Serie A", "last_5_xg_total": 6.56, "last_5_xga_total": 3.93, "form_trend": -0.04},
+            "Torino Home": {"league": "Serie A", "last_5_xg_total": 7.32, "last_5_xga_total": 8.47, "form_trend": -0.03},
+            "Atalanta Home": {"league": "Serie A", "last_5_xg_total": 10.08, "last_5_xga_total": 3.37, "form_trend": -0.01},
+            "Sassuolo Home": {"league": "Serie A", "last_5_xg_total": 6.09, "last_5_xga_total": 7.70, "form_trend": -0.10},
+            "Cagliari Home": {"league": "Serie A", "last_5_xg_total": 4.97, "last_5_xga_total": 9.15, "form_trend": -0.14},
+            "Verona Home": {"league": "Serie A", "last_5_xg_total": 6.77, "last_5_xga_total": 4.13, "form_trend": -0.18},
+            "Lecce Home": {"league": "Serie A", "last_5_xg_total": 5.41, "last_5_xga_total": 7.63, "form_trend": 0.00},
+            "Genoa Home": {"league": "Serie A", "last_5_xg_total": 6.20, "last_5_xga_total": 7.28, "form_trend": 0.00},
+            "Fiorentina Home": {"league": "Serie A", "last_5_xg_total": 8.20, "last_5_xga_total": 9.08, "form_trend": 0.00},
+
+            # Serie A - Away Data
+            "Napoli Away": {"league": "Serie A", "last_5_xg_total": 9.99, "last_5_xga_total": 5.58, "form_trend": 0.11},
+            "AC Milan Away": {"league": "Serie A", "last_5_xg_total": 6.02, "last_5_xga_total": 2.63, "form_trend": 0.13},
+            "Inter Away": {"league": "Serie A", "last_5_xg_total": 9.16, "last_5_xga_total": 4.96, "form_trend": 0.09},
+            "Juventus Away": {"league": "Serie A", "last_5_xg_total": 6.85, "last_5_xga_total": 5.46, "form_trend": 0.10},
+            "Lazio Away": {"league": "Serie A", "last_5_xg_total": 5.48, "last_5_xga_total": 7.14, "form_trend": 0.05},
+            "Bologna Away": {"league": "Serie A", "last_5_xg_total": 7.79, "last_5_xga_total": 9.59, "form_trend": 0.03},
+            "Roma Away": {"league": "Serie A", "last_5_xg_total": 7.62, "last_5_xga_total": 7.16, "form_trend": -0.02},
+            "Udinese Away": {"league": "Serie A", "last_5_xg_total": 5.69, "last_5_xga_total": 9.80, "form_trend": -0.04},
+            "Torino Away": {"league": "Serie A", "last_5_xg_total": 5.26, "last_5_xga_total": 6.87, "form_trend": -0.03},
+            "Atalanta Away": {"league": "Serie A", "last_5_xg_total": 5.65, "last_5_xga_total": 5.58, "form_trend": -0.01},
+            "Sassuolo Away": {"league": "Serie A", "last_5_xg_total": 5.40, "last_5_xga_total": 8.98, "form_trend": -0.10},
+            "Cagliari Away": {"league": "Serie A", "last_5_xg_total": 5.97, "last_5_xga_total": 8.48, "form_trend": -0.14},
+            "Verona Away": {"league": "Serie A", "last_5_xg_total": 6.11, "last_5_xga_total": 8.64, "form_trend": -0.18},
+            "Lecce Away": {"league": "Serie A", "last_5_xg_total": 3.40, "last_5_xga_total": 7.18, "form_trend": 0.00},
+            "Genoa Away": {"league": "Serie A", "last_5_xg_total": 7.84, "last_5_xga_total": 8.37, "form_trend": 0.00},
+            "Fiorentina Away": {"league": "Serie A", "last_5_xg_total": 4.88, "last_5_xga_total": 8.04, "form_trend": 0.00},
 
             # Ligue 1 - Home Data
-            "Lens": {"league": "Ligue 1", "last_5_xg_total": 17.18, "last_5_xga_total": 7.81, "form_trend": 0.11},
-            "Marseille": {"league": "Ligue 1", "last_5_xg_total": 13.74, "last_5_xga_total": 3.51, "form_trend": 0.13},
-            "Lille": {"league": "Ligue 1", "last_5_xg_total": 13.19, "last_5_xga_total": 6.33, "form_trend": 0.09},
-            "Monaco": {"league": "Ligue 1", "last_5_xg_total": 14.38, "last_5_xga_total": 7.01, "form_trend": 0.07},
-            "Paris Saint Germain": {"league": "Ligue 1", "last_5_xg_total": 10.01, "last_5_xga_total": 4.44, "form_trend": 0.10},
-            "Nice": {"league": "Ligue 1", "last_5_xg_total": 10.24, "last_5_xga_total": 8.64, "form_trend": 0.05},
-            "Strasbourg": {"league": "Ligue 1", "last_5_xg_total": 12.73, "last_5_xga_total": 3.93, "form_trend": 0.03},
-            "Lyon": {"league": "Ligue 1", "last_5_xg_total": 10.28, "last_5_xga_total": 4.24, "form_trend": -0.02},
-            "Rennes": {"league": "Ligue 1", "last_5_xg_total": 11.65, "last_5_xga_total": 9.97, "form_trend": -0.04},
-            "Toulouse": {"league": "Ligue 1", "last_5_xg_total": 11.07, "last_5_xga_total": 7.53, "form_trend": -0.03},
-            "Le Havre": {"league": "Ligue 1", "last_5_xg_total": 8.57, "last_5_xga_total": 4.86, "form_trend": -0.01},
-            "Angers": {"league": "Ligue 1", "last_5_xg_total": 5.79, "last_5_xga_total": 7.44, "form_trend": -0.08},
-            "Lorient": {"league": "Ligue 1", "last_5_xg_total": 8.48, "last_5_xga_total": 7.53, "form_trend": -0.10},
-            "Paris FC": {"league": "Ligue 1", "last_5_xg_total": 10.90, "last_5_xga_total": 8.45, "form_trend": -0.06},
-            "Brest": {"league": "Ligue 1", "last_5_xg_total": 11.15, "last_5_xga_total": 9.51, "form_trend": -0.12},
-            "Auxerre": {"league": "Ligue 1", "last_5_xg_total": 6.21, "last_5_xga_total": 7.67, "form_trend": -0.14},
-            "Metz": {"league": "Ligue 1", "last_5_xg_total": 5.62, "last_5_xga_total": 7.02, "form_trend": -0.18},
-            "Nantes": {"league": "Ligue 1", "last_5_xg_total": 7.17, "last_5_xga_total": 12.13, "form_trend": 0.00},
+            "Lens Home": {"league": "Ligue 1", "last_5_xg_total": 17.18, "last_5_xga_total": 7.81, "form_trend": 0.11},
+            "Marseille Home": {"league": "Ligue 1", "last_5_xg_total": 13.74, "last_5_xga_total": 3.51, "form_trend": 0.13},
+            "Lille Home": {"league": "Ligue 1", "last_5_xg_total": 13.19, "last_5_xga_total": 6.33, "form_trend": 0.09},
+            "Monaco Home": {"league": "Ligue 1", "last_5_xg_total": 14.38, "last_5_xga_total": 7.01, "form_trend": 0.07},
+            "Paris Saint Germain Home": {"league": "Ligue 1", "last_5_xg_total": 10.01, "last_5_xga_total": 4.44, "form_trend": 0.10},
+            "Nice Home": {"league": "Ligue 1", "last_5_xg_total": 10.24, "last_5_xga_total": 8.64, "form_trend": 0.05},
+            "Strasbourg Home": {"league": "Ligue 1", "last_5_xg_total": 12.73, "last_5_xga_total": 3.93, "form_trend": 0.03},
+            "Lyon Home": {"league": "Ligue 1", "last_5_xg_total": 10.28, "last_5_xga_total": 4.24, "form_trend": -0.02},
+            "Rennes Home": {"league": "Ligue 1", "last_5_xg_total": 11.65, "last_5_xga_total": 9.97, "form_trend": -0.04},
+            "Toulouse Home": {"league": "Ligue 1", "last_5_xg_total": 11.07, "last_5_xga_total": 7.53, "form_trend": -0.03},
+            "Le Havre Home": {"league": "Ligue 1", "last_5_xg_total": 8.57, "last_5_xga_total": 4.86, "form_trend": -0.01},
+            "Brest Home": {"league": "Ligue 1", "last_5_xg_total": 11.15, "last_5_xga_total": 9.51, "form_trend": -0.12},
+            "Nantes Home": {"league": "Ligue 1", "last_5_xg_total": 7.17, "last_5_xga_total": 12.13, "form_trend": 0.00},
+
+            # Ligue 1 - Away Data
+            "Lens Away": {"league": "Ligue 1", "last_5_xg_total": 5.74, "last_5_xga_total": 9.07, "form_trend": 0.11},
+            "Marseille Away": {"league": "Ligue 1", "last_5_xg_total": 9.11, "last_5_xga_total": 8.69, "form_trend": 0.13},
+            "Lille Away": {"league": "Ligue 1", "last_5_xg_total": 10.87, "last_5_xga_total": 8.99, "form_trend": 0.09},
+            "Monaco Away": {"league": "Ligue 1", "last_5_xg_total": 9.80, "last_5_xga_total": 9.12, "form_trend": 0.07},
+            "Paris Saint Germain Away": {"league": "Ligue 1", "last_5_xg_total": 10.70, "last_5_xga_total": 6.96, "form_trend": 0.10},
+            "Nice Away": {"league": "Ligue 1", "last_5_xg_total": 5.38, "last_5_xga_total": 9.72, "form_trend": 0.05},
+            "Strasbourg Away": {"league": "Ligue 1", "last_5_xg_total": 9.78, "last_5_xga_total": 11.51, "form_trend": 0.03},
+            "Lyon Away": {"league": "Ligue 1", "last_5_xg_total": 8.26, "last_5_xga_total": 9.12, "form_trend": -0.02},
+            "Rennes Away": {"league": "Ligue 1", "last_5_xg_total": 7.09, "last_5_xga_total": 13.52, "form_trend": -0.04},
+            "Toulouse Away": {"league": "Ligue 1", "last_5_xg_total": 5.19, "last_5_xga_total": 9.05, "form_trend": -0.03},
+            "Le Havre Away": {"league": "Ligue 1", "last_5_xg_total": 4.30, "last_5_xga_total": 9.56, "form_trend": -0.01},
+            "Brest Away": {"league": "Ligue 1", "last_5_xg_total": 4.99, "last_5_xga_total": 8.39, "form_trend": -0.12},
+            "Nantes Away": {"league": "Ligue 1", "last_5_xg_total": 4.44, "last_5_xga_total": 8.55, "form_trend": 0.00},
 
             # Russian Premier League - Home Data
-            "CSKA Moscow": {"league": "RFPL", "last_5_xg_total": 14.39, "last_5_xga_total": 7.32, "form_trend": 0.11},
-            "Zenit St. Petersburg": {"league": "RFPL", "last_5_xg_total": 13.87, "last_5_xga_total": 4.95, "form_trend": 0.13},
-            "FC Krasnodar": {"league": "RFPL", "last_5_xg_total": 13.37, "last_5_xga_total": 7.15, "form_trend": 0.09},
-            "Spartak Moscow": {"league": "RFPL", "last_5_xg_total": 10.73, "last_5_xga_total": 6.13, "form_trend": 0.07},
-            "Lokomotiv Moscow": {"league": "RFPL", "last_5_xg_total": 11.88, "last_5_xga_total": 5.92, "form_trend": 0.10},
-            "Rubin Kazan": {"league": "RFPL", "last_5_xg_total": 8.50, "last_5_xga_total": 7.24, "form_trend": 0.05},
-            "Baltika": {"league": "RFPL", "last_5_xg_total": 8.76, "last_5_xga_total": 4.39, "form_trend": 0.03},
-            "Dynamo Makhachkala": {"league": "RFPL", "last_5_xg_total": 7.88, "last_5_xga_total": 4.78, "form_trend": -0.02},
-            "FK Akhmat": {"league": "RFPL", "last_5_xg_total": 8.36, "last_5_xga_total": 5.35, "form_trend": -0.04},
-            "Dinamo Moscow": {"league": "RFPL", "last_5_xg_total": 14.39, "last_5_xga_total": 11.36, "form_trend": -0.03},
-            "FC Rostov": {"league": "RFPL", "last_5_xg_total": 8.61, "last_5_xga_total": 6.68, "form_trend": -0.01},
-            "Krylya Sovetov Samara": {"league": "RFPL", "last_5_xg_total": 6.84, "last_5_xga_total": 10.73, "form_trend": -0.08},
-            "FC Orenburg": {"league": "RFPL", "last_5_xg_total": 8.20, "last_5_xga_total": 9.42, "form_trend": -0.10},
-            "Nizhny Novgorod": {"league": "RFPL", "last_5_xg_total": 8.22, "last_5_xga_total": 8.82, "form_trend": -0.06},
-            "Akron": {"league": "RFPL", "last_5_xg_total": 8.18, "last_5_xga_total": 9.35, "form_trend": -0.12},
-            "PFC Sochi": {"league": "RFPL", "last_5_xg_total": 3.31, "last_5_xga_total": 11.51, "form_trend": -0.14},
+            "CSKA Moscow Home": {"league": "RFPL", "last_5_xg_total": 14.39, "last_5_xga_total": 7.32, "form_trend": 0.11},
+            "Zenit St. Petersburg Home": {"league": "RFPL", "last_5_xg_total": 13.87, "last_5_xga_total": 4.95, "form_trend": 0.13},
+            "FC Krasnodar Home": {"league": "RFPL", "last_5_xg_total": 13.37, "last_5_xga_total": 7.15, "form_trend": 0.09},
+            "Spartak Moscow Home": {"league": "RFPL", "last_5_xg_total": 10.73, "last_5_xga_total": 6.13, "form_trend": 0.07},
+            "Lokomotiv Moscow Home": {"league": "RFPL", "last_5_xg_total": 11.88, "last_5_xga_total": 5.92, "form_trend": 0.10},
+            "Rubin Kazan Home": {"league": "RFPL", "last_5_xg_total": 8.50, "last_5_xga_total": 7.24, "form_trend": 0.05},
+            "Baltika Home": {"league": "RFPL", "last_5_xg_total": 8.76, "last_5_xga_total": 4.39, "form_trend": 0.03},
+            "Dinamo Moscow Home": {"league": "RFPL", "last_5_xg_total": 14.39, "last_5_xga_total": 11.36, "form_trend": -0.03},
+            "FC Rostov Home": {"league": "RFPL", "last_5_xg_total": 8.61, "last_5_xga_total": 6.68, "form_trend": -0.01},
+            "PFC Sochi Home": {"league": "RFPL", "last_5_xg_total": 3.31, "last_5_xga_total": 11.51, "form_trend": -0.14},
+
+            # Russian Premier League - Away Data
+            "CSKA Moscow Away": {"league": "RFPL", "last_5_xg_total": 7.35, "last_5_xga_total": 8.30, "form_trend": 0.11},
+            "Zenit St. Petersburg Away": {"league": "RFPL", "last_5_xg_total": 8.41, "last_5_xga_total": 6.59, "form_trend": 0.13},
+            "FC Krasnodar Away": {"league": "RFPL", "last_5_xg_total": 9.44, "last_5_xga_total": 3.10, "form_trend": 0.09},
+            "Spartak Moscow Away": {"league": "RFPL", "last_5_xg_total": 9.96, "last_5_xga_total": 10.09, "form_trend": 0.07},
+            "Lokomotiv Moscow Away": {"league": "RFPL", "last_5_xg_total": 9.75, "last_5_xga_total": 12.94, "form_trend": 0.10},
+            "Rubin Kazan Away": {"league": "RFPL", "last_5_xg_total": 5.75, "last_5_xga_total": 9.25, "form_trend": 0.05},
+            "Baltika Away": {"league": "RFPL", "last_5_xg_total": 9.95, "last_5_xga_total": 7.90, "form_trend": 0.03},
+            "Dinamo Moscow Away": {"league": "RFPL", "last_5_xg_total": 8.72, "last_5_xga_total": 6.44, "form_trend": -0.03},
+            "FC Rostov Away": {"league": "RFPL", "last_5_xg_total": 6.45, "last_5_xga_total": 7.47, "form_trend": -0.01},
+            "PFC Sochi Away": {"league": "RFPL", "last_5_xg_total": 5.75, "last_5_xga_total": 13.51, "form_trend": -0.14},
         }
 
-    def get_teams_by_league(self, league):
-        """Get all teams in a specific league"""
-        return [team for team, data in self.team_database.items() if data["league"] == league]
+    def get_teams_by_league(self, league, team_type="all"):
+        """Get teams in a specific league, filtered by type (home/away/all)"""
+        teams = []
+        for team_name, data in self.team_database.items():
+            if data["league"] == league:
+                if team_type == "all":
+                    teams.append(team_name)
+                elif team_type == "home" and "Home" in team_name:
+                    teams.append(team_name)
+                elif team_type == "away" and "Away" in team_name:
+                    teams.append(team_name)
+        return sorted(teams)
+
+    def get_team_base_name(self, team_name):
+        """Extract base team name without Home/Away suffix"""
+        if " Home" in team_name:
+            return team_name.replace(" Home", "")
+        elif " Away" in team_name:
+            return team_name.replace(" Away", "")
+        return team_name
 
     def get_team_data(self, team_name):
         """Get team data with fallback defaults"""
@@ -326,6 +443,21 @@ class ProfessionalPredictionEngine:
         team_data['last_5_xga_per_match'] = team_data['last_5_xga_total'] / 5
         
         return team_data
+
+    def validate_team_selection(self, home_team, away_team):
+        """Validate that teams are from the same base team and league"""
+        home_base = self.get_team_base_name(home_team)
+        away_base = self.get_team_base_name(away_team)
+        home_league = self.get_team_data(home_team)["league"]
+        away_league = self.get_team_data(away_team)["league"]
+        
+        errors = []
+        if home_base == away_base:
+            errors.append("Cannot select the same team for both home and away")
+        if home_league != away_league:
+            errors.append(f"Teams must be from the same league. {home_base} is in {home_league}, {away_base} is in {away_league}")
+        
+        return errors
 
     def apply_modifiers(self, base_xg, base_xga, injury_level, rest_days, form_trend):
         """Apply modifiers with improved defense fatigue calculation"""
@@ -491,6 +623,11 @@ class ProfessionalPredictionEngine:
 
     def predict_match(self, inputs):
         """MAIN PREDICTION FUNCTION - IMPROVED WITH POISSON"""
+        # Validate team selection
+        validation_errors = self.validate_team_selection(inputs['home_team'], inputs['away_team'])
+        if validation_errors:
+            return None, validation_errors, []
+        
         # Calculate per-match averages from user inputs
         home_xg_per_match = inputs['home_xg_total'] / 5
         home_xga_per_match = inputs['home_xga_total'] / 5
@@ -568,14 +705,18 @@ class ProfessionalPredictionEngine:
         """Generate insights based on football statistics"""
         insights = []
         
+        # Get base team names for display
+        home_base = self.get_team_base_name(inputs['home_team'])
+        away_base = self.get_team_base_name(inputs['away_team'])
+        
         # Injury insights
         home_injury_data = self.injury_weights[inputs['home_injuries']]
         away_injury_data = self.injury_weights[inputs['away_injuries']]
         
         if inputs['home_injuries'] != "None":
-            insights.append(f"🩹 {inputs['home_team']} affected by {inputs['home_injuries'].lower()} ({home_injury_data['description']})")
+            insights.append(f"🩹 {home_base} affected by {inputs['home_injuries'].lower()} ({home_injury_data['description']})")
         if inputs['away_injuries'] != "None":
-            insights.append(f"🩹 {inputs['away_team']} affected by {inputs['away_injuries'].lower()} ({away_injury_data['description']})")
+            insights.append(f"🩹 {away_base} affected by {inputs['away_injuries'].lower()} ({away_injury_data['description']})")
         
         # Rest insights
         rest_diff = inputs['home_rest'] - inputs['away_rest']
@@ -584,14 +725,14 @@ class ProfessionalPredictionEngine:
         
         # Team strength insights
         if home_xg > away_xg:
-            insights.append(f"📈 {inputs['home_team']} stronger attack ({home_xg:.2f} vs {away_xg:.2f} xG)")
+            insights.append(f"📈 {home_base} stronger attack ({home_xg:.2f} vs {away_xg:.2f} xG)")
         elif away_xg > home_xg:
-            insights.append(f"📈 {inputs['away_team']} stronger attack ({away_xg:.2f} vs {home_xg:.2f} xG)")
+            insights.append(f"📈 {away_base} stronger attack ({away_xg:.2f} vs {home_xg:.2f} xG)")
         
         if home_xga < away_xga:
-            insights.append(f"🛡️ {inputs['home_team']} better defense ({home_xga:.2f} vs {away_xga:.2f} xGA)")
+            insights.append(f"🛡️ {home_base} better defense ({home_xga:.2f} vs {away_xga:.2f} xGA)")
         elif away_xga < home_xga:
-            insights.append(f"🛡️ {inputs['away_team']} better defense ({away_xga:.2f} vs {home_xga:.2f} xGA)")
+            insights.append(f"🛡️ {away_base} better defense ({away_xga:.2f} vs {home_xga:.2f} xGA)")
         
         # Match type analysis
         total_goals = probabilities['expected_home_goals'] + probabilities['expected_away_goals']
@@ -632,20 +773,20 @@ def initialize_session_state():
 def get_default_inputs():
     """Get default input values"""
     return {
-        'home_team': 'Tottenham',
-        'away_team': 'Manchester United',
-        'home_xg_total': 4.63,
-        'home_xga_total': 7.71,
+        'home_team': 'Arsenal Home',
+        'away_team': 'Manchester United Away',
+        'home_xg_total': 10.25,
+        'home_xga_total': 1.75,
         'away_xg_total': 8.75,
         'away_xga_total': 10.60,
-        'home_injuries': 'Significant (3-4 key players)',
-        'away_injuries': 'Crisis (5+ starters)',
-        'home_rest': 4,
-        'away_rest': 6,
-        'home_odds': 2.80,
-        'draw_odds': 3.50,
-        'away_odds': 2.45,
-        'over_odds': 1.67
+        'home_injuries': 'None',
+        'away_injuries': 'None',
+        'home_rest': 7,
+        'away_rest': 7,
+        'home_odds': 2.15,
+        'draw_odds': 3.25,
+        'away_odds': 2.80,
+        'over_odds': 1.57
     }
 
 def display_understat_input_form(engine):
@@ -685,17 +826,19 @@ def display_understat_input_form(engine):
         st.session_state.selected_league = selected_league
         
         # Show league info
-        teams_in_league = engine.get_teams_by_league(selected_league)
-        st.write(f"**Teams in {selected_league}:** {len(teams_in_league)}")
+        home_teams = engine.get_teams_by_league(selected_league, "home")
+        away_teams = engine.get_teams_by_league(selected_league, "away")
+        st.write(f"**Home Teams:** {len(home_teams)}")
+        st.write(f"**Away Teams:** {len(away_teams)}")
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
         st.markdown('<div class="input-card">', unsafe_allow_html=True)
         st.subheader("📊 League Overview")
         st.write(f"**Selected:** <span class='league-badge'>{selected_league}</span>", unsafe_allow_html=True)
-        st.write(f"**Available Teams:** {len(teams_in_league)}")
         st.write(f"**Data Quality:** ✅ Home/Away specific xG data")
-        st.write(f"**Last Updated:** Current season")
+        st.write(f"**Teams:** Complete home/away separation")
+        st.write(f"**Validation:** Same-team and cross-league prevention")
         st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('<div class="section-header">⚽ Team Selection</div>', unsafe_allow_html=True)
@@ -707,18 +850,20 @@ def display_understat_input_form(engine):
         st.markdown('<div class="input-card">', unsafe_allow_html=True)
         st.subheader("🏠 Home Team")
         
-        # Get teams for selected league
-        teams_in_league = engine.get_teams_by_league(selected_league)
+        # Get home teams for selected league
+        home_teams = engine.get_teams_by_league(selected_league, "home")
         
         home_team = st.selectbox(
             "Select Home Team",
-            teams_in_league,
-            index=teams_in_league.index(current_inputs['home_team']) if current_inputs['home_team'] in teams_in_league else 0,
+            home_teams,
+            index=home_teams.index(current_inputs['home_team']) if current_inputs['home_team'] in home_teams else 0,
             key="home_team_input"
         )
         home_data = engine.get_team_data(home_team)
+        home_base = engine.get_team_base_name(home_team)
         
         # Display team info
+        st.write(f"**Team:** {home_base} <span class='home-badge'>HOME</span>", unsafe_allow_html=True)
         st.write(f"**League:** {home_data['league']}")
         st.write(f"**Form Trend:** {'↗️ Improving' if home_data['form_trend'] > 0 else '↘️ Declining' if home_data['form_trend'] < 0 else '➡️ Stable'}")
         st.write(f"**Last 5 Home:** {home_data['last_5_xg_total']:.2f} xG, {home_data['last_5_xga_total']:.2f} xGA")
@@ -728,19 +873,30 @@ def display_understat_input_form(engine):
         st.markdown('<div class="input-card">', unsafe_allow_html=True)
         st.subheader("✈️ Away Team")
         
+        # Get away teams for selected league
+        away_teams = engine.get_teams_by_league(selected_league, "away")
+        
         away_team = st.selectbox(
             "Select Away Team",
-            teams_in_league,
-            index=teams_in_league.index(current_inputs['away_team']) if current_inputs['away_team'] in teams_in_league else min(1, len(teams_in_league)-1),
+            away_teams,
+            index=away_teams.index(current_inputs['away_team']) if current_inputs['away_team'] in away_teams else min(1, len(away_teams)-1),
             key="away_team_input"
         )
         away_data = engine.get_team_data(away_team)
+        away_base = engine.get_team_base_name(away_team)
         
         # Display team info
+        st.write(f"**Team:** {away_base} <span class='away-badge'>AWAY</span>", unsafe_allow_html=True)
         st.write(f"**League:** {away_data['league']}")
         st.write(f"**Form Trend:** {'↗️ Improving' if away_data['form_trend'] > 0 else '↘️ Declining' if away_data['form_trend'] < 0 else '➡️ Stable'}")
-        st.write(f"**Last 5 Home:** {away_data['last_5_xg_total']:.2f} xG, {away_data['last_5_xga_total']:.2f} xGA")
+        st.write(f"**Last 5 Away:** {away_data['last_5_xg_total']:.2f} xG, {away_data['last_5_xga_total']:.2f} xGA")
         st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Validation check
+    validation_errors = engine.validate_team_selection(home_team, away_team)
+    if validation_errors:
+        for error in validation_errors:
+            st.error(f"🚫 {error}")
     
     st.markdown('<div class="section-header">📊 Understat Last 5 Matches Data</div>', unsafe_allow_html=True)
     
@@ -749,9 +905,9 @@ def display_understat_input_form(engine):
     <div class="warning-box">
     <strong>📝 Understat Format Guide:</strong><br>
     Enter data in the format shown on Understat.com: <strong>"10.25-1.75"</strong><br>
-    - <strong>First number</strong>: Total xG scored in last 5 HOME matches<br>
-    - <strong>Second number</strong>: Total xGA conceded in last 5 HOME matches<br>
-    <strong>Note:</strong> Using actual home-specific data for more accurate predictions
+    - <strong>First number</strong>: Total xG scored in last 5 matches<br>
+    - <strong>Second number</strong>: Total xGA conceded in last 5 matches<br>
+    <strong>Note:</strong> Using context-specific home/away data for maximum accuracy
     </div>
     """, unsafe_allow_html=True)
     
@@ -760,7 +916,7 @@ def display_understat_input_form(engine):
     
     with col1:
         st.markdown('<div class="input-card">', unsafe_allow_html=True)
-        st.subheader(f"📈 {home_team} - Last 5 HOME Matches")
+        st.subheader(f"📈 {home_base} - Last 5 HOME Matches")
         
         # Understat format display
         current_home_format = f"{current_inputs['home_xg_total']}-{current_inputs['home_xga_total']}"
@@ -799,7 +955,7 @@ def display_understat_input_form(engine):
     
     with col2:
         st.markdown('<div class="input-card">', unsafe_allow_html=True)
-        st.subheader(f"📈 {away_team} - Last 5 HOME Matches")
+        st.subheader(f"📈 {away_base} - Last 5 AWAY Matches")
         
         # Understat format display
         current_away_format = f"{current_inputs['away_xg_total']}-{current_inputs['away_xga_total']}"
@@ -814,7 +970,7 @@ def display_understat_input_form(engine):
                 value=current_inputs['away_xg_total'],
                 step=0.1,
                 key="away_xg_total_input",
-                help="Total expected goals scored in last 5 HOME matches"
+                help="Total expected goals scored in last 5 AWAY matches"
             )
         with col2b:
             away_xga_total = st.number_input(
@@ -824,7 +980,7 @@ def display_understat_input_form(engine):
                 value=current_inputs['away_xga_total'],
                 step=0.1,
                 key="away_xga_total_input",
-                help="Total expected goals against in last 5 HOME matches"
+                help="Total expected goals against in last 5 AWAY matches"
             )
         
         # Calculate and show per-match averages
@@ -848,14 +1004,14 @@ def display_understat_input_form(engine):
         injury_options = ["None", "Minor (1-2 rotational)", "Moderate (1-2 key starters)", "Significant (3-4 key players)", "Crisis (5+ starters)"]
         
         home_injuries = st.selectbox(
-            f"{home_team} Injuries",
+            f"{home_base} Injuries",
             injury_options,
             index=injury_options.index(current_inputs['home_injuries']),
             key="home_injuries_input"
         )
         
         away_injuries = st.selectbox(
-            f"{away_team} Injuries",
+            f"{away_base} Injuries",
             injury_options,
             index=injury_options.index(current_inputs['away_injuries']),
             key="away_injuries_input"
@@ -867,7 +1023,7 @@ def display_understat_input_form(engine):
         st.subheader("🕐 Fatigue & Recovery")
         
         home_rest = st.number_input(
-            f"{home_team} Rest Days",
+            f"{home_base} Rest Days",
             min_value=2,
             max_value=14,
             value=current_inputs['home_rest'],
@@ -876,7 +1032,7 @@ def display_understat_input_form(engine):
         )
         
         away_rest = st.number_input(
-            f"{away_team} Rest Days",
+            f"{away_base} Rest Days",
             min_value=2,
             max_value=14,
             value=current_inputs['away_rest'],
@@ -887,9 +1043,9 @@ def display_understat_input_form(engine):
         # Show rest comparison
         rest_diff = home_rest - away_rest
         if rest_diff > 0:
-            st.success(f"🏠 {home_team} has {rest_diff} more rest days")
+            st.success(f"🏠 {home_base} has {rest_diff} more rest days")
         elif rest_diff < 0:
-            st.warning(f"✈️ {away_team} has {-rest_diff} more rest days")
+            st.warning(f"✈️ {away_base} has {-rest_diff} more rest days")
         else:
             st.info("⚖️ Both teams have equal rest")
             
@@ -970,16 +1126,20 @@ def display_understat_input_form(engine):
         'over_odds': over_odds
     }
     
-    return inputs
+    return inputs, validation_errors
 
-# [The display_prediction_results, _display_value_analysis, and main functions remain the same as in the previous version]
+# [The display_prediction_results, _display_value_analysis, and main functions remain the same as before]
 
 def display_prediction_results(engine, result, inputs):
     """Display prediction results with improved transparency"""
     st.markdown('<div class="main-header">🎯 Prediction Results</div>', unsafe_allow_html=True)
     
+    # Get base team names for display
+    home_base = engine.get_team_base_name(inputs['home_team'])
+    away_base = engine.get_team_base_name(inputs['away_team'])
+    
     # Match header
-    st.markdown(f'<h2 style="text-align: center; color: #1f77b4;">{inputs["home_team"]} vs {inputs["away_team"]}</h2>', unsafe_allow_html=True)
+    st.markdown(f'<h2 style="text-align: center; color: #1f77b4;">{home_base} vs {away_base}</h2>', unsafe_allow_html=True)
     
     # League badge
     home_league = engine.get_team_data(inputs['home_team'])['league']
@@ -1040,7 +1200,7 @@ def display_prediction_results(engine, result, inputs):
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         home_prob = probs['home_win']
         home_color = "🟢" if home_prob > 0.45 else "🟡" if home_prob > 0.35 else "🔴"
-        st.metric(f"{home_color} {inputs['home_team']} Win", f"{home_prob:.1%}")
+        st.metric(f"{home_color} {home_base} Win", f"{home_prob:.1%}")
         st.write(f"**Odds:** {inputs['home_odds']:.2f}")
         
         value_home = result['value_bets']['home']
@@ -1062,7 +1222,7 @@ def display_prediction_results(engine, result, inputs):
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         away_prob = probs['away_win']
         away_color = "🟢" if away_prob > 0.45 else "🟡" if away_prob > 0.35 else "🔴"
-        st.metric(f"{away_color} {inputs['away_team']} Win", f"{away_prob:.1%}")
+        st.metric(f"{away_color} {away_base} Win", f"{away_prob:.1%}")
         st.write(f"**Odds:** {inputs['away_odds']:.2f}")
         
         value_away = result['value_bets']['away']
@@ -1126,9 +1286,9 @@ def display_prediction_results(engine, result, inputs):
                 st.markdown('<div class="value-poor">', unsafe_allow_html=True)
             
             bet_name = {
-                'home': f"{inputs['home_team']} Win",
+                'home': f"{home_base} Win",
                 'draw': "Draw",
-                'away': f"{inputs['away_team']} Win", 
+                'away': f"{away_base} Win", 
                 'over_2.5': "Over 2.5 Goals"
             }[bet['type']]
             
@@ -1167,8 +1327,8 @@ def display_prediction_results(engine, result, inputs):
     st.markdown(f'<div class="metric-card">', unsafe_allow_html=True)
     st.markdown("**📈 Statistical Summary:**")
     st.markdown(f"- **Total Expected Goals:** {total_xg:.2f}")
-    st.markdown(f"- **{inputs['home_team']} Form:** {per_match['home_xg']:.2f} xG, {per_match['home_xga']:.2f} xGA per match")
-    st.markdown(f"- **{inputs['away_team']} Form:** {per_match['away_xg']:.2f} xG, {per_match['away_xga']:.2f} xGA per match")
+    st.markdown(f"- **{home_base} Home Form:** {per_match['home_xg']:.2f} xG, {per_match['home_xga']:.2f} xGA per match")
+    st.markdown(f"- **{away_base} Away Form:** {per_match['away_xg']:.2f} xG, {per_match['away_xga']:.2f} xGA per match")
     st.markdown(f"- **Goal Expectancy:** {total_xg/2.5:.1%} of average match")
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -1241,16 +1401,20 @@ def main():
     # Show edit form if requested
     if st.session_state.show_edit:
         st.markdown('<div class="main-header">✏️ Edit Match Inputs</div>', unsafe_allow_html=True)
-        inputs = display_understat_input_form(engine)
+        inputs, validation_errors = display_understat_input_form(engine)
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("🚀 Generate Prediction", use_container_width=True, type="primary"):
+            if st.button("🚀 Generate Prediction", use_container_width=True, type="primary") and not validation_errors:
                 result, errors, warnings = engine.predict_match(inputs)
-                st.session_state.prediction_result = result
-                st.session_state.input_data = inputs
-                st.session_state.show_edit = False
-                st.rerun()
+                if result:
+                    st.session_state.prediction_result = result
+                    st.session_state.input_data = inputs
+                    st.session_state.show_edit = False
+                    st.rerun()
+                else:
+                    for error in errors:
+                        st.error(f"🚫 {error}")
             
             if st.button("← Back to Results", use_container_width=True):
                 st.session_state.show_edit = False
@@ -1262,17 +1426,21 @@ def main():
     
     # Show main input form
     else:
-        inputs = display_understat_input_form(engine)
+        inputs, validation_errors = display_understat_input_form(engine)
         
         # Generate Prediction Button
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("🚀 Generate Prediction", use_container_width=True, type="primary", key="main_predict"):
+            if st.button("🚀 Generate Prediction", use_container_width=True, type="primary", key="main_predict") and not validation_errors:
                 result, errors, warnings = engine.predict_match(inputs)
-                st.session_state.prediction_result = result
-                st.session_state.input_data = inputs
-                st.rerun()
+                if result:
+                    st.session_state.prediction_result = result
+                    st.session_state.input_data = inputs
+                    st.rerun()
+                else:
+                    for error in errors:
+                        st.error(f"🚫 {error}")
 
 if __name__ == "__main__":
     main()
