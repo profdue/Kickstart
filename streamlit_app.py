@@ -231,21 +231,21 @@ class ProfessionalPredictionEngine:
         return max(0.1, xg_modified), max(0.1, xga_modified)
 
     def calculate_expected_goals(self, home_xg, home_xga, away_xg, away_xga):
-        """SIMPLE AND TRANSPARENT expected goals calculation"""
-        # Home expected goals = home attack strength vs away defense weakness
-        home_expected = (home_xg + (away_xga - 1.35)) / 2
+        """SIMPLE & LOGICAL expected goals calculation"""
+        # Home expected goals = home attack vs away defense
+        home_expected = (home_xg + (2.0 - away_xga)) / 2
         
-        # Away expected goals = away attack strength vs home defense weakness  
-        away_expected = (away_xg + (home_xga - 1.35)) / 2
+        # Away expected goals = away attack vs home defense  
+        away_expected = (away_xg + (2.0 - home_xga)) / 2
         
-        # Ensure minimum values
-        home_expected = max(0.1, home_expected)
-        away_expected = max(0.1, away_expected)
+        # Ensure reasonable values
+        home_expected = max(0.3, min(3.0, home_expected))
+        away_expected = max(0.3, min(3.0, away_expected))
         
         return home_expected, away_expected
 
     def calculate_probabilities(self, home_expected, away_expected, max_goals=8):
-        """Calculate probabilities using Poisson distribution - TRANSPARENT"""
+        """Calculate probabilities using Poisson distribution"""
         # Use Poisson for probability calculation
         home_probs = [poisson.pmf(i, home_expected) for i in range(max_goals)]
         away_probs = [poisson.pmf(i, away_expected) for i in range(max_goals)]
@@ -471,8 +471,6 @@ class ProfessionalPredictionEngine:
             insights.append("💰 Good value betting opportunities available")
         
         return insights
-
-# [REST OF THE CODE REMAINS EXACTLY THE SAME - initialize_session_state, get_default_inputs, display_understat_input_form, display_prediction_results, _display_value_analysis, main]
 
 def initialize_session_state():
     """Initialize session state variables"""
