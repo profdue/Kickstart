@@ -183,6 +183,16 @@ class ProfessionalPredictionEngine:
             12: 1.03, 13: 1.03, 14: 1.03
         }
         
+        # League averages for normalization
+        self.league_averages = {
+            "Premier League": {"xg": 1.45, "xga": 1.45},
+            "La Liga": {"xg": 1.38, "xga": 1.38},
+            "Bundesliga": {"xg": 1.52, "xga": 1.52},
+            "Serie A": {"xg": 1.42, "xga": 1.42},
+            "Ligue 1": {"xg": 1.40, "xga": 1.40},
+            "RFPL": {"xg": 1.35, "xga": 1.35}
+        }
+        
         # Team database with PROPER home/away separation
         self.team_database = self._initialize_complete_database()
         self.leagues = self._get_available_leagues()
@@ -505,25 +515,42 @@ class ProfessionalPredictionEngine:
         attack_mult = injury_data["attack_mult"]
         defense_mult = injury_data["defense_mult"]
         
-        # Apply fatigue impact - IMPROVED: symmetric approach
+        # Apply fatigue impact
         fatigue_mult = self.fatigue_multipliers.get(rest_days, 1.0)
         
         # Apply form trend
         form_mult = 1 + (form_trend * 0.2)
         
-        # Apply all modifiers - IMPROVED: defense uses same fatigue multiplier
+        # Apply all modifiers
         xg_modified = base_xg * attack_mult * fatigue_mult * form_mult
-        xga_modified = base_xga * defense_mult * fatigue_mult * form_mult  # Same fatigue impact
+        xga_modified = base_xga * defense_mult * fatigue_mult * form_mult
         
         return max(0.1, xg_modified), max(0.1, xga_modified)
 
-    def calculate_poisson_probabilities(self, home_xg, away_xg):
-        """Calculate probabilities using Poisson distribution"""
-        max_goals = 8  # Reasonable maximum for calculation
+    def calculate_goal_expectancy(self, home_xg, home_xga, away_xg, away_xga, league):
+        """FIXED: Calculate proper goal expectancy considering both attack and defense"""
+        league_avg = self.league_averages.get(league, {"xg": 1.4, "xga": 1.4})
+        
+        # Home goal expectancy: home attack vs away defense, normalized by league average
+        home_goal_exp = home_xg * (away_xga / league_avg["xga"]) ** 0.5
+        
+        # Away goal expectancy: away attack vs home defense, normalized by league average  
+        away_goal_exp = away_xg * (home_xga / league_avg["xga"]) ** 0.5
+        
+        # Apply home advantage (typically +0.3 goals)
+        home_advantage = 0.3
+        home_goal_exp += home_advantage * 0.5
+        away_goal_exp -= home_advantage * 0.5
+        
+        return max(0.1, home_goal_exp), max(0.1, away_goal_exp)
+
+    def calculate_poisson_probabilities(self, home_goal_exp, away_goal_exp):
+        """FIXED: Calculate probabilities using proper goal expectancy"""
+        max_goals = 8
         
         # Initialize probability arrays
-        home_probs = [poisson.pmf(i, home_xg) for i in range(max_goals)]
-        away_probs = [poisson.pmf(i, away_xg) for i in range(max_goals)]
+        home_probs = [poisson.pmf(i, home_goal_exp) for i in range(max_goals)]
+        away_probs = [poisson.pmf(i, away_goal_exp) for i in range(max_goals)]
         
         # Calculate outcome probabilities
         home_win = 0
@@ -546,8 +573,8 @@ class ProfessionalPredictionEngine:
         draw /= total
         away_win /= total
         
-        # Calculate over/under probabilities using Poisson
-        total_goals_lambda = home_xg + away_xg
+        # Calculate over/under probabilities using combined goal expectancy
+        total_goals_lambda = home_goal_exp + away_goal_exp
         over_25 = 1 - sum(poisson.pmf(i, total_goals_lambda) for i in range(3))
         
         return {
@@ -556,24 +583,29 @@ class ProfessionalPredictionEngine:
             'away_win': away_win,
             'over_2.5': over_25,
             'under_2.5': 1 - over_25,
-            'expected_home_goals': home_xg,
-            'expected_away_goals': away_xg
+            'expected_home_goals': home_goal_exp,
+            'expected_away_goals': away_goal_exp,
+            'total_goals_lambda': total_goals_lambda
         }
 
-    def calculate_advantage_adjusted_probabilities(self, home_xg, home_xga, away_xg, away_xga):
-        """Calculate probabilities with advantage-based mean adjustment"""
-        # Calculate advantage
-        home_attack_advantage = home_xg - away_xg
-        home_defense_advantage = away_xga - home_xga
+    def calculate_balanced_advantage(self, home_xg, home_xga, away_xg, away_xga):
+        """FIXED: More balanced advantage calculation to prevent exponential explosion"""
+        # Calculate advantages with reduced weights
+        home_attack_advantage = (home_xg - away_xg) * 0.3           # Reduced from original
+        home_defense_advantage = (away_xga - home_xga) * 0.2        # Separate, reduced weight
+        
         total_advantage = home_attack_advantage + home_defense_advantage
         
-        # Apply advantage adjustment to means (α = 0.3 based on calibration)
-        alpha = 0.3
+        # Much smaller alpha to prevent extreme adjustments
+        alpha = 0.12
         home_xg_adj = home_xg * np.exp(alpha * total_advantage)
         away_xg_adj = away_xg * np.exp(-alpha * total_advantage)
         
-        # Use Poisson with adjusted means
-        return self.calculate_poisson_probabilities(home_xg_adj, away_xg_adj)
+        # Also adjust defensive capabilities
+        home_xga_adj = home_xga * np.exp(-alpha * total_advantage * 0.3)
+        away_xga_adj = away_xga * np.exp(alpha * total_advantage * 0.3)
+        
+        return home_xg_adj, home_xga_adj, away_xg_adj, away_xga_adj
 
     def calculate_confidence(self, home_xg, away_xg, home_xga, away_xga, inputs):
         """Calculate confidence based on data quality"""
@@ -660,11 +692,14 @@ class ProfessionalPredictionEngine:
         return value_bets
 
     def predict_match(self, inputs):
-        """MAIN PREDICTION FUNCTION - IMPROVED WITH POISSON"""
+        """FIXED MAIN PREDICTION FUNCTION"""
         # Validate team selection
         validation_errors = self.validate_team_selection(inputs['home_team'], inputs['away_team'])
         if validation_errors:
             return None, validation_errors, []
+        
+        # Get league for normalization
+        league = self.get_team_data(inputs['home_team'])["league"]
         
         # Calculate per-match averages from user inputs
         home_xg_per_match = inputs['home_xg_total'] / 5
@@ -685,10 +720,18 @@ class ProfessionalPredictionEngine:
             self.get_team_data(inputs['away_team'])['form_trend']
         )
         
-        # Calculate probabilities - IMPROVED: Poisson with advantage adjustment
-        probabilities = self.calculate_advantage_adjusted_probabilities(
+        # FIXED: Apply balanced advantage adjustment
+        home_xg_ba, home_xga_ba, away_xg_ba, away_xga_ba = self.calculate_balanced_advantage(
             home_xg_adj, home_xga_adj, away_xg_adj, away_xga_adj
         )
+        
+        # FIXED: Calculate proper goal expectancy considering both attack and defense
+        home_goal_exp, away_goal_exp = self.calculate_goal_expectancy(
+            home_xg_ba, home_xga_ba, away_xg_ba, away_xga_ba, league
+        )
+        
+        # FIXED: Calculate probabilities using proper goal expectancy
+        probabilities = self.calculate_poisson_probabilities(home_goal_exp, away_goal_exp)
         
         # Calculate confidence
         confidence, confidence_factors = self.calculate_confidence(
@@ -711,14 +754,16 @@ class ProfessionalPredictionEngine:
         # Store calculation details for transparency
         calculation_details = {
             'home_xg_raw': home_xg_per_match,
-            'home_xg_modified': home_xg_adj,
+            'home_xg_modified': home_xg_ba,
             'away_xg_raw': away_xg_per_match, 
-            'away_xg_modified': away_xg_adj,
+            'away_xg_modified': away_xg_ba,
             'home_xga_raw': home_xga_per_match,
-            'home_xga_modified': home_xga_adj,
+            'home_xga_modified': home_xga_ba,
             'away_xga_raw': away_xga_per_match,
-            'away_xga_modified': away_xga_adj,
-            'total_goals_lambda': home_xg_adj + away_xg_adj
+            'away_xga_modified': away_xga_ba,
+            'home_goal_expectancy': home_goal_exp,
+            'away_goal_expectancy': away_goal_exp,
+            'total_goals_lambda': home_goal_exp + away_goal_exp
         }
         
         result = {
@@ -1166,8 +1211,6 @@ def display_understat_input_form(engine):
     
     return inputs, validation_errors
 
-# [The display_prediction_results, _display_value_analysis, and main functions remain the same as before]
-
 def display_prediction_results(engine, result, inputs):
     """Display prediction results with improved transparency"""
     st.markdown('<div class="main-header">🎯 Prediction Results</div>', unsafe_allow_html=True)
@@ -1215,12 +1258,14 @@ def display_prediction_results(engine, result, inputs):
             st.write(f"- Away xG: {details['away_xg_raw']:.3f} → {details['away_xg_modified']:.3f}")
             st.write(f"- Home xGA: {details['home_xga_raw']:.3f} → {details['home_xga_modified']:.3f}")
             st.write(f"- Away xGA: {details['away_xga_raw']:.3f} → {details['away_xga_modified']:.3f}")
+            st.write(f"- Home Goal Exp: {details['home_goal_expectancy']:.3f}")
+            st.write(f"- Away Goal Exp: {details['away_goal_expectancy']:.3f}")
             st.write(f"- Total Goals λ: {details['total_goals_lambda']:.3f}")
-            st.write("**Method:** Poisson distribution with advantage-based mean adjustment")
+            st.write("**Method:** Defense-aware Poisson distribution with balanced advantage adjustment")
     else:
         # Fallback if calculation_details is missing
         with st.expander("Calculation Details"):
-            st.write("**Method:** Poisson distribution with advantage-based mean adjustment")
+            st.write("**Method:** Defense-aware Poisson distribution with balanced advantage adjustment")
             st.write("Calculation details not available in this session.")
         
     st.markdown('</div>', unsafe_allow_html=True)
