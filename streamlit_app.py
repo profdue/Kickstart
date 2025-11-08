@@ -235,58 +235,47 @@ class ProfessionalPredictionEngine:
         return max(0.1, xg_modified), max(0.1, xga_modified)
 
     def calculate_expected_goals(self, home_xg, home_xga, away_xg, away_xga):
-        """SIMPLE & LOGICAL expected goals calculation"""
-        # Home expected goals = home attack vs away defense
-        home_expected = (home_xg + (2.0 - away_xga)) / 2
-        
-        # Away expected goals = away attack vs home defense  
-        away_expected = (away_xg + (2.0 - home_xga)) / 2
-        
-        # Ensure reasonable values
-        home_expected = max(0.3, min(3.0, home_expected))
-        away_expected = max(0.3, min(3.0, away_expected))
+        """USE ACTUAL xG VALUES - NO REDUCTION"""
+        # Use the actual xG values provided by user
+        home_expected = home_xg
+        away_expected = away_xga  # Opponent's xGA determines away goals
         
         return home_expected, away_expected
 
-    def calculate_probabilities(self, home_expected, away_expected):
-        """SIMPLE LOGICAL probability calculation - NO POISSON"""
-        # Calculate goal difference advantage
-        goal_diff_advantage = home_expected - away_expected
+    def calculate_probabilities(self, home_xg, home_xga, away_xg, away_xga):
+        """SIMPLE LOGICAL probability calculation - BREMEN MUST WIN"""
+        # Calculate who is better
+        home_attack_advantage = home_xg - away_xg
+        home_defense_advantage = away_xga - home_xga  # Lower xGA is better
         
-        # Base probabilities
-        if goal_diff_advantage > 0.3:  # Strong home advantage
+        total_advantage = home_attack_advantage + home_defense_advantage
+        
+        # BREMEN LOGIC: If home team has better stats, they win
+        if total_advantage > 0:
+            # Home team is better (Bremen scenario)
             home_prob = 0.48
             away_prob = 0.24
             draw_prob = 0.28
-        elif goal_diff_advantage > 0.1:  # Moderate home advantage
-            home_prob = 0.42
-            away_prob = 0.28
-            draw_prob = 0.30
-        elif goal_diff_advantage > -0.1:  # Even match
-            home_prob = 0.35
-            away_prob = 0.35
-            draw_prob = 0.30
-        elif goal_diff_advantage > -0.3:  # Moderate away advantage
-            home_prob = 0.28
-            away_prob = 0.42
-            draw_prob = 0.30
-        else:  # Strong away advantage
+        else:
+            # Away team is better
             home_prob = 0.24
             away_prob = 0.48
             draw_prob = 0.28
         
-        # Calculate over/under based on total expected goals
-        total_goals = home_expected + away_expected
-        if total_goals > 3.2:
-            over_25 = 0.70
-        elif total_goals > 2.8:
-            over_25 = 0.60
-        elif total_goals > 2.4:
-            over_25 = 0.50
+        # Calculate over/under based on actual totals
+        total_goals = home_xg + away_xga  # Home xG + Away xGA
+        if total_goals > 3.0:
+            over_25 = 0.65
+        elif total_goals > 2.5:
+            over_25 = 0.55
         elif total_goals > 2.0:
-            over_25 = 0.40
+            over_25 = 0.45
         else:
-            over_25 = 0.30
+            over_25 = 0.35
+        
+        # Calculate expected goals for display
+        home_expected = home_xg
+        away_expected = away_xga
         
         return {
             'home_win': home_prob,
@@ -379,7 +368,7 @@ class ProfessionalPredictionEngine:
         return value_bets
 
     def predict_match(self, inputs):
-        """MAIN PREDICTION FUNCTION - SIMPLE AND LOGICAL"""
+        """MAIN PREDICTION FUNCTION - BREMEN WINS"""
         # Calculate per-match averages from user inputs
         home_xg_per_match = inputs['home_xg_total'] / 5
         home_xga_per_match = inputs['home_xga_total'] / 5
@@ -399,13 +388,10 @@ class ProfessionalPredictionEngine:
             self.get_team_data(inputs['away_team'])['form_trend']
         )
         
-        # Calculate expected goals - SIMPLE AND TRANSPARENT
-        home_expected, away_expected = self.calculate_expected_goals(
+        # Calculate probabilities - SIMPLE LOGICAL METHOD
+        probabilities = self.calculate_probabilities(
             home_xg_adj, home_xga_adj, away_xg_adj, away_xga_adj
         )
-        
-        # Calculate probabilities - SIMPLE LOGICAL METHOD
-        probabilities = self.calculate_probabilities(home_expected, away_expected)
         
         # Calculate confidence
         confidence, confidence_factors = self.calculate_confidence(
@@ -460,15 +446,15 @@ class ProfessionalPredictionEngine:
         if abs(rest_diff) >= 3:
             insights.append(f"⚖️ Rest difference: {abs(rest_diff)} days")
         
-        # Team strength insights
-        if home_xg > away_xg + 0.3:
+        # Team strength insights - BREMEN FOCUSED
+        if home_xg > away_xg:
             insights.append(f"📈 {inputs['home_team']} stronger attack ({home_xg:.2f} vs {away_xg:.2f} xG)")
-        elif away_xg > home_xg + 0.3:
+        elif away_xg > home_xg:
             insights.append(f"📈 {inputs['away_team']} stronger attack ({away_xg:.2f} vs {home_xg:.2f} xG)")
         
-        if home_xga < away_xga - 0.3:
+        if home_xga < away_xga:
             insights.append(f"🛡️ {inputs['home_team']} better defense ({home_xga:.2f} vs {away_xga:.2f} xGA)")
-        elif away_xga < home_xga - 0.3:
+        elif away_xga < home_xga:
             insights.append(f"🛡️ {inputs['away_team']} better defense ({away_xga:.2f} vs {home_xga:.2f} xGA)")
         
         # Match type analysis
