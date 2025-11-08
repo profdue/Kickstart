@@ -516,9 +516,6 @@ class ProfessionalPredictionEngine:
         
         return insights
 
-# [The rest of the functions (initialize_session_state, get_default_inputs, display_understat_input_form, 
-# display_prediction_results, _display_value_analysis, main) remain exactly the same as in the previous version]
-
 def initialize_session_state():
     """Initialize session state variables"""
     if 'prediction_result' not in st.session_state:
@@ -864,16 +861,22 @@ def display_prediction_results(engine, result, inputs):
         for factor, value in factors.items():
             st.write(f"- {factor.replace('_', ' ').title()}: {value:.1%}")
     
-    # Show calculation details
-    with st.expander("Calculation Details"):
-        details = result['calculation_details']
-        st.write("**Raw vs Modified Values:**")
-        st.write(f"- Home xG: {details['home_xg_raw']:.3f} → {details['home_xg_modified']:.3f}")
-        st.write(f"- Away xG: {details['away_xg_raw']:.3f} → {details['away_xg_modified']:.3f}")
-        st.write(f"- Home xGA: {details['home_xga_raw']:.3f} → {details['home_xga_modified']:.3f}")
-        st.write(f"- Away xGA: {details['away_xga_raw']:.3f} → {details['away_xga_modified']:.3f}")
-        st.write(f"- Total Goals λ: {details['total_goals_lambda']:.3f}")
-        st.write("**Method:** Poisson distribution with advantage-based mean adjustment")
+    # Show calculation details - WITH ERROR HANDLING
+    if 'calculation_details' in result:
+        with st.expander("Calculation Details"):
+            details = result['calculation_details']
+            st.write("**Raw vs Modified Values:**")
+            st.write(f"- Home xG: {details['home_xg_raw']:.3f} → {details['home_xg_modified']:.3f}")
+            st.write(f"- Away xG: {details['away_xg_raw']:.3f} → {details['away_xg_modified']:.3f}")
+            st.write(f"- Home xGA: {details['home_xga_raw']:.3f} → {details['home_xga_modified']:.3f}")
+            st.write(f"- Away xGA: {details['away_xga_raw']:.3f} → {details['away_xga_modified']:.3f}")
+            st.write(f"- Total Goals λ: {details['total_goals_lambda']:.3f}")
+            st.write("**Method:** Poisson distribution with advantage-based mean adjustment")
+    else:
+        # Fallback if calculation_details is missing
+        with st.expander("Calculation Details"):
+            st.write("**Method:** Poisson distribution with advantage-based mean adjustment")
+            st.write("Calculation details not available in this session.")
         
     st.markdown('</div>', unsafe_allow_html=True)
     
