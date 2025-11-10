@@ -204,12 +204,36 @@ st.markdown("""
         background: linear-gradient(135deg, #900c3f 0%, #c70039 100%);
         color: white;
     }
+    .reliability-high {
+        background: linear-gradient(135deg, #00b09b 0%, #96c93d 100%);
+        color: white;
+        padding: 0.5rem;
+        border-radius: 8px;
+        margin: 0.5rem 0;
+        font-weight: bold;
+    }
+    .reliability-moderate {
+        background: linear-gradient(135deg, #ffd93d 0%, #ff9a3d 100%);
+        color: black;
+        padding: 0.5rem;
+        border-radius: 8px;
+        margin: 0.5rem 0;
+        font-weight: bold;
+    }
+    .reliability-low {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ffa8a8 100%);
+        color: white;
+        padding: 0.5rem;
+        border-radius: 8px;
+        margin: 0.5rem 0;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 class ProfessionalPredictionEngine:
     def __init__(self):
-        # ENHANCED Injury impact weights with clear player differentiation
+        # ENHANCED Injury impact weights - defense injuries hit harder to increase goals
         self.injury_weights = {
             "None": {
                 "attack_mult": 1.00, 
@@ -221,31 +245,31 @@ class ProfessionalPredictionEngine:
             },
             "Minor": {
                 "attack_mult": 0.95, 
-                "defense_mult": 0.97, 
+                "defense_mult": 0.94,  # Defense hit slightly harder
                 "description": "1-2 rotational/fringe players missing",
                 "key_players_missing": 0,
                 "player_type": "Rotational",
                 "impact_level": "Low"
             },
             "Moderate": {
-                "attack_mult": 0.88, 
-                "defense_mult": 0.90, 
+                "attack_mult": 0.90,  # Reduced from 0.88
+                "defense_mult": 0.85,  # Defense hit harder (was 0.90)
                 "description": "1-2 key starters missing", 
                 "key_players_missing": 1,
                 "player_type": "Key Starters",
                 "impact_level": "Medium"
             },
             "Significant": {
-                "attack_mult": 0.78, 
-                "defense_mult": 0.82, 
+                "attack_mult": 0.82,  # Reduced from 0.78
+                "defense_mult": 0.72,  # Defense hit much harder (was 0.82)
                 "description": "3-4 key starters missing",
                 "key_players_missing": 3, 
                 "player_type": "Key Starters",
                 "impact_level": "High"
             },
             "Crisis": {
-                "attack_mult": 0.65, 
-                "defense_mult": 0.72, 
+                "attack_mult": 0.70,  # Reduced from 0.65
+                "defense_mult": 0.58,  # Defense crushed (was 0.72)
                 "description": "5+ key starters missing",
                 "key_players_missing": 5,
                 "player_type": "Key Starters",
@@ -722,6 +746,40 @@ class ProfessionalPredictionEngine:
         
         return errors
 
+    def get_context_reliability(self, home_injury, away_injury, rest_diff, confidence):
+        """Calculate context reliability for predictions"""
+        reliability_score = 100
+        
+        # Injury reliability penalty
+        if home_injury in ["Significant", "Crisis"] and away_injury in ["Significant", "Crisis"]:
+            reliability_score -= 25
+        elif home_injury in ["Moderate", "Significant", "Crisis"] or away_injury in ["Moderate", "Significant", "Crisis"]:
+            reliability_score -= 15
+        elif home_injury == "Minor" or away_injury == "Minor":
+            reliability_score -= 5
+            
+        # Rest disparity penalty  
+        if rest_diff >= 5:
+            reliability_score -= 15
+        elif rest_diff >= 3:
+            reliability_score -= 8
+            
+        # Confidence-based adjustment
+        if confidence < 70:
+            reliability_score -= 10
+        elif confidence > 85:
+            reliability_score += 5
+            
+        reliability_score = max(50, min(95, reliability_score))
+        
+        # Categorize reliability
+        if reliability_score >= 80:
+            return reliability_score, "🟢 HIGH RELIABILITY", "Trust model predictions - optimal conditions"
+        elif reliability_score >= 65:
+            return reliability_score, "🟡 MODERATE RELIABILITY", "Use normal discretion - some context factors present"
+        else:
+            return reliability_score, "🔴 LOW RELIABILITY", "Exercise caution - significant context factors may distort predictions"
+
     def apply_modifiers(self, base_xg, base_xga, injury_level, rest_days, form_trend):
         """ENHANCED: Apply modifiers with improved injury impact"""
         injury_data = self.injury_weights[injury_level]
@@ -743,7 +801,7 @@ class ProfessionalPredictionEngine:
         return max(0.1, xg_modified), max(0.1, xga_modified)
 
     def calculate_goal_expectancy(self, home_xg, home_xga, away_xg, away_xga, home_team, away_team, league):
-        """ENHANCED: Calculate proper goal expectancy with team-specific home advantage"""
+        """ENHANCED: Calculate proper goal expectancy with FIXED normalization"""
         league_avg = self.league_averages.get(league, {"xg": 1.4, "xga": 1.4})
         
         # Get team-specific home advantage
@@ -753,7 +811,7 @@ class ProfessionalPredictionEngine:
         home_boost = home_advantage_data["goals_boost"]
         away_penalty = -away_advantage_data["goals_boost"] * 0.5  # Away teams get partial penalty
         
-        # Home goal expectancy: home attack vs away defense, normalized by league average
+        # FIXED: Less aggressive normalization (0.8 power instead of 0.5)
         home_goal_exp = home_xg * (away_xga / league_avg["xga"]) ** 0.8
         
         # Away goal expectancy: away attack vs home defense, normalized by league average  
@@ -809,22 +867,19 @@ class ProfessionalPredictionEngine:
             'total_goals_lambda': total_goals_lambda
         }
 
-    def calculate_balanced_advantage(self, home_xg, home_xga, away_xg, away_xga):
-        """More balanced advantage calculation to prevent exponential explosion"""
-        # Calculate advantages with reduced weights
-        home_attack_advantage = (home_xg - away_xg) * 0.3
-        home_defense_advantage = (away_xga - home_xga) * 0.2
+    def calculate_minimal_advantage(self, home_xg, home_xga, away_xg, away_xga):
+        """MINIMAL advantage adjustment to prevent over-correction"""
+        # Very small adjustment factor
+        alpha = 0.02  # Reduced from 0.12 (6x smaller)
         
-        total_advantage = home_attack_advantage + home_defense_advantage
+        home_advantage = (home_xg - away_xg + away_xga - home_xga) * 0.1
         
-        # Much smaller alpha to prevent extreme adjustments
-        alpha = 0.12
-        home_xg_adj = home_xg * np.exp(alpha * total_advantage)
-        away_xg_adj = away_xg * np.exp(-alpha * total_advantage)
+        home_xg_adj = home_xg * (1 + home_advantage * alpha)
+        away_xg_adj = away_xg * (1 - home_advantage * alpha)
         
-        # Also adjust defensive capabilities
-        home_xga_adj = home_xga * np.exp(-alpha * total_advantage * 0.3)
-        away_xga_adj = away_xga * np.exp(alpha * total_advantage * 0.3)
+        # Leave defenses mostly unchanged
+        home_xga_adj = home_xga
+        away_xga_adj = away_xga
         
         return home_xg_adj, home_xga_adj, away_xg_adj, away_xga_adj
 
@@ -956,12 +1011,12 @@ class ProfessionalPredictionEngine:
             self.get_team_data(inputs['away_team'])['form_trend']
         )
         
-        # Apply balanced advantage adjustment
-        home_xg_ba, home_xga_ba, away_xg_ba, away_xga_ba = self.calculate_balanced_advantage(
+        # Apply MINIMAL advantage adjustment
+        home_xg_ba, home_xga_ba, away_xg_ba, away_xga_ba = self.calculate_minimal_advantage(
             home_xg_adj, home_xga_adj, away_xg_adj, away_xga_adj
         )
         
-        # ENHANCED: Calculate proper goal expectancy with team-specific home advantage
+        # ENHANCED: Calculate proper goal expectancy with FIXED normalization
         home_goal_exp, away_goal_exp = self.calculate_goal_expectancy(
             home_xg_ba, home_xga_ba, away_xg_ba, away_xga_ba, 
             inputs['home_team'], inputs['away_team'], league
@@ -974,6 +1029,12 @@ class ProfessionalPredictionEngine:
         confidence, confidence_factors = self.calculate_confidence(
             home_xg_per_match, away_xg_per_match,
             home_xga_per_match, away_xga_per_match, inputs
+        )
+        
+        # Calculate context reliability
+        rest_diff = abs(inputs['home_rest'] - inputs['away_rest'])
+        reliability_score, reliability_level, reliability_advice = self.get_context_reliability(
+            inputs['home_injuries'], inputs['away_injuries'], rest_diff, confidence
         )
         
         # Calculate value bets
@@ -1020,6 +1081,9 @@ class ProfessionalPredictionEngine:
             'value_bets': value_bets,
             'confidence': confidence,
             'confidence_factors': confidence_factors,
+            'reliability_score': reliability_score,
+            'reliability_level': reliability_level,
+            'reliability_advice': reliability_advice,
             'insights': insights,
             'per_match_stats': {
                 'home_xg': home_xg_per_match,
@@ -1538,6 +1602,10 @@ def display_prediction_results(engine, result, inputs):
     # League badge
     home_league = engine.get_team_data(inputs['home_team'])['league']
     st.markdown(f'<div style="text-align: center; margin-bottom: 1rem;"><span class="league-badge">{home_league}</span></div>', unsafe_allow_html=True)
+    
+    # Context Reliability Indicator
+    reliability_class = f"reliability-{result['reliability_level'].split()[1].lower()}"
+    st.markdown(f'<div class="{reliability_class}">{result["reliability_level"]}: {result["reliability_advice"]}</div>', unsafe_allow_html=True)
     
     # Expected score card
     st.markdown('<div class="prediction-card">', unsafe_allow_html=True)
