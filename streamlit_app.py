@@ -754,10 +754,10 @@ class ProfessionalPredictionEngine:
         away_penalty = -away_advantage_data["goals_boost"] * 0.5  # Away teams get partial penalty
         
         # Home goal expectancy: home attack vs away defense, normalized by league average
-        home_goal_exp = home_xg * (away_xga / league_avg["xga"]) ** 0.5
+        home_goal_exp = home_xg * (away_xga / league_avg["xga"]) ** 0.8
         
         # Away goal expectancy: away attack vs home defense, normalized by league average  
-        away_goal_exp = away_xg * (home_xga / league_avg["xga"]) ** 0.5
+        away_goal_exp = away_xg * (home_xga / league_avg["xga"]) ** 0.8
         
         # Apply team-specific home advantage
         home_goal_exp += home_boost
