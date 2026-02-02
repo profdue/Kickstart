@@ -3,7 +3,8 @@ import pandas as pd
 import numpy as np
 import math
 from datetime import datetime
-import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings('ignore')
 
 # Page config
 st.set_page_config(
@@ -25,15 +26,20 @@ MAX_GOALS = 8  # Maximum goals to calculate in Poisson distribution
 REG_BASE_FACTOR = 0.75  # Base regression factor
 REG_MATCH_THRESHOLD = 5  # Minimum matches for regression
 
-# Cache factorial calculations for performance
-@st.cache_data
+# Initialize session state
+if 'factorial_cache' not in st.session_state:
+    st.session_state.factorial_cache = {}
+
 def factorial_cache(n):
-    return math.factorial(n)
+    """Cache factorial calculations for performance"""
+    if n not in st.session_state.factorial_cache:
+        st.session_state.factorial_cache[n] = math.factorial(n)
+    return st.session_state.factorial_cache[n]
 
 # Manual Poisson PMF function
 def poisson_pmf(k, lam):
     """Calculate Poisson probability manually without scipy"""
-    if lam <= 0:
+    if lam <= 0 or k < 0:
         return 0
     return (math.exp(-lam) * (lam ** k)) / factorial_cache(k)
 
@@ -45,36 +51,50 @@ def load_league_data(league_name):
         df = pd.read_csv(file_path)
         
         # Basic validation
-        required_cols = ['Team', 'Home_xG', 'Home_xGA', 'Away_xG', 'Away_xGA', 
-                        'Home_Goals_vs_xG', 'Away_Goals_vs_xG', 'Home_Matches', 'Away_Matches']
+        required_cols = ['team', 'venue', 'matches', 'xg', 'xga', 'goals_vs_xg']
         
-        if not all(col in df.columns for col in required_cols):
-            st.error(f"CSV missing required columns. Found: {df.columns.tolist()}")
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            st.error(f"CSV missing required columns: {missing_cols}")
+            st.info(f"Available columns: {df.columns.tolist()}")
             return None
             
         return df
     except FileNotFoundError:
-        st.error(f"League file not found: leagues/{league_name}.csv")
+        st.error(f"⚠️ League file not found: leagues/{league_name}.csv")
+        st.info("Please make sure you have CSV files in the 'leagues' folder with the correct format.")
         return None
     except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
+        st.error(f"❌ Error loading data: {str(e)}")
         return None
+
+def prepare_team_data(df):
+    """Prepare home and away stats from the data"""
+    # Separate home and away data
+    home_data = df[df['venue'] == 'home'].copy()
+    away_data = df[df['venue'] == 'away'].copy()
+    
+    # Rename columns for consistency
+    home_stats = home_data.set_index('team')
+    away_stats = away_data.set_index('team')
+    
+    return home_stats, away_stats
 
 def calculate_regression_factors(home_team_stats, away_team_stats, regression_factor):
     """Calculate attack regression factors"""
     # Note: CSV uses negative for overperformance, positive for underperformance
-    home_matches = home_team_stats['Home_Matches']
-    away_matches = away_team_stats['Away_Matches']
+    home_matches = home_team_stats['matches']
+    away_matches = away_team_stats['matches']
     
-    # Home team's attack regression
+    # Home team's attack regression (using home performance)
     if home_matches >= REG_MATCH_THRESHOLD:
-        home_attack_reg = (home_team_stats['Home_Goals_vs_xG'] / home_matches) * regression_factor
+        home_attack_reg = (home_team_stats['goals_vs_xg'] / home_matches) * regression_factor
     else:
         home_attack_reg = 0
     
-    # Away team's attack regression
+    # Away team's attack regression (using away performance)
     if away_matches >= REG_MATCH_THRESHOLD:
-        away_attack_reg = (away_team_stats['Away_Goals_vs_xG'] / away_matches) * regression_factor
+        away_attack_reg = (away_team_stats['goals_vs_xg'] / away_matches) * regression_factor
     else:
         away_attack_reg = 0
     
@@ -83,11 +103,11 @@ def calculate_regression_factors(home_team_stats, away_team_stats, regression_fa
 def calculate_expected_goals(home_stats, away_stats, home_attack_reg, away_attack_reg):
     """Calculate expected goals for both teams"""
     # Home team's expected goals = Away team's xGA per match adjusted by home attack regression
-    away_xga_per_match = away_stats['Away_xGA'] / away_stats['Away_Matches']
+    away_xga_per_match = away_stats['xga'] / max(away_stats['matches'], 1)
     home_expected = away_xga_per_match * (1 + home_attack_reg)
     
     # Away team's expected goals = Home team's xGA per match adjusted by away attack regression
-    home_xga_per_match = home_stats['Home_xGA'] / home_stats['Home_Matches']
+    home_xga_per_match = home_stats['xga'] / max(home_stats['matches'], 1)
     away_expected = home_xga_per_match * (1 + away_attack_reg)
     
     # Apply floor to prevent negative or very low expected goals
@@ -159,8 +179,8 @@ def get_risk_flags(home_stats, away_stats, home_xg, away_xg):
     flags = []
     
     # Over/underperformance warnings
-    home_perf = home_stats['Home_Goals_vs_xG'] / home_stats['Home_Matches']
-    away_perf = away_stats['Away_Goals_vs_xG'] / away_stats['Away_Matches']
+    home_perf = home_stats['goals_vs_xg'] / max(home_stats['matches'], 1)
+    away_perf = away_stats['goals_vs_xg'] / max(away_stats['matches'], 1)
     
     if abs(home_perf) > 0.3:
         flags.append(f"⚠️ Home team {'over' if home_perf < 0 else 'under'}performing by {abs(home_perf):.2f} goals/match")
@@ -168,12 +188,13 @@ def get_risk_flags(home_stats, away_stats, home_xg, away_xg):
     if abs(away_perf) > 0.3:
         flags.append(f"⚠️ Away team {'over' if away_perf < 0 else 'under'}performing by {abs(away_perf):.2f} goals/match")
     
-    # Home/away form disparity
-    home_home_ppg = home_stats['Home_Points'] / home_stats['Home_Matches'] if 'Home_Points' in home_stats else 0
-    away_away_ppg = away_stats['Away_Points'] / away_stats['Away_Matches'] if 'Away_Points' in away_stats else 0
-    
-    if abs(home_home_ppg - away_away_ppg) > 1.0:
-        flags.append(f"⚠️ Significant home/away form disparity: {home_home_ppg:.1f} vs {away_away_ppg:.1f} PPG")
+    # Form disparity (using wins)
+    if 'wins' in home_stats and 'wins' in away_stats:
+        home_win_rate = home_stats['wins'] / max(home_stats['matches'], 1)
+        away_win_rate = away_stats['wins'] / max(away_stats['matches'], 1)
+        
+        if abs(home_win_rate - away_win_rate) > 0.3:
+            flags.append(f"⚠️ Significant form disparity: {home_win_rate:.0%} vs {away_win_rate:.0%} win rate")
     
     # High/low scoring match flags
     total_xg = home_xg + away_xg
@@ -183,9 +204,9 @@ def get_risk_flags(home_stats, away_stats, home_xg, away_xg):
         flags.append("🛡️ Low-scoring match expected (Total xG < 2.0)")
     
     # Match sample size warnings
-    if home_stats['Home_Matches'] < 5:
+    if home_stats['matches'] < 5:
         flags.append("📊 Small sample size for home team home stats")
-    if away_stats['Away_Matches'] < 5:
+    if away_stats['matches'] < 5:
         flags.append("📊 Small sample size for away team away stats")
     
     return flags
@@ -230,57 +251,74 @@ with st.sidebar:
     st.header("⚙️ Match Settings")
     
     # League selection
-    leagues = ["Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1", "Eredivisie"]
+    leagues = ["Bundesliga", "Premier League", "La Liga", "Serie A", "Ligue 1", "Eredivisie"]
     selected_league = st.selectbox("Select League", leagues)
     
     # Load league data
     df = load_league_data(selected_league.lower().replace(" ", "_"))
     
     if df is not None:
+        # Prepare home and away stats
+        home_stats_df, away_stats_df = prepare_team_data(df)
+        
         # Team selection
-        teams = sorted(df['Team'].unique())
-        home_team = st.selectbox("Home Team", teams)
-        away_team = st.selectbox("Away Team", [t for t in teams if t != home_team])
+        available_home_teams = sorted(home_stats_df.index.unique())
+        available_away_teams = sorted(away_stats_df.index.unique())
         
-        # Regression factor slider
-        regression_factor = st.slider(
-            "Regression Factor",
-            min_value=0.0,
-            max_value=2.0,
-            value=REG_BASE_FACTOR,
-            step=0.05,
-            help="Adjust how much to regress team performance to mean (higher = more regression)"
-        )
+        # Ensure teams have both home and away data
+        common_teams = sorted(list(set(available_home_teams) & set(available_away_teams)))
         
-        # Calculate button
-        calculate_btn = st.button("🎯 Calculate Predictions", type="primary", use_container_width=True)
-        
-        st.divider()
-        
-        # Display settings
-        st.subheader("📊 Display Options")
-        show_details = st.checkbox("Show Detailed Probabilities", value=True)
-        show_matrix = st.checkbox("Show Score Probability Matrix", value=False)
-        
-        st.divider()
-        
-        # Export options
-        st.subheader("📤 Export")
-        if st.button("Generate Summary"):
-            st.session_state.generate_summary = True
+        if len(common_teams) == 0:
+            st.error("❌ No teams with both home and away data available")
+        else:
+            home_team = st.selectbox("Home Team", common_teams)
+            away_team = st.selectbox("Away Team", [t for t in common_teams if t != home_team])
+            
+            # Regression factor slider
+            regression_factor = st.slider(
+                "Regression Factor",
+                min_value=0.0,
+                max_value=2.0,
+                value=REG_BASE_FACTOR,
+                step=0.05,
+                help="Adjust how much to regress team performance to mean (higher = more regression)"
+            )
+            
+            # Calculate button
+            calculate_btn = st.button("🎯 Calculate Predictions", type="primary", use_container_width=True)
+            
+            st.divider()
+            
+            # Display settings
+            st.subheader("📊 Display Options")
+            show_matrix = st.checkbox("Show Score Probability Matrix", value=False)
 
 # ========== MAIN CONTENT ==========
 if df is None:
-    st.warning("Please select a valid league to continue")
+    st.warning("📁 Please add league CSV files to the 'leagues' folder")
+    st.info("""
+    **Your CSV format looks good!** Make sure files are named like:
+    - `leagues/bundesliga.csv`
+    - `leagues/premier_league.csv`
+    - etc.
+    """)
     st.stop()
 
 if 'calculate_btn' not in locals() or not calculate_btn:
     st.info("👈 Select teams and click 'Calculate Predictions' to start")
+    
+    # Show sample of loaded data
+    with st.expander("📋 Preview of Loaded Data"):
+        st.dataframe(df.head(10))
     st.stop()
 
 # Extract team stats
-home_stats = df[df['Team'] == home_team].iloc[0]
-away_stats = df[df['Team'] == away_team].iloc[0]
+try:
+    home_stats = home_stats_df.loc[home_team]
+    away_stats = away_stats_df.loc[away_team]
+except KeyError as e:
+    st.error(f"❌ Team data not found: {e}")
+    st.stop()
 
 # ========== PHASE 1-3: Data Processing ==========
 st.header(f"📊 {home_team} vs {away_team}")
@@ -288,20 +326,24 @@ st.header(f"📊 {home_team} vs {away_team}")
 col1, col2, col3 = st.columns([1, 1, 2])
 
 with col1:
-    st.subheader(f"🏠 {home_team}")
-    st.metric("Home Matches", int(home_stats['Home_Matches']))
-    st.metric("Home xG/match", f"{home_stats['Home_xG']/home_stats['Home_Matches']:.2f}")
-    st.metric("Home xGA/match", f"{home_stats['Home_xGA']/home_stats['Home_Matches']:.2f}")
-    if 'Home_Points' in home_stats:
-        st.metric("Home PPG", f"{home_stats['Home_Points']/home_stats['Home_Matches']:.2f}")
+    st.subheader(f"🏠 {home_team} (Home)")
+    st.metric("Matches", int(home_stats['matches']))
+    if 'wins' in home_stats:
+        st.metric("Wins", int(home_stats['wins']))
+    st.metric("xG/match", f"{home_stats['xg']/max(home_stats['matches'], 1):.2f}")
+    st.metric("xGA/match", f"{home_stats['xga']/max(home_stats['matches'], 1):.2f}")
+    if 'gf' in home_stats and 'ga' in home_stats:
+        st.metric("GF-GA", f"{home_stats['gf']}-{home_stats['ga']}")
 
 with col2:
-    st.subheader(f"✈️ {away_team}")
-    st.metric("Away Matches", int(away_stats['Away_Matches']))
-    st.metric("Away xG/match", f"{away_stats['Away_xG']/away_stats['Away_Matches']:.2f}")
-    st.metric("Away xGA/match", f"{away_stats['Away_xGA']/away_stats['Away_Matches']:.2f}")
-    if 'Away_Points' in away_stats:
-        st.metric("Away PPG", f"{away_stats['Away_Points']/away_stats['Away_Matches']:.2f}")
+    st.subheader(f"✈️ {away_team} (Away)")
+    st.metric("Matches", int(away_stats['matches']))
+    if 'wins' in away_stats:
+        st.metric("Wins", int(away_stats['wins']))
+    st.metric("xG/match", f"{away_stats['xg']/max(away_stats['matches'], 1):.2f}")
+    st.metric("xGA/match", f"{away_stats['xga']/max(away_stats['matches'], 1):.2f}")
+    if 'gf' in away_stats and 'ga' in away_stats:
+        st.metric("GF-GA", f"{away_stats['gf']}-{away_stats['ga']}")
 
 with col3:
     # Calculate regression factors
@@ -316,29 +358,32 @@ with col3:
     
     st.subheader("🎯 Expected Goals")
     
-    # Create a visual for expected goals
-    fig, ax = plt.subplots(figsize=(8, 4))
-    bars = ax.bar(['Home xG', 'Away xG'], [home_xg, away_xg], 
-                  color=['#1f77b4', '#ff7f0e'], alpha=0.7)
-    ax.set_ylabel('Expected Goals')
-    ax.set_title('Match Expected Goals Distribution')
+    # Create a simple bar chart using Streamlit's native features
+    xg_data = pd.DataFrame({
+        'Team': [home_team, away_team],
+        'Expected Goals': [home_xg, away_xg]
+    })
     
-    # Add value labels on bars
-    for bar in bars:
-        height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height + 0.02,
-                f'{height:.2f}', ha='center', va='bottom')
+    st.bar_chart(xg_data.set_index('Team'))
     
-    st.pyplot(fig)
-    
-    total_xg = home_xg + away_xg
-    st.metric("Total Expected Goals", f"{total_xg:.2f}")
+    # Display xG values
+    col_xg1, col_xg2, col_xg3 = st.columns(3)
+    with col_xg1:
+        st.metric("Home xG", f"{home_xg:.2f}")
+    with col_xg2:
+        st.metric("Away xG", f"{away_xg:.2f}")
+    with col_xg3:
+        total_xg = home_xg + away_xg
+        st.metric("Total xG", f"{total_xg:.2f}")
     
     # Bias indicators
     if total_xg > 2.6:
         st.success(f"📈 Over bias: Total xG = {total_xg:.2f} > 2.6")
     elif total_xg < 2.3:
         st.info(f"📉 Under bias: Total xG = {total_xg:.2f} < 2.3")
+    
+    # Show regression factors
+    st.caption(f"Regression factors: Home {home_attack_reg:.3f}, Away {away_attack_reg:.3f}")
 
 # ========== PHASE 4: Poisson Probabilities ==========
 st.divider()
@@ -397,24 +442,13 @@ with st.expander("📊 Match Outcome Probabilities", expanded=True):
         st.metric("Away Win", f"{away_win_prob*100:.1f}%")
         st.progress(away_win_prob)
     
-    # Bar chart visualization
-    fig2, ax2 = plt.subplots(figsize=(8, 4))
-    outcomes = ['Home Win', 'Draw', 'Away Win']
-    probs = [home_win_prob, draw_prob, away_win_prob]
-    colors = ['#1f77b4', '#2ca02c', '#ff7f0e']
+    # Create a simple chart using Streamlit's native chart
+    outcome_data = pd.DataFrame({
+        'Outcome': ['Home Win', 'Draw', 'Away Win'],
+        'Probability': [home_win_prob, draw_prob, away_win_prob]
+    })
     
-    bars = ax2.bar(outcomes, probs, color=colors, alpha=0.7)
-    ax2.set_ylabel('Probability')
-    ax2.set_title('Match Outcome Probabilities')
-    ax2.set_ylim([0, 1])
-    
-    # Add value labels
-    for bar in bars:
-        height = bar.get_height()
-        ax2.text(bar.get_x() + bar.get_width()/2., height + 0.02,
-                f'{height*100:.1f}%', ha='center', va='bottom')
-    
-    st.pyplot(fig2)
+    st.bar_chart(outcome_data.set_index('Outcome'))
 
 # ========== LAYER 5: Betting Markets ==========
 with st.expander("💰 Betting Markets", expanded=True):
@@ -490,85 +524,100 @@ with st.expander("⚠️ Risk Flags & Warnings", expanded=False):
 st.divider()
 st.header("📤 Export & Share")
 
+# Generate summary
+summary = f"""
+⚽ PREDICTION SUMMARY: {home_team} vs {away_team}
+League: {selected_league}
+
+📊 Team Statistics:
+• {home_team} (Home): {home_stats['matches']} matches, {home_stats.get('wins', 'N/A')} wins
+• {away_team} (Away): {away_stats['matches']} matches, {away_stats.get('wins', 'N/A')} wins
+
+🎯 Expected Goals:
+• {home_team} xG: {home_xg:.2f}
+• {away_team} xG: {away_xg:.2f}
+• Total xG: {home_xg + away_xg:.2f}
+
+📈 Most Likely Score: {score_probs[0][0][0] if score_probs else 'N/A'}-{score_probs[0][0][1] if score_probs else 'N/A'} ({(score_probs[0][1]*100 if score_probs else 0):.1f}%)
+
+🏆 Outcome Probabilities:
+• {home_team} Win: {home_win_prob*100:.1f}%
+• Draw: {draw_prob*100:.1f}%
+• {away_team} Win: {away_win_prob*100:.1f}%
+
+💰 Betting Markets:
+• Over 2.5 Goals: {over_25_prob*100:.1f}%
+• Under 2.5 Goals: {under_25_prob*100:.1f}%
+• Both Teams to Score: {btts_yes_prob*100:.1f}%
+
+📅 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+Regression Factor: {regression_factor}
+"""
+
+st.code(summary, language="text")
+
 col_export1, col_export2 = st.columns(2)
 
 with col_export1:
-    # Generate summary
-    if st.button("📋 Generate Summary Text"):
-        summary = f"""
-        ⚽ PREDICTION SUMMARY: {home_team} vs {away_team}
-        
-        📊 Expected Goals:
-        • Home xG: {home_xg:.2f}
-        • Away xG: {away_xg:.2f}
-        • Total xG: {home_xg + away_xg:.2f}
-        
-        🎯 Most Likely Score: {score_probs[0][0][0] if score_probs else 'N/A'}-{score_probs[0][0][1] if score_probs else 'N/A'} ({(score_probs[0][1]*100 if score_probs else 0):.1f}%)
-        
-        📈 Outcome Probabilities:
-        • Home Win: {home_win_prob*100:.1f}%
-        • Draw: {draw_prob*100:.1f}%
-        • Away Win: {away_win_prob*100:.1f}%
-        
-        💰 Betting Markets:
-        • Over 2.5: {over_25_prob*100:.1f}%
-        • Under 2.5: {under_25_prob*100:.1f}%
-        • BTTS Yes: {btts_yes_prob*100:.1f}%
-        """
-        
-        st.code(summary, language="text")
-        st.download_button(
-            label="📥 Download Summary",
-            data=summary,
-            file_name=f"prediction_{home_team}_vs_{away_team}.txt",
-            mime="text/plain"
-        )
+    # Download summary
+    st.download_button(
+        label="📥 Download Summary",
+        data=summary,
+        file_name=f"prediction_{home_team}_vs_{away_team}.txt",
+        mime="text/plain"
+    )
 
 with col_export2:
     # Export data as CSV
-    if st.button("📊 Export Prediction Data"):
-        export_data = {
-            'Metric': [
-                'Home Team', 'Away Team', 'Home xG', 'Away xG', 'Total xG',
-                'Home Win %', 'Draw %', 'Away Win %',
-                'Over 2.5 %', 'Under 2.5 %', 'BTTS Yes %', 'BTTS No %'
-            ],
-            'Value': [
-                home_team, away_team, f"{home_xg:.2f}", f"{away_xg:.2f}", f"{home_xg+away_xg:.2f}",
-                f"{home_win_prob*100:.1f}", f"{draw_prob*100:.1f}", f"{away_win_prob*100:.1f}",
-                f"{over_25_prob*100:.1f}", f"{under_25_prob*100:.1f}",
-                f"{btts_yes_prob*100:.1f}", f"{btts_no_prob*100:.1f}"
-            ]
-        }
-        
-        df_export = pd.DataFrame(export_data)
-        csv = df_export.to_csv(index=False)
-        
-        st.download_button(
-            label="📥 Download CSV",
-            data=csv,
-            file_name=f"prediction_data_{home_team}_vs_{away_team}.csv",
-            mime="text/csv"
-        )
+    export_data = {
+        'Metric': [
+            'Home Team', 'Away Team', 'League', 'Home xG', 'Away xG', 'Total xG',
+            'Home Win %', 'Draw %', 'Away Win %',
+            'Over 2.5 %', 'Under 2.5 %', 'BTTS Yes %', 'BTTS No %',
+            'Most Likely Score', 'Regression Factor'
+        ],
+        'Value': [
+            home_team, away_team, selected_league,
+            f"{home_xg:.2f}", f"{away_xg:.2f}", f"{home_xg+away_xg:.2f}",
+            f"{home_win_prob*100:.1f}", f"{draw_prob*100:.1f}", f"{away_win_prob*100:.1f}",
+            f"{over_25_prob*100:.1f}", f"{under_25_prob*100:.1f}",
+            f"{btts_yes_prob*100:.1f}", f"{btts_no_prob*100:.1f}",
+            f"{score_probs[0][0][0] if score_probs else 'N/A'}-{score_probs[0][0][1] if score_probs else 'N/A'}",
+            f"{regression_factor}"
+        ]
+    }
+    
+    df_export = pd.DataFrame(export_data)
+    csv = df_export.to_csv(index=False)
+    
+    st.download_button(
+        label="📥 Download CSV",
+        data=csv,
+        file_name=f"prediction_data_{home_team}_vs_{away_team}.csv",
+        mime="text/csv"
+    )
 
 # ========== DETAILED PROBABILITY MATRIX ==========
 if show_matrix:
     with st.expander("🔢 Detailed Probability Matrix", expanded=False):
         # Display matrix for scores 0-5
+        matrix_data = []
+        for i in range(6):
+            row = []
+            for j in range(6):
+                row.append(f"{prob_matrix[i, j]*100:.2f}%")
+            matrix_data.append(row)
+        
         matrix_df = pd.DataFrame(
-            prob_matrix[:6, :6] * 100,
+            matrix_data,
             columns=[f'Away {i}' for i in range(6)],
             index=[f'Home {i}' for i in range(6)]
         )
         
-        # Format as percentages
-        matrix_df = matrix_df.round(1)
+        st.dataframe(matrix_df, use_container_width=True)
         
-        # Apply heatmap styling
-        st.dataframe(
-            matrix_df.style.background_gradient(cmap='Blues', axis=None).format('{:.1f}%'),
-            use_container_width=True
-        )
+        # Add some statistics
+        st.caption(f"Note: Probabilities shown for scores 0-0 through 5-5. Matrix sums to {(prob_matrix.sum()*100):.1f}%")
 
 # ========== FOOTER ==========
 st.divider()
