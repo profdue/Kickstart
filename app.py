@@ -25,7 +25,7 @@ st.markdown("""
 MAX_GOALS = 8
 REG_BASE_FACTOR = 0.75
 REG_MATCH_THRESHOLD = 5
-MAX_REGRESSION = 0.3  # Cap regression at ±30%
+MAX_REGRESSION = 0.3
 
 # Initialize session state
 if 'factorial_cache' not in st.session_state:
@@ -47,7 +47,20 @@ def poisson_pmf(k, lam):
 def load_league_data(league_name):
     """Load league data from CSV with caching"""
     try:
-        file_path = f"leagues/{league_name}.csv"
+        # Map display names to actual file names
+        file_map = {
+            "premier_league": "premier_league.csv",
+            "bundesliga": "bundesliga.csv",
+            "serie_a": "serie a.csv",  # Your file has space
+            "laliga": "laliga.csv",
+            "ligue_1": "ligue_1.csv",
+            "eredivisie": "eredivisie.csv"
+        }
+        
+        # Get the actual filename
+        actual_filename = file_map.get(league_name, f"{league_name}.csv")
+        file_path = f"leagues/{actual_filename}"
+        
         df = pd.read_csv(file_path)
         
         # Basic validation
@@ -60,7 +73,8 @@ def load_league_data(league_name):
             
         return df
     except FileNotFoundError:
-        st.error(f"⚠️ League file not found: leagues/{league_name}.csv")
+        st.error(f"⚠️ League file not found: leagues/{actual_filename}")
+        st.info(f"Available files in leagues folder: {list(file_map.values())}")
         return None
     except Exception as e:
         st.error(f"❌ Error loading data: {str(e)}")
@@ -81,18 +95,16 @@ def calculate_regression_factors(home_team_stats, away_team_stats, regression_fa
     home_matches = home_team_stats['matches']
     away_matches = away_team_stats['matches']
     
-    # Home team's attack regression (using home performance)
+    # Home team's attack regression
     if home_matches >= REG_MATCH_THRESHOLD:
         home_attack_reg = (home_team_stats['goals_vs_xg'] / home_matches) * regression_factor
-        # Cap the regression to prevent extreme values
         home_attack_reg = max(min(home_attack_reg, MAX_REGRESSION), -MAX_REGRESSION)
     else:
         home_attack_reg = 0
     
-    # Away team's attack regression (using away performance)
+    # Away team's attack regression
     if away_matches >= REG_MATCH_THRESHOLD:
         away_attack_reg = (away_team_stats['goals_vs_xg'] / away_matches) * regression_factor
-        # Cap the regression to prevent extreme values
         away_attack_reg = max(min(away_attack_reg, MAX_REGRESSION), -MAX_REGRESSION)
     else:
         away_attack_reg = 0
@@ -100,9 +112,8 @@ def calculate_regression_factors(home_team_stats, away_team_stats, regression_fa
     return home_attack_reg, away_attack_reg
 
 def calculate_expected_goals(home_stats, away_stats, home_attack_reg, away_attack_reg):
-    """Calculate expected goals for both teams using NEW LOGIC"""
+    """Calculate expected goals for both teams using geometric mean"""
     
-    # NEW LOGIC: Geometric mean of team's own attack and opponent's defense
     home_xg_per_match = home_stats['xg'] / max(home_stats['matches'], 1)
     away_xga_per_match = away_stats['xga'] / max(away_stats['matches'], 1)
     
@@ -113,15 +124,10 @@ def calculate_expected_goals(home_stats, away_stats, home_attack_reg, away_attac
     home_expected = np.sqrt(home_xg_per_match * away_xga_per_match) * (1 + home_attack_reg)
     away_expected = np.sqrt(away_xg_per_match * home_xga_per_match) * (1 + away_attack_reg)
     
-    # Alternative: Weighted average (70% opponent defense, 30% own attack)
-    # home_expected = (0.7 * away_xga_per_match + 0.3 * home_xg_per_match) * (1 + home_attack_reg)
-    # away_expected = (0.7 * home_xga_per_match + 0.3 * away_xg_per_match) * (1 + away_attack_reg)
-    
-    # Apply floor to prevent negative or very low expected goals
+    # Apply bounds
     home_expected = max(home_expected, 0.3)
     away_expected = max(away_expected, 0.3)
     
-    # Apply ceiling to prevent unrealistic high values
     home_expected = min(home_expected, 4.0)
     away_expected = min(away_expected, 4.0)
     
@@ -189,21 +195,18 @@ def get_risk_flags(home_stats, away_stats, home_xg, away_xg, home_reg, away_reg)
     home_perf = home_stats['goals_vs_xg'] / max(home_stats['matches'], 1)
     away_perf = away_stats['goals_vs_xg'] / max(away_stats['matches'], 1)
     
-    # Extreme regression warnings
     if abs(home_reg) > 0.2:
         flags.append(f"⚠️ High home team regression: {home_reg:.3f} ({'over' if home_reg < 0 else 'under'}performance)")
     
     if abs(away_reg) > 0.2:
         flags.append(f"⚠️ High away team regression: {away_reg:.3f} ({'over' if away_reg < 0 else 'under'}performance)")
     
-    # Extreme over/underperformance
     if abs(home_perf) > 0.5:
         flags.append(f"🚨 Extreme home team {'over' if home_perf < 0 else 'under'}performance: {abs(home_perf):.2f} goals/match")
     
     if abs(away_perf) > 0.5:
         flags.append(f"🚨 Extreme away team {'over' if away_perf < 0 else 'under'}performance: {abs(away_perf):.2f} goals/match")
     
-    # Form disparity
     if 'wins' in home_stats and 'wins' in away_stats:
         home_win_rate = home_stats['wins'] / max(home_stats['matches'], 1)
         away_win_rate = away_stats['wins'] / max(away_stats['matches'], 1)
@@ -211,7 +214,6 @@ def get_risk_flags(home_stats, away_stats, home_xg, away_xg, home_reg, away_reg)
         if abs(home_win_rate - away_win_rate) > 0.3:
             flags.append(f"⚠️ Significant form disparity: {home_win_rate:.0%} vs {away_win_rate:.0%} win rate")
     
-    # High/low scoring match flags
     total_xg = home_xg + away_xg
     if total_xg > 3.5:
         flags.append("⚡ Very high-scoring match expected (Total xG > 3.5)")
@@ -222,7 +224,6 @@ def get_risk_flags(home_stats, away_stats, home_xg, away_xg, home_reg, away_reg)
     elif total_xg < 2.5:
         flags.append("📉 Below average scoring expected (Total xG < 2.5)")
     
-    # Sample size warnings
     if home_stats['matches'] < 8:
         flags.append("📊 Limited sample size for home team home stats")
     if away_stats['matches'] < 8:
@@ -235,7 +236,6 @@ def get_betting_suggestions(home_win_prob, draw_prob, away_win_prob, over_25_pro
     suggestions = []
     threshold = 0.55
     
-    # Moneyline suggestions
     if home_win_prob > threshold:
         suggestions.append(f"✅ Home Win ({(home_win_prob*100):.1f}%)")
     if away_win_prob > threshold:
@@ -243,7 +243,6 @@ def get_betting_suggestions(home_win_prob, draw_prob, away_win_prob, over_25_pro
     if draw_prob > threshold:
         suggestions.append(f"✅ Draw ({(draw_prob*100):.1f}%)")
     
-    # Double chance
     home_draw_prob = home_win_prob + draw_prob
     away_draw_prob = away_win_prob + draw_prob
     if home_draw_prob > threshold:
@@ -251,13 +250,11 @@ def get_betting_suggestions(home_win_prob, draw_prob, away_win_prob, over_25_pro
     if away_draw_prob > threshold:
         suggestions.append(f"✅ Away Win or Draw ({(away_draw_prob*100):.1f}%)")
     
-    # Over/Under
     if over_25_prob > threshold:
         suggestions.append(f"✅ Over 2.5 Goals ({(over_25_prob*100):.1f}%)")
     if under_25_prob > threshold:
         suggestions.append(f"✅ Under 2.5 Goals ({(under_25_prob*100):.1f}%)")
     
-    # BTTS
     if btts_yes_prob > threshold:
         suggestions.append(f"✅ Both Teams to Score ({(btts_yes_prob*100):.1f}%)")
     elif btts_yes_prob < 0.45:
@@ -269,19 +266,21 @@ def get_betting_suggestions(home_win_prob, draw_prob, away_win_prob, over_25_pro
 with st.sidebar:
     st.header("⚙️ Match Settings")
     
-    leagues = ["Premier League", "Bundesliga", "La Liga", "Serie A", "Ligue 1", "Eredivisie"]
+    leagues = ["Premier League", "Bundesliga", "Serie A", "La Liga", "Ligue 1", "Eredivisie"]
     selected_league = st.selectbox("Select League", leagues)
-    # Handle different naming conventions
-    league_file_map = {
-        "Serie A": "serie a.csv",  # Your file has space
-        "Premier League": "premier_league.csv",
-        "La Liga": "laliga.csv",
-        "Bundesliga": "bundesliga.csv", 
-        "Ligue 1": "ligue_1.csv",
-        "Eredivisie": "eredivisie.csv"
+    
+    # Map display name to filename
+    league_to_file = {
+        "Premier League": "premier_league",
+        "Bundesliga": "bundesliga",
+        "Serie A": "serie_a",
+        "La Liga": "laliga",
+        "Ligue 1": "ligue_1",
+        "Eredivisie": "eredivisie"
     }
-    file_name = league_file_map.get(selected_league, selected_league.lower().replace(" ", "_"))
-    df = load_league_data(file_name.replace(".csv", ""))
+    
+    league_key = league_to_file[selected_league]
+    df = load_league_data(league_key)
     
     if df is not None:
         home_stats_df, away_stats_df = prepare_team_data(df)
@@ -305,31 +304,23 @@ with st.sidebar:
                 help="Adjust how much to regress team performance to mean (higher = more regression)"
             )
             
-            # Advanced settings
-            with st.expander("⚙️ Advanced Settings"):
-                use_geometric_mean = st.checkbox("Use Geometric Mean", value=True, 
-                    help="Use geometric mean of attack and defense (recommended)")
-                max_reg = st.slider("Max Regression %", 10, 50, 30, 5,
-                    help="Maximum regression adjustment (%)")
-                st.session_state.max_regression = max_reg / 100
-            
             calculate_btn = st.button("🎯 Calculate Predictions", type="primary", use_container_width=True)
             
             st.divider()
             st.subheader("📊 Display Options")
             show_matrix = st.checkbox("Show Score Probability Matrix", value=False)
-            show_calculation_details = st.checkbox("Show Calculation Details", value=False)
 
 # ========== MAIN CONTENT ==========
 if df is None:
     st.warning("📁 Please add league CSV files to the 'leagues' folder")
     st.info("""
-    **Your CSV format should include:**
-    ```
-    team,venue,matches,xg,xga,goals_vs_xg
-    Team Name,home,10,25.5,12.3,-2.1
-    Team Name,away,10,22.8,15.4,0.5
-    ```
+    **Required CSV files in 'leagues' folder:**
+    - `premier_league.csv` ✓
+    - `bundesliga.csv` ✓
+    - `serie a.csv` ✓ (Note: has space in filename)
+    - `laliga.csv` ✓
+    - `ligue_1.csv` ✓
+    - `eredivisie.csv` (optional)
     """)
     st.stop()
 
@@ -377,12 +368,10 @@ with col2:
         st.metric("GF-GA", f"{away_stats['gf']}-{away_stats['ga']}")
 
 with col3:
-    # Calculate regression factors
     home_attack_reg, away_attack_reg = calculate_regression_factors(
         home_stats, away_stats, regression_factor
     )
     
-    # Calculate expected goals
     home_xg, away_xg = calculate_expected_goals(
         home_stats, away_stats, home_attack_reg, away_attack_reg
     )
@@ -405,30 +394,12 @@ with col3:
         total_xg = home_xg + away_xg
         st.metric("Total xG", f"{total_xg:.2f}")
     
-    # Bias indicators
     if total_xg > 2.6:
         st.success(f"📈 Over bias: Total xG = {total_xg:.2f} > 2.6")
     elif total_xg < 2.3:
         st.info(f"📉 Under bias: Total xG = {total_xg:.2f} < 2.3")
     
-    # Show regression factors and calculation details
     st.caption(f"Regression factors: Home {home_attack_reg:.3f}, Away {away_attack_reg:.3f}")
-    
-    if show_calculation_details:
-        with st.expander("📝 Calculation Details"):
-            st.write(f"**{home_team} (Home) Calculation:**")
-            st.write(f"- Home xG/match: {home_xg_per_match:.2f}")
-            st.write(f"- Away xGA/match: {away_xga_per_match:.2f}")
-            st.write(f"- Geometric mean: √({home_xg_per_match:.2f} × {away_xga_per_match:.2f}) = {np.sqrt(home_xg_per_match * away_xga_per_match):.2f}")
-            st.write(f"- Regression adjustment: × (1 + {home_attack_reg:.3f}) = × {1 + home_attack_reg:.3f}")
-            st.write(f"- Final: {np.sqrt(home_xg_per_match * away_xga_per_match):.2f} × {1 + home_attack_reg:.3f} = **{home_xg:.2f}**")
-            
-            st.write(f"\n**{away_team} (Away) Calculation:**")
-            st.write(f"- Away xG/match: {away_xg_per_match:.2f}")
-            st.write(f"- Home xGA/match: {home_xga_per_match:.2f}")
-            st.write(f"- Geometric mean: √({away_xg_per_match:.2f} × {home_xga_per_match:.2f}) = {np.sqrt(away_xg_per_match * home_xga_per_match):.2f}")
-            st.write(f"- Regression adjustment: × (1 + {away_attack_reg:.3f}) = × {1 + away_attack_reg:.3f}")
-            st.write(f"- Final: {np.sqrt(away_xg_per_match * home_xga_per_match):.2f} × {1 + away_attack_reg:.3f} = **{away_xg:.2f}**")
 
 # ========== PROBABILITY CALCULATIONS ==========
 st.divider()
@@ -503,7 +474,6 @@ with st.expander("💰 Betting Markets", expanded=True):
         st.metric("No", f"{btts_no_prob*100:.1f}%")
         st.progress(btts_no_prob)
     
-    # Moneyline odds
     st.subheader("Implied Odds")
     col_odds1, col_odds2, col_odds3 = st.columns(3)
     with col_odds1:
@@ -585,7 +555,6 @@ League: {selected_league}
 
 📅 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 Regression Factor: {regression_factor}
-Max Regression Cap: {st.session_state.get('max_regression', 0.3)*100:.0f}%
 """
 
 st.code(summary, language="text")
@@ -606,7 +575,7 @@ with col_export2:
             'Home Team', 'Away Team', 'League', 'Home xG', 'Away xG', 'Total xG',
             'Home Win %', 'Draw %', 'Away Win %',
             'Over 2.5 %', 'Under 2.5 %', 'BTTS Yes %', 'BTTS No %',
-            'Most Likely Score', 'Regression Factor', 'Max Regression Cap'
+            'Most Likely Score', 'Regression Factor'
         ],
         'Value': [
             home_team, away_team, selected_league,
@@ -615,8 +584,7 @@ with col_export2:
             f"{over_25_prob*100:.1f}", f"{under_25_prob*100:.1f}",
             f"{btts_yes_prob*100:.1f}", f"{btts_no_prob*100:.1f}",
             f"{score_probs[0][0][0] if score_probs else 'N/A'}-{score_probs[0][0][1] if score_probs else 'N/A'}",
-            f"{regression_factor}",
-            f"{st.session_state.get('max_regression', 0.3)*100:.0f}%"
+            f"{regression_factor}"
         ]
     }
     
