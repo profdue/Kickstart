@@ -271,8 +271,17 @@ with st.sidebar:
     
     leagues = ["Premier League", "Bundesliga", "La Liga", "Serie A", "Ligue 1", "Eredivisie"]
     selected_league = st.selectbox("Select League", leagues)
-    
-    df = load_league_data(selected_league.lower().replace(" ", "_"))
+    # Handle different naming conventions
+    league_file_map = {
+        "Serie A": "serie a.csv",  # Your file has space
+        "Premier League": "premier_league.csv",
+        "La Liga": "laliga.csv",
+        "Bundesliga": "bundesliga.csv", 
+        "Ligue 1": "ligue_1.csv",
+        "Eredivisie": "eredivisie.csv"
+    }
+    file_name = league_file_map.get(selected_league, selected_league.lower().replace(" ", "_"))
+    df = load_league_data(file_name.replace(".csv", ""))
     
     if df is not None:
         home_stats_df, away_stats_df = prepare_team_data(df)
