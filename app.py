@@ -51,7 +51,7 @@ def load_league_data(league_name):
         file_map = {
             "premier_league": "premier_league.csv",
             "bundesliga": "bundesliga.csv",
-            "serie_a": "serie a.csv",  # Your file has space
+            "serie_a": "serie_a.csv",  # Your file has space
             "laliga": "laliga.csv",
             "ligue_1": "ligue_1.csv",
             "eredivisie": "eredivisie.csv"
