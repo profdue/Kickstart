@@ -1,7 +1,11 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from scipy.stats import poisson
+import math
+
+# Manual Poisson PMF calculation (no scipy dependency issues)
+def poisson_pmf(k, lam):
+    return (lam ** k) * math.exp(-lam) / math.factorial(k)
 
 # Set page config
 st.set_page_config(
@@ -115,8 +119,6 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
         away_xga_per_match = away_stats['xga'] / away_stats['matches']
         
         # Step 3: Identify over/underperformance
-        # Note: CSV has reversed signs for goals_vs_xg (positive = underperforming in CSV, but actually overperforming)
-        # So we use the sign as is - negative in CSV means overperforming, which reduces expected goals
         home_attack_regression = home_stats['goals_vs_xg'] / home_stats['matches'] * regression_factor
         home_defense_regression = home_stats['goals_allowed_vs_xga'] / home_stats['matches'] * regression_factor
         away_attack_regression = away_stats['goals_vs_xg'] / away_stats['matches'] * regression_factor
@@ -143,13 +145,13 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
         # Step 6: Generate score probabilities using Poisson
         st.subheader("🎯 Score Probabilities")
         
-        # Create probability matrix
+        # Create probability matrix using manual Poisson
         goals_range = range(max_goals + 1)
         prob_matrix = np.zeros((max_goals + 1, max_goals + 1))
         
         for i in goals_range:
             for j in goals_range:
-                prob = poisson.pmf(i, home_final_expected) * poisson.pmf(j, away_final_expected)
+                prob = poisson_pmf(i, home_final_expected) * poisson_pmf(j, away_final_expected)
                 prob_matrix[i, j] = prob
         
         # Get top 5 most likely scores
@@ -272,10 +274,9 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
         
         flags = []
         
-        # High regression risk - fix interpretation based on CSV sign reversal
+        # High regression risk
         goals_vs_xg_per_match = home_stats['goals_vs_xg'] / home_stats['matches']
         if abs(goals_vs_xg_per_match) > 0.3:
-            # In CSV: negative means overperforming, positive means underperforming
             if goals_vs_xg_per_match < -0.3:
                 flags.append(f"{home_team} massively OVERPERFORMING xG (regression risk)")
             else:
@@ -308,7 +309,7 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
         else:
             st.success("No major risk flags detected")
         
-        # Step 10: Detailed probability table (FIXED - no background_gradient)
+        # Step 10: Detailed probability table
         with st.expander("📊 View Detailed Probability Matrix"):
             # Create a smaller matrix for display
             display_goals = 5
@@ -320,7 +321,7 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
                 index=[f"Home {i}" for i in range(display_goals+1)]
             )
             
-            # Simple formatting without background_gradient
+            # Simple formatting
             st.dataframe(
                 display_df.style.format("{:.1f}%"),
                 use_container_width=True
