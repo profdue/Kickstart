@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import math
 
-# Manual Poisson PMF calculation (no scipy dependency issues)
+# Manual Poisson PMF calculation
 def poisson_pmf(k, lam):
     return (lam ** k) * math.exp(-lam) / math.factorial(k)
 
@@ -195,14 +195,6 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
         # Display outcome probabilities
         st.subheader("🏆 Match Outcome Probabilities")
         
-        # Visualize with bar chart using Streamlit's native chart
-        outcome_data = pd.DataFrame({
-            'Outcome': [f'{home_team} Win', 'Draw', f'{away_team} Win'],
-            'Probability': [home_win_prob * 100, draw_prob * 100, away_win_prob * 100]
-        })
-        
-        st.bar_chart(outcome_data.set_index('Outcome'))
-        
         # Show metrics
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -211,6 +203,13 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
             st.metric("Draw", f"{draw_prob*100:.1f}%")
         with col3:
             st.metric(f"{away_team} Win", f"{away_win_prob*100:.1f}%")
+        
+        # Visualize with bar chart
+        chart_data = pd.DataFrame({
+            'Outcome': ['Home Win', 'Draw', 'Away Win'],
+            'Probability': [home_win_prob, draw_prob, away_win_prob]
+        })
+        st.bar_chart(chart_data.set_index('Outcome'))
         
         # Step 8: Betting suggestions
         st.subheader("💰 Betting Suggestions")
@@ -321,46 +320,9 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
                 index=[f"Home {i}" for i in range(display_goals+1)]
             )
             
-            # Simple formatting
             st.dataframe(
                 display_df.style.format("{:.1f}%"),
                 use_container_width=True
-            )
-        
-        # Export results
-        st.divider()
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("📋 Copy Prediction Summary"):
-                summary = f"""
-                {home_team} vs {away_team}
-                Expected Goals: {home_team} {home_final_expected:.1f} - {away_final_expected:.1f} {away_team}
-                Total Expected: {total_goals:.1f}
-                
-                Most Likely Score: {top_scores[0]['score']} ({top_scores[0]['probability']:.1f}%)
-                
-                Win Probabilities:
-                {home_team}: {home_win_prob*100:.1f}%
-                Draw: {draw_prob*100:.1f}%
-                {away_team}: {away_win_prob*100:.1f}%
-                
-                Over 2.5: {over_25_prob*100:.1f}%
-                Under 2.5: {under_25_prob*100:.1f}%
-                BTTS: {btts_prob*100:.1f}%
-                """
-                st.code(summary)
-        
-        with col2:
-            st.download_button(
-                label="📥 Download Prediction Data",
-                data=pd.DataFrame({
-                    'Metric': ['Home xG', 'Away xG', 'Total xG', 'Home Win %', 'Draw %', 'Away Win %', 'Over 2.5 %', 'BTTS %'],
-                    'Value': [home_final_expected, away_final_expected, total_goals, 
-                             home_win_prob*100, draw_prob*100, away_win_prob*100,
-                             over_25_prob*100, btts_prob*100]
-                }).to_csv(index=False),
-                file_name=f"prediction_{home_team}_vs_{away_team}.csv",
-                mime="text/csv"
             )
 
 else:
@@ -374,26 +336,7 @@ else:
     2. **xG regression** adjusts for over/underperformance
     3. **Poisson distribution** calculates score probabilities
     4. **Betting suggestions** based on value thresholds
-    
-    ### 🔍 Key Metrics:
-    - **xG (Expected Goals)**: Quality of chances created
-    - **xGA (Expected Goals Against)**: Quality of chances conceded
-    - **xPTS (Expected Points)**: Points deserved based on xG
-    
-    ### ⚡ Regression Logic:
-    - Teams overperforming xG → expect regression (fewer goals)
-    - Teams underperforming xG → expect improvement (more goals)
-    
-    ### ⚠️ Note on CSV Data:
-    - CSV uses negative values for overperformance, positive for underperformance
-    - This is opposite of mathematical convention but works correctly in calculations
     """)
-    
-    # Show data structure
-    if df is not None:
-        with st.expander("View Data Structure"):
-            st.dataframe(df.head())
-            st.caption(f"Total records: {len(df)} (20 teams × 2 venues = 40)")
 
 # Footer
 st.divider()
