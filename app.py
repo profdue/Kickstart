@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from scipy.stats import poisson
-import matplotlib.pyplot as plt
 
 # Set page config
 st.set_page_config(
@@ -192,6 +191,15 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
         # Display outcome probabilities
         st.subheader("🏆 Match Outcome Probabilities")
         
+        # Visualize with bar chart using Streamlit's native chart
+        outcome_data = pd.DataFrame({
+            'Outcome': [f'{home_team} Win', 'Draw', f'{away_team} Win'],
+            'Probability': [home_win_prob * 100, draw_prob * 100, away_win_prob * 100]
+        })
+        
+        st.bar_chart(outcome_data.set_index('Outcome'))
+        
+        # Show metrics
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric(f"{home_team} Win", f"{home_win_prob*100:.1f}%")
@@ -199,22 +207,6 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
             st.metric("Draw", f"{draw_prob*100:.1f}%")
         with col3:
             st.metric(f"{away_team} Win", f"{away_win_prob*100:.1f}%")
-        
-        # Visualize probabilities
-        fig, ax = plt.subplots(figsize=(8, 4))
-        outcomes = ['Home Win', 'Draw', 'Away Win']
-        probs = [home_win_prob, draw_prob, away_win_prob]
-        colors = ['#4CAF50', '#FFC107', '#2196F3']
-        
-        ax.bar(outcomes, probs, color=colors)
-        ax.set_ylabel('Probability')
-        ax.set_title('Match Outcome Probabilities')
-        ax.set_ylim(0, 1)
-        
-        for i, v in enumerate(probs):
-            ax.text(i, v + 0.02, f'{v*100:.1f}%', ha='center')
-        
-        st.pyplot(fig)
         
         # Step 8: Betting suggestions
         st.subheader("💰 Betting Suggestions")
