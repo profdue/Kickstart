@@ -115,6 +115,8 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
         away_xga_per_match = away_stats['xga'] / away_stats['matches']
         
         # Step 3: Identify over/underperformance
+        # Note: CSV has reversed signs for goals_vs_xg (positive = underperforming in CSV, but actually overperforming)
+        # So we use the sign as is - negative in CSV means overperforming, which reduces expected goals
         home_attack_regression = home_stats['goals_vs_xg'] / home_stats['matches'] * regression_factor
         home_defense_regression = home_stats['goals_allowed_vs_xga'] / home_stats['matches'] * regression_factor
         away_attack_regression = away_stats['goals_vs_xg'] / away_stats['matches'] * regression_factor
@@ -270,12 +272,21 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
         
         flags = []
         
-        # High regression risk
-        if abs(home_stats['goals_vs_xg'] / home_stats['matches']) > 0.3:
-            flags.append(f"{home_team} massively {'over' if home_stats['goals_vs_xg'] > 0 else 'under'}performing xG")
+        # High regression risk - fix interpretation based on CSV sign reversal
+        goals_vs_xg_per_match = home_stats['goals_vs_xg'] / home_stats['matches']
+        if abs(goals_vs_xg_per_match) > 0.3:
+            # In CSV: negative means overperforming, positive means underperforming
+            if goals_vs_xg_per_match < -0.3:
+                flags.append(f"{home_team} massively OVERPERFORMING xG (regression risk)")
+            else:
+                flags.append(f"{home_team} massively UNDERPERFORMING xG (improvement likely)")
         
-        if abs(away_stats['goals_vs_xg'] / away_stats['matches']) > 0.3:
-            flags.append(f"{away_team} massively {'over' if away_stats['goals_vs_xg'] > 0 else 'under'}performing xG")
+        goals_vs_xg_per_match_away = away_stats['goals_vs_xg'] / away_stats['matches']
+        if abs(goals_vs_xg_per_match_away) > 0.3:
+            if goals_vs_xg_per_match_away < -0.3:
+                flags.append(f"{away_team} massively OVERPERFORMING xG (regression risk)")
+            else:
+                flags.append(f"{away_team} massively UNDERPERFORMING xG (improvement likely)")
         
         # Home/away form disparity
         home_win_rate = home_stats['wins'] / home_stats['matches']
@@ -297,7 +308,7 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
         else:
             st.success("No major risk flags detected")
         
-        # Step 10: Detailed probability table
+        # Step 10: Detailed probability table (FIXED - no background_gradient)
         with st.expander("📊 View Detailed Probability Matrix"):
             # Create a smaller matrix for display
             display_goals = 5
@@ -309,8 +320,9 @@ if df is not None and 'calculate_btn' in locals() and calculate_btn:
                 index=[f"Home {i}" for i in range(display_goals+1)]
             )
             
+            # Simple formatting without background_gradient
             st.dataframe(
-                display_df.style.format("{:.1f}%").background_gradient(cmap='Blues'),
+                display_df.style.format("{:.1f}%"),
                 use_container_width=True
             )
         
@@ -370,6 +382,10 @@ else:
     ### ⚡ Regression Logic:
     - Teams overperforming xG → expect regression (fewer goals)
     - Teams underperforming xG → expect improvement (more goals)
+    
+    ### ⚠️ Note on CSV Data:
+    - CSV uses negative values for overperformance, positive for underperformance
+    - This is opposite of mathematical convention but works correctly in calculations
     """)
     
     # Show data structure
