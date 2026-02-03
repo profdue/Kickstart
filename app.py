@@ -24,23 +24,23 @@ st.markdown("""
 
 # Constants
 MAX_GOALS = 8
-REG_BASE_FACTOR = 0.75
 MAX_REGRESSION = 0.3
-MAX_CORRECTION = 0.3
+MAX_CORRECTION = 0.35
 MIN_PROBABILITY = 0.1
 MAX_PROBABILITY = 0.9
 
-# Match Type Thresholds
-ELITE_DEFENSE_THRESHOLD = -1.0
-STRONG_DEFENSE_THRESHOLD = -0.5
+# Match Type Thresholds - REVISED BASED ON YOUR FEEDBACK
+ELITE_DEFENSE_THRESHOLD = -1.5  # Single elite defense triggers defensive tactical
+GOOD_DEFENSE_THRESHOLD_1 = -0.8  # For dual good defense condition
+GOOD_DEFENSE_THRESHOLD_2 = -0.5  # For dual good defense condition
 ELITE_ATTACK_THRESHOLD = 1.0
 WEAK_DEFENSE_THRESHOLD = 0.8
 ATTACK_DOM_DEFENSE_THRESHOLD = 0.5
 
 # Confidence Thresholds
-LOW_CONFIDENCE_THRESHOLD = 0.05  # 5% from 50%
-MEDIUM_CONFIDENCE_THRESHOLD = 0.15  # 15% from 50%
-HIGH_CONFIDENCE_THRESHOLD = 0.25  # 25% from 50%
+LOW_CONFIDENCE_THRESHOLD = 0.05
+MEDIUM_CONFIDENCE_THRESHOLD = 0.15
+HIGH_CONFIDENCE_THRESHOLD = 0.25
 
 # Override Protection
 OVERRIDE_BASE_HIGH = 0.65
@@ -53,7 +53,6 @@ if 'validation_history' not in st.session_state:
     st.session_state.validation_history = {
         'prediction_history': deque(maxlen=200),
         'match_type_distribution': defaultdict(int),
-        'correction_effectiveness': defaultdict(lambda: deque(maxlen=50)),
         'match_count': 0
     }
 
@@ -103,24 +102,23 @@ def load_league_data(league_name):
             
         return df
     except FileNotFoundError:
-        st.warning(f"⚠️ League file not found: leagues/{actual_filename}")
-        # Create sample data from the CSV provided in the prompt
-        sample_data = {
-            'team': ['Arsenal', 'Arsenal', 'Chelsea', 'Chelsea', 'Manchester City', 'Manchester City',
-                     'Liverpool', 'Liverpool', 'Manchester United', 'Manchester United', 'Tottenham', 'Tottenham'],
-            'venue': ['home', 'away', 'home', 'away', 'home', 'away', 'home', 'away', 'home', 'away', 'home', 'away'],
-            'matches': [12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12],
-            'wins': [9, 7, 6, 5, 9, 5, 7, 4, 7, 4, 2, 5],
-            'draws': [2, 3, 3, 4, 2, 3, 3, 3, 3, 5, 4, 4],
-            'losses': [1, 2, 3, 3, 1, 4, 2, 5, 2, 3, 6, 3],
-            'gf': [28, 18, 20, 22, 29, 20, 20, 19, 23, 21, 15, 20],
-            'ga': [8, 9, 13, 14, 8, 15, 12, 21, 15, 21, 16, 17],
-            'pts': [29, 24, 21, 19, 29, 18, 24, 15, 24, 17, 10, 19],
-            'xg': [25.86, 23.43, 24.29, 23.04, 26.94, 20.12, 23.37, 19.57, 25.39, 21.51, 15.37, 13.93],
-            'xga': [8.64, 10.15, 19.29, 17.37, 13.34, 15.80, 11.11, 19.90, 13.21, 18.93, 16.00, 17.04],
-            'goals_vs_xg': [-2.14, 5.43, 4.29, 1.04, -2.06, 0.12, 3.37, 0.57, 2.39, 0.51, 0.37, 6.07]
-        }
-        return pd.DataFrame(sample_data)
+        st.error(f"❌ League file not found: {file_path}")
+        st.info("""
+        **Please add CSV files to the 'leagues' folder with this format:**
+        
+        Required columns: team, venue, matches, xg, xga, goals_vs_xg
+        Optional columns: wins, draws, losses, gf, ga, pts
+        
+        **Example CSV structure:**
+        ```
+        team,venue,matches,wins,draws,losses,gf,ga,pts,xg,xga,goals_vs_xg
+        Arsenal,home,12,9,2,1,28,8,29,25.86,8.64,-2.14
+        Arsenal,away,12,7,3,2,18,9,24,23.43,10.15,5.43
+        Chelsea,home,12,6,3,3,20,13,21,24.29,19.29,4.29
+        Chelsea,away,12,5,4,3,22,14,19,23.04,17.37,1.04
+        ```
+        """)
+        return None
     except Exception as e:
         st.error(f"❌ Error loading data: {str(e)}")
         return None
@@ -155,9 +153,9 @@ def calculate_league_baselines(df):
     
     return {
         'avg_xg': league_avg_xg,
-        'std_xg': league_std_xg,
+        'std_xg': max(league_std_xg, 0.1),  # Minimum 0.1 to avoid division by zero
         'avg_xga': league_avg_xga,
-        'std_xga': league_std_xga
+        'std_xga': max(league_std_xga, 0.1)  # Minimum 0.1 to avoid division by zero
     }
 
 def calculate_team_scores(team_stats, league_baselines):
@@ -168,18 +166,20 @@ def calculate_team_scores(team_stats, league_baselines):
     xga_per_match = team_stats['xga'] / max(matches, 1)
     
     # Calculate scores (z-scores relative to league)
-    attack_score = (xg_per_match - league_baselines['avg_xg']) / max(league_baselines['std_xg'], 0.1)
-    defense_score = (xga_per_match - league_baselines['avg_xga']) / max(league_baselines['std_xga'], 0.1)
+    attack_score = (xg_per_match - league_baselines['avg_xg']) / league_baselines['std_xg']
+    defense_score = (xga_per_match - league_baselines['avg_xga']) / league_baselines['std_xga']
     
     # Calculate regression factor (goals vs xG)
     goals_vs_xg_per_match = team_stats['goals_vs_xg'] / max(matches, 1)
+    regression_factor = min(max(goals_vs_xg_per_match, -MAX_REGRESSION), MAX_REGRESSION)
     
     return {
         'attack_score': attack_score,
         'defense_score': defense_score,
-        'regression_factor': min(max(goals_vs_xg_per_match, -MAX_REGRESSION), MAX_REGRESSION),
+        'regression_factor': regression_factor,
         'xg_per_match': xg_per_match,
-        'xga_per_match': xga_per_match
+        'xga_per_match': xga_per_match,
+        'goals_vs_xg_per_match': goals_vs_xg_per_match
     }
 
 class MatchTypeClassifier:
@@ -187,39 +187,41 @@ class MatchTypeClassifier:
     
     @staticmethod
     def classify_match(home_scores, away_scores):
-        """Classify match into one of 4 types"""
+        """Classify match into one of 4 types using REVISED LOGIC"""
         
         home_attack = home_scores['attack_score']
         home_defense = home_scores['defense_score']
         away_attack = away_scores['attack_score']
         away_defense = away_scores['defense_score']
         
-        # TYPE A: ELITE DEFENSIVE SHOWDOWN
-        # IF (home_defense_score < -1.0 AND away_defense_score < -0.5)
-        # AND (home_attack_score < 1.0 AND away_attack_score < 1.0)
-        if (home_defense < ELITE_DEFENSE_THRESHOLD and away_defense < STRONG_DEFENSE_THRESHOLD and
-            home_attack < ELITE_ATTACK_THRESHOLD and away_attack < ELITE_ATTACK_THRESHOLD):
+        # REVISED TYPE A: DEFENSIVE TACTICAL
+        # One elite defense OR both good defenses is enough
+        if (home_defense < ELITE_DEFENSE_THRESHOLD or 
+            away_defense < ELITE_DEFENSE_THRESHOLD or
+            (home_defense < GOOD_DEFENSE_THRESHOLD_1 and away_defense < GOOD_DEFENSE_THRESHOLD_2)):
             match_type = "DEFENSIVE_TACTICAL"
-            explanation = "Both teams have elite/strong defenses with non-elite attacks"
+            explanation = "Strong defensive matchup - likely low scoring"
         
         # TYPE B: ATTACK DOMINANCE
-        # IF (home_attack_score > 1.0 AND away_defense_score > 0.5)
-        # OR (away_attack_score > 1.0 AND home_defense_score > 0.5)
+        # Elite attack facing weak defense
         elif ((home_attack > ELITE_ATTACK_THRESHOLD and away_defense > ATTACK_DOM_DEFENSE_THRESHOLD) or
               (away_attack > ELITE_ATTACK_THRESHOLD and home_defense > ATTACK_DOM_DEFENSE_THRESHOLD)):
             match_type = "ATTACK_DOMINANCE"
-            explanation = "Elite attack facing weak defense"
+            explanation = "Elite attack facing weak defense - high scoring likely"
         
         # TYPE C: DEFENSIVE CATASTROPHE
-        # IF (home_defense_score > 1.0 AND away_defense_score > 0.8)
-        elif (home_defense > ELITE_ATTACK_THRESHOLD and away_defense > WEAK_DEFENSE_THRESHOLD):
+        # Both teams have very weak defenses
+        elif (home_defense > WEAK_DEFENSE_THRESHOLD and away_defense > WEAK_DEFENSE_THRESHOLD):
             match_type = "DEFENSIVE_WEAKNESS"
-            explanation = "Both teams have very weak defenses"
+            explanation = "Both defenses weak - very high scoring likely"
         
         # TYPE D: STANDARD
         else:
             match_type = "STANDARD"
-            explanation = "Standard match with balanced characteristics"
+            explanation = "Standard match - follow base model prediction"
+        
+        # Calculate defensive dominance for correction scaling
+        defensive_dominance = abs(home_defense + away_defense)
         
         return {
             'match_type': match_type,
@@ -227,7 +229,8 @@ class MatchTypeClassifier:
             'home_attack': home_attack,
             'home_defense': home_defense,
             'away_attack': away_attack,
-            'away_defense': away_defense
+            'away_defense': away_defense,
+            'defensive_dominance': defensive_dominance
         }
 
 class BasePredictionEngine:
@@ -250,8 +253,8 @@ class BasePredictionEngine:
         away_expected = (away_attack * home_defense) / max(league_baselines['avg_xg'], 0.1)
         
         # Apply regression factors (capped at ±30%)
-        home_final = home_expected * (1 + min(MAX_REGRESSION, home_scores['regression_factor']))
-        away_final = away_expected * (1 + min(MAX_REGRESSION, away_scores['regression_factor']))
+        home_final = home_expected * (1 + home_scores['regression_factor'])
+        away_final = away_expected * (1 + away_scores['regression_factor'])
         
         # Apply minimum and maximum bounds
         home_final = max(min(home_final, 4.0), 0.3)
@@ -277,57 +280,118 @@ class IntelligentCorrectionSystem:
     
     @staticmethod
     def calculate_correction(match_classification, base_prob, home_scores, away_scores):
-        """Calculate type-specific correction"""
+        """Calculate type-specific correction using REVISED LOGIC"""
         
         match_type = match_classification['match_type']
         home_defense = match_classification['home_defense']
         away_defense = match_classification['away_defense']
         home_attack = match_classification['home_attack']
         away_attack = match_classification['away_attack']
+        defensive_dominance = match_classification['defensive_dominance']
         
         correction = 0.0
+        correction_details = {}
         
-        # RULE 1: DEFENSIVE TACTICAL matches
+        # RULE 1: DEFENSIVE TACTICAL matches - REVISED
         if match_type == "DEFENSIVE_TACTICAL":
-            # Main model overestimates scoring in elite defensive matchups
-            # Correction = -20% to -30% (scale with defense extremity)
-            defense_extremity = abs(min(home_defense, away_defense))
-            correction_range = (-0.30, -0.20)
-            correction = correction_range[0] + (defense_extremity * (correction_range[1] - correction_range[0]))
+            # Base correction on defensive dominance
+            if defensive_dominance > 2.0:
+                base_correction = -0.30  # Extreme defensive matchup: -30%
+                strength = "Extreme"
+            elif defensive_dominance > 1.5:
+                base_correction = -0.20  # Strong defensive matchup: -20%
+                strength = "Strong"
+            else:
+                base_correction = -0.10  # Moderate defensive matchup: -10%
+                strength = "Moderate"
+            
+            # Additional adjustment based on individual defense scores
+            defense_bonus = 0.0
+            if home_defense < -1.5:
+                defense_bonus -= 0.05
+            if away_defense < -1.5:
+                defense_bonus -= 0.05
+            
+            correction = base_correction + defense_bonus
             
             # Apply override protection
             if base_prob > OVERRIDE_BASE_HIGH:
                 correction = max(correction, -OVERRIDE_LIMIT_DEFENSE)
+                override_applied = True
+            else:
+                override_applied = False
+            
+            correction_details = {
+                'base_correction': base_correction,
+                'defense_bonus': defense_bonus,
+                'defensive_dominance': defensive_dominance,
+                'strength': strength,
+                'override_applied': override_applied
+            }
         
         # RULE 2: ATTACK DOMINANCE matches
         elif match_type == "ATTACK_DOMINANCE":
-            # Main model underestimates elite attacks
-            # Correction = +10% to +25% (scale with attack dominance)
-            attack_extremity = max(home_attack if home_attack > ELITE_ATTACK_THRESHOLD else 0,
-                                 away_attack if away_attack > ELITE_ATTACK_THRESHOLD else 0)
-            correction_range = (0.10, 0.25)
-            correction = correction_range[0] + ((attack_extremity - ELITE_ATTACK_THRESHOLD) * 0.1)
-            correction = min(max(correction, correction_range[0]), correction_range[1])
+            # Base correction on attack dominance
+            attack_dominance = max(
+                home_attack if home_attack > ELITE_ATTACK_THRESHOLD else 0,
+                away_attack if away_attack > ELITE_ATTACK_THRESHOLD else 0
+            )
+            
+            if attack_dominance > 1.5:
+                base_correction = 0.20  # Extreme attack dominance: +20%
+                strength = "Extreme"
+            elif attack_dominance > 1.2:
+                base_correction = 0.15  # Strong attack dominance: +15%
+                strength = "Strong"
+            else:
+                base_correction = 0.10  # Moderate attack dominance: +10%
+                strength = "Moderate"
+            
+            correction = base_correction
             
             # Apply override protection
             if base_prob < OVERRIDE_BASE_LOW:
                 correction = min(correction, OVERRIDE_LIMIT_ATTACK)
+                override_applied = True
+            else:
+                override_applied = False
+            
+            correction_details = {
+                'base_correction': base_correction,
+                'attack_dominance': attack_dominance,
+                'strength': strength,
+                'override_applied': override_applied
+            }
         
         # RULE 3: DEFENSIVE WEAKNESS matches
         elif match_type == "DEFENSIVE_WEAKNESS":
-            # Main model underestimates terrible defenses
-            # Correction = +15% to +30% (scale with defensive weakness)
+            # Both defenses are weak
             defense_weakness = max(home_defense, away_defense)
-            correction_range = (0.15, 0.30)
-            correction = correction_range[0] + ((defense_weakness - WEAK_DEFENSE_THRESHOLD) * 0.1)
-            correction = min(max(correction, correction_range[0]), correction_range[1])
+            
+            if defense_weakness > 1.2:
+                correction = 0.25  # Extreme defensive weakness: +25%
+                strength = "Extreme"
+            elif defense_weakness > 1.0:
+                correction = 0.20  # Strong defensive weakness: +20%
+                strength = "Strong"
+            else:
+                correction = 0.15  # Moderate defensive weakness: +15%
+                strength = "Moderate"
+            
+            correction_details = {
+                'defense_weakness': defense_weakness,
+                'strength': strength
+            }
         
         # RULE 4: STANDARD matches
         else:
-            # Trust main model, confirmation only for confidence
+            # Trust main model, no correction
             correction = 0.0
+            correction_details = {
+                'reason': "Standard match - no correction applied"
+            }
         
-        return correction
+        return correction, correction_details
     
     @staticmethod
     def apply_correction(base_prob, correction):
@@ -392,7 +456,7 @@ class UnifiedPredictionSystem:
         base_prob = self.base_engine.calculate_base_probability(total_xg)
         
         # PHASE 4: Apply intelligent correction
-        correction = self.correction_system.calculate_correction(
+        correction, correction_details = self.correction_system.calculate_correction(
             match_classification, base_prob, home_scores, away_scores
         )
         final_prob = self.correction_system.apply_correction(base_prob, correction)
@@ -405,7 +469,8 @@ class UnifiedPredictionSystem:
         
         # Generate rationale
         rationale = self._generate_rationale(
-            match_classification, base_prob, correction, final_prob, confidence
+            match_classification, base_prob, correction, final_prob, 
+            confidence, correction_details, home_scores, away_scores
         )
         
         # Create probability matrix for additional insights
@@ -427,6 +492,7 @@ class UnifiedPredictionSystem:
             'confidence': confidence,
             'confidence_score': confidence_score,
             'correction_applied': correction,
+            'correction_details': correction_details,
             'rationale': rationale,
             
             # Base model details
@@ -456,23 +522,60 @@ class UnifiedPredictionSystem:
             'btts_no_prob': btts_no_prob,
             
             # Metrics
-            'distance_from_50': distance_from_50
+            'distance_from_50': distance_from_50,
+            
+            # League baselines for reference
+            'league_baselines': self.league_baselines
         }
     
-    def _generate_rationale(self, classification, base_prob, correction, final_prob, confidence):
+    def _generate_rationale(self, classification, base_prob, correction, final_prob, 
+                          confidence, correction_details, home_scores, away_scores):
         """Generate detailed rationale for the prediction"""
         
         match_type = classification['match_type']
         explanation = classification['explanation']
         
         if match_type == "DEFENSIVE_TACTICAL":
-            return f"{match_type}: {explanation}. Base model overestimates scoring by {abs(correction*100):.1f}% in elite defensive matchups."
+            strength = correction_details.get('strength', 'Moderate')
+            defensive_dominance = classification['defensive_dominance']
+            override = correction_details.get('override_applied', False)
+            
+            rationale = f"{match_type}: {explanation}. "
+            rationale += f"Defensive dominance: {defensive_dominance:.2f}σ ({strength}). "
+            rationale += f"Base model overestimates by {abs(correction*100):.1f}%. "
+            if override:
+                rationale += "Override protection applied (strong base signal)."
+            else:
+                rationale += f"Final prediction: {final_prob*100:.1f}% {('OVER' if final_prob > 0.5 else 'UNDER')}."
+        
         elif match_type == "ATTACK_DOMINANCE":
-            return f"{match_type}: {explanation}. Base model underestimates scoring by {correction*100:.1f}% when elite attacks face weak defenses."
+            strength = correction_details.get('strength', 'Moderate')
+            attack_dominance = correction_details.get('attack_dominance', 0)
+            override = correction_details.get('override_applied', False)
+            
+            rationale = f"{match_type}: {explanation}. "
+            rationale += f"Attack dominance: {attack_dominance:.2f}σ ({strength}). "
+            rationale += f"Base model underestimates by {correction*100:.1f}%. "
+            if override:
+                rationale += "Override protection applied (weak base signal)."
+            else:
+                rationale += f"Final prediction: {final_prob*100:.1f}% {('OVER' if final_prob > 0.5 else 'UNDER')}."
+        
         elif match_type == "DEFENSIVE_WEAKNESS":
-            return f"{match_type}: {explanation}. Base model underestimates scoring by {correction*100:.1f}% when both defenses are weak."
+            strength = correction_details.get('strength', 'Moderate')
+            defense_weakness = correction_details.get('defense_weakness', 0)
+            
+            rationale = f"{match_type}: {explanation}. "
+            rationale += f"Defensive weakness: {defense_weakness:.2f}σ ({strength}). "
+            rationale += f"Base model underestimates by {correction*100:.1f}%. "
+            rationale += f"Final prediction: {final_prob*100:.1f}% {('OVER' if final_prob > 0.5 else 'UNDER')}."
+        
         else:
-            return f"{match_type}: {explanation}. Trusting base model with {confidence} confidence."
+            rationale = f"{match_type}: {explanation}. "
+            rationale += f"Trusting base model with {confidence} confidence. "
+            rationale += f"Final prediction: {final_prob*100:.1f}% {('OVER' if final_prob > 0.5 else 'UNDER')}."
+        
+        return rationale
     
     def _store_prediction(self, home_team, away_team, match_type, base_prob, final_prob, correction, confidence):
         """Store prediction for validation tracking"""
@@ -560,11 +663,45 @@ def create_team_score_display(team_scores, team_name, is_home=True):
     attack_score = team_scores['attack_score']
     defense_score = team_scores['defense_score']
     
-    attack_label = "Elite" if attack_score > 1.0 else "Above Avg" if attack_score > 0 else "Below Avg" if attack_score > -1.0 else "Weak"
-    defense_label = "Elite" if defense_score < -1.0 else "Strong" if defense_score < -0.5 else "Avg" if defense_score < 0.5 else "Weak" if defense_score < 1.0 else "Very Weak"
+    # Attack label
+    if attack_score > 1.5:
+        attack_label = "Elite+"
+        attack_color = "green"
+    elif attack_score > 1.0:
+        attack_label = "Elite"
+        attack_color = "green"
+    elif attack_score > 0.5:
+        attack_label = "Above Avg"
+        attack_color = "lightgreen"
+    elif attack_score > -0.5:
+        attack_label = "Average"
+        attack_color = "yellow"
+    elif attack_score > -1.0:
+        attack_label = "Below Avg"
+        attack_color = "orange"
+    else:
+        attack_label = "Weak"
+        attack_color = "red"
     
-    attack_color = "green" if attack_score > 0.5 else "orange" if attack_score > -0.5 else "red"
-    defense_color = "green" if defense_score < -0.5 else "orange" if defense_score < 0.5 else "red"
+    # Defense label (note: lower defense score = better defense)
+    if defense_score < -1.5:
+        defense_label = "Elite+"
+        defense_color = "green"
+    elif defense_score < -1.0:
+        defense_label = "Elite"
+        defense_color = "green"
+    elif defense_score < -0.5:
+        defense_label = "Strong"
+        defense_color = "lightgreen"
+    elif defense_score < 0.5:
+        defense_label = "Average"
+        defense_color = "yellow"
+    elif defense_score < 1.0:
+        defense_label = "Weak"
+        defense_color = "orange"
+    else:
+        defense_label = "Very Weak"
+        defense_color = "red"
     
     col1, col2 = st.columns(2)
     
@@ -572,8 +709,8 @@ def create_team_score_display(team_scores, team_name, is_home=True):
         st.markdown(f"**Attack Score:**")
         st.markdown(f"""
         <div style="background-color: {bg_color}; color: white; padding: 10px; border-radius: 5px;">
-            <div style="font-size: 20px; font-weight: bold;">{attack_score:.2f}</div>
-            <div style="color: {attack_color};">{attack_label}</div>
+            <div style="font-size: 20px; font-weight: bold;">{attack_score:.2f}σ</div>
+            <div style="color: {attack_color}; font-weight: bold;">{attack_label}</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -581,8 +718,8 @@ def create_team_score_display(team_scores, team_name, is_home=True):
         st.markdown(f"**Defense Score:**")
         st.markdown(f"""
         <div style="background-color: {bg_color}; color: white; padding: 10px; border-radius: 5px;">
-            <div style="font-size: 20px; font-weight: bold;">{defense_score:.2f}</div>
-            <div style="color: {defense_color};">{defense_label}</div>
+            <div style="font-size: 20px; font-weight: bold;">{defense_score:.2f}σ</div>
+            <div style="color: {defense_color}; font-weight: bold;">{defense_label}</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -618,6 +755,7 @@ with st.sidebar:
         
         if len(common_teams) == 0:
             st.error("❌ No teams with both home and away data available")
+            st.stop()
         else:
             home_team = st.selectbox("Home Team", common_teams)
             away_team = st.selectbox("Away Team", [t for t in common_teams if t != home_team])
@@ -628,35 +766,9 @@ with st.sidebar:
             show_validation = st.checkbox("Show Validation Dashboard", value=True)
             
             calculate_btn = st.button("🎯 Generate Unified Prediction", type="primary", use_container_width=True)
-            
-            if show_validation:
-                st.divider()
-                st.subheader("📈 Validation Dashboard")
-                
-                total_matches = st.session_state.validation_history['match_count']
-                match_types = st.session_state.validation_history['match_type_distribution']
-                
-                if total_matches > 0:
-                    st.write(f"**Total Predictions:** {total_matches}")
-                    st.write("**Match Type Distribution:**")
-                    for match_type, count in match_types.items():
-                        percentage = (count / total_matches) * 100
-                        st.write(f"  {match_type}: {count} ({percentage:.1f}%)")
-                else:
-                    st.info("No predictions generated yet")
 
 # ========== MAIN CONTENT ==========
 if df is None:
-    st.warning("📁 Please add league CSV files to the 'leagues' folder")
-    st.info("""
-    **Required CSV format:**
-    - Columns: team,venue,matches,wins,draws,losses,gf,ga,pts,xg,xga,goals_vs_xg
-    - One row per team per venue (home/away)
-    - Using sample data for demonstration
-    """)
-    
-    with st.expander("📋 Preview of Loaded Data"):
-        st.dataframe(df.head(10))
     st.stop()
 
 if 'calculate_btn' not in locals() or not calculate_btn:
@@ -716,10 +828,14 @@ with col2:
         <h1 style="color: white; margin: 0;">{direction} 2.5</h1>
         <div style="font-size: 48px; font-weight: bold; color: white; margin: 10px 0;">{final_prob*100:.1f}%</div>
         <div style="font-size: 18px; color: white;">Confidence: {confidence}</div>
+        <div style="font-size: 14px; color: white; margin-top: 10px;">Match Type: {prediction['match_type']}</div>
     </div>
     """, unsafe_allow_html=True)
 
-# Match type and rationale
+# Display rationale
+st.info(f"**Rationale:** {prediction['rationale']}")
+
+# Match type and correction analysis
 st.subheader("📋 Prediction Analysis")
 
 col_info1, col_info2 = st.columns(2)
@@ -747,19 +863,20 @@ with col_info2:
     
     st.markdown("**Correction Analysis**")
     
-    if abs(correction) > 0.01:
+    if abs(correction) > 0.001:
         if correction > 0:
             st.success(f"📈 **Applied +{correction*100:.1f}% correction**")
             st.write(f"Base model: {base_prob*100:.1f}% → Final: {final_prob*100:.1f}%")
+            if prediction['correction_details'].get('override_applied', False):
+                st.caption("⚠️ Override protection applied (limited correction)")
         else:
             st.info(f"📉 **Applied {correction*100:.1f}% correction**")
             st.write(f"Base model: {base_prob*100:.1f}% → Final: {final_prob*100:.1f}%")
+            if prediction['correction_details'].get('override_applied', False):
+                st.caption("⚠️ Override protection applied (limited correction)")
     else:
         st.write("🔄 **No correction applied**")
         st.write(f"Trusting base model: {final_prob*100:.1f}%")
-
-# Display rationale
-st.info(f"**Rationale:** {prediction['rationale']}")
 
 # ========== PHASE 3: DETAILED ANALYSIS ==========
 if show_detailed_analysis:
@@ -776,11 +893,13 @@ if show_detailed_analysis:
         
         # Additional stats
         st.write("**Additional Stats:**")
-        col_h1, col_h2 = st.columns(2)
+        col_h1, col_h2, col_h3 = st.columns(3)
         with col_h1:
             st.metric("xG/match", f"{home_scores['xg_per_match']:.2f}")
         with col_h2:
             st.metric("xGA/match", f"{home_scores['xga_per_match']:.2f}")
+        with col_h3:
+            st.metric("Goals vs xG", f"{home_scores['goals_vs_xg_per_match']:+.2f}")
     
     with col_team2:
         st.subheader(f"✈️ {away_team} Analysis")
@@ -789,11 +908,43 @@ if show_detailed_analysis:
         
         # Additional stats
         st.write("**Additional Stats:**")
-        col_a1, col_a2 = st.columns(2)
+        col_a1, col_a2, col_a3 = st.columns(3)
         with col_a1:
             st.metric("xG/match", f"{away_scores['xg_per_match']:.2f}")
         with col_a2:
             st.metric("xGA/match", f"{away_scores['xga_per_match']:.2f}")
+        with col_a3:
+            st.metric("Goals vs xG", f"{away_scores['goals_vs_xg_per_match']:+.2f}")
+    
+    # Defensive Dominance Analysis
+    if prediction['match_type'] == "DEFENSIVE_TACTICAL":
+        st.subheader("🛡️ Defensive Dominance Analysis")
+        
+        home_def = prediction['classification']['home_defense']
+        away_def = prediction['classification']['away_defense']
+        defensive_dominance = prediction['classification']['defensive_dominance']
+        
+        col_def1, col_def2, col_def3 = st.columns(3)
+        
+        with col_def1:
+            st.metric(f"{home_team} Defense", f"{home_def:.2f}σ",
+                     delta="Elite" if home_def < -1.5 else "Strong" if home_def < -1.0 else "Good")
+        
+        with col_def2:
+            st.metric(f"{away_team} Defense", f"{away_def:.2f}σ",
+                     delta="Elite" if away_def < -1.5 else "Strong" if away_def < -1.0 else "Good")
+        
+        with col_def3:
+            st.metric("Total Defensive Dominance", f"{defensive_dominance:.2f}σ",
+                     delta="Extreme" if defensive_dominance > 2.0 else "Strong" if defensive_dominance > 1.5 else "Moderate")
+        
+        # Explanation of defensive dominance
+        if defensive_dominance > 2.0:
+            st.success("**Extreme defensive matchup** - Strong correction applied (-25% to -35%)")
+        elif defensive_dominance > 1.5:
+            st.info("**Strong defensive matchup** - Moderate correction applied (-15% to -25%)")
+        else:
+            st.warning("**Moderate defensive matchup** - Light correction applied (-5% to -15%)")
     
     # Expected Goals Comparison
     st.subheader("🎯 Expected Goals")
@@ -943,99 +1094,57 @@ if show_validation and st.session_state.validation_history['match_count'] > 0:
         st.metric("Total Predictions", total_matches)
     
     with col_val2:
-        avg_correction = np.mean([p['correction'] for p in predictions]) * 100
-        st.metric("Avg Correction", f"{avg_correction:+.1f}%")
+        if predictions:
+            avg_correction = np.mean([p['correction'] for p in predictions]) * 100
+            st.metric("Avg Correction", f"{avg_correction:+.1f}%")
+        else:
+            st.metric("Avg Correction", "N/A")
     
     with col_val3:
-        over_predictions = sum(1 for p in predictions if p['final_prob'] > 0.5)
-        over_percentage = (over_predictions / total_matches) * 100
-        st.metric("Over Predictions", f"{over_percentage:.1f}%")
+        if predictions:
+            over_predictions = sum(1 for p in predictions if p['final_prob'] > 0.5)
+            over_percentage = (over_predictions / total_matches) * 100
+            st.metric("Over Predictions", f"{over_percentage:.1f}%")
+        else:
+            st.metric("Over Predictions", "N/A")
     
     # Match Type Distribution
     st.subheader("📈 Match Type Distribution")
     
-    type_df = pd.DataFrame({
-        'Match Type': list(match_types.keys()),
-        'Count': list(match_types.values()),
-        'Percentage': [(count / total_matches) * 100 for count in match_types.values()]
-    })
-    
-    if not type_df.empty:
-        col_chart1, col_chart2 = st.columns(2)
+    if match_types:
+        type_df = pd.DataFrame({
+            'Match Type': list(match_types.keys()),
+            'Count': list(match_types.values()),
+            'Percentage': [(count / total_matches) * 100 for count in match_types.values()]
+        })
         
-        with col_chart1:
-            st.dataframe(type_df.style.format({'Percentage': '{:.1f}%'}))
+        st.dataframe(type_df.style.format({'Percentage': '{:.1f}%'}))
         
-        with col_chart2:
-            # Simple bar chart using matplotlib
-            import matplotlib.pyplot as plt
-            
-            fig, ax = plt.subplots(figsize=(8, 4))
-            colors = [type_colors.get(t, '#9E9E9E') for t in type_df['Match Type']]
-            bars = ax.bar(type_df['Match Type'], type_df['Count'], color=colors)
-            
-            # Add count labels on bars
-            for bar in bars:
-                height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2., height + 0.1,
-                       f'{int(height)}', ha='center', va='bottom')
-            
-            ax.set_ylabel('Count')
-            ax.set_title('Match Type Distribution')
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            st.pyplot(fig)
-    
-    # Correction Analysis
-    st.subheader("🔄 Correction Analysis")
-    
-    corrections = [p['correction'] * 100 for p in predictions]
-    
-    if corrections:
-        col_corr1, col_corr2, col_corr3 = st.columns(3)
-        
-        with col_corr1:
-            avg_corr = np.mean(corrections)
-            st.metric("Average Correction", f"{avg_corr:+.1f}%")
-        
-        with col_corr2:
-            max_corr = np.max(corrections)
-            st.metric("Maximum Correction", f"{max_corr:+.1f}%")
-        
-        with col_corr3:
-            min_corr = np.min(corrections)
-            st.metric("Minimum Correction", f"{min_corr:+.1f}%")
-        
-        # Correction distribution
-        st.write("**Correction Distribution:**")
-        
-        # Create bins for correction sizes
-        correction_bins = {
-            "Large Negative (< -20%)": len([c for c in corrections if c < -20]),
-            "Moderate Negative (-20% to -5%)": len([c for c in corrections if -20 <= c < -5]),
-            "Small (-5% to 5%)": len([c for c in corrections if -5 <= c <= 5]),
-            "Moderate Positive (5% to 20%)": len([c for c in corrections if 5 < c <= 20]),
-            "Large Positive (> 20%)": len([c for c in corrections if c > 20])
-        }
-        
-        for label, count in correction_bins.items():
-            percentage = (count / len(corrections)) * 100
-            st.write(f"  {label}: {count} ({percentage:.1f}%)")
+        # Show type explanations
+        with st.expander("📋 Match Type Explanations"):
+            st.write("""
+            **DEFENSIVE_TACTICAL**: One elite defense (< -1.5σ) OR both good defenses (< -0.8σ and < -0.5σ)
+            **ATTACK_DOMINANCE**: Elite attack (> 1.0σ) facing weak defense (> 0.5σ)
+            **DEFENSIVE_WEAKNESS**: Both defenses weak (> 0.8σ)
+            **STANDARD**: All other matches
+            """)
     
     # Recent Predictions
     st.subheader("📋 Recent Predictions")
     
-    if len(predictions) > 0:
+    if predictions and len(predictions) > 0:
         recent_predictions = predictions[-10:]  # Last 10 predictions
         display_data = []
         
         for pred in recent_predictions:
+            direction = "OVER" if pred['final_prob'] > 0.5 else "UNDER"
             display_data.append({
                 'Home': pred['home_team'],
                 'Away': pred['away_team'],
                 'Type': pred['match_type'],
                 'Base %': f"{pred['base_prob']*100:.1f}",
                 'Final %': f"{pred['final_prob']*100:.1f}",
+                'Direction': direction,
                 'Correction': f"{pred['correction']*100:+.1f}",
                 'Confidence': pred['confidence']
             })
@@ -1061,21 +1170,27 @@ Confidence: {confidence} (Score: {prediction['confidence_score']:.2f})
 Match Type: {match_type}
 Rationale: {prediction['rationale']}
 
+📊 TEAM ANALYSIS
+{home_team}:
+  Attack Score: {prediction['team_scores']['home']['attack_score']:.2f}σ
+  Defense Score: {prediction['team_scores']['home']['defense_score']:.2f}σ
+  xG/match: {prediction['team_scores']['home']['xg_per_match']:.2f}
+  xGA/match: {prediction['team_scores']['home']['xga_per_match']:.2f}
+
+{away_team}:
+  Attack Score: {prediction['team_scores']['away']['attack_score']:.2f}σ
+  Defense Score: {prediction['team_scores']['away']['defense_score']:.2f}σ
+  xG/match: {prediction['team_scores']['away']['xg_per_match']:.2f}
+  xGA/match: {prediction['team_scores']['away']['xga_per_match']:.2f}
+
 ⚽ EXPECTED GOALS
 {home_team}: {prediction['expected_goals']['home']:.2f} xG
 {away_team}: {prediction['expected_goals']['away']:.2f} xG
 Total: {prediction['expected_goals']['total']:.2f} xG
 
-📊 TEAM SCORES (vs League Average)
-{home_team} Attack: {prediction['team_scores']['home']['attack_score']:.2f}σ
-{home_team} Defense: {prediction['team_scores']['home']['defense_score']:.2f}σ
-{away_team} Attack: {prediction['team_scores']['away']['attack_score']:.2f}σ
-{away_team} Defense: {prediction['team_scores']['away']['defense_score']:.2f}σ
-
 🔄 MODEL COMPARISON
 Base Model Probability: {prediction['base_probability']*100:.1f}%
 Applied Correction: {prediction['correction_applied']*100:+.1f}%
-Correction Rationale: {prediction['rationale']}
 
 🏆 ADDITIONAL PROBABILITIES
 {home_team} Win: {prediction['home_win_prob']*100:.1f}%
@@ -1087,12 +1202,11 @@ Both Teams to Score: {prediction['btts_yes_prob']*100:.1f}%
 • Distance from 50%: {prediction['distance_from_50']:.3f}
 • Prediction Strength: {prediction['confidence']}
 • Match Type: {match_type}
+• Defensive Dominance: {prediction['classification'].get('defensive_dominance', 0):.2f}σ
 
-🔧 SYSTEM PARAMETERS
-League Avg xG: {league_baselines['avg_xg']:.2f}
-League Avg xGA: {league_baselines['avg_xga']:.2f}
-Max Correction: ±{MAX_CORRECTION*100:.0f}%
-Max Regression: ±{MAX_REGRESSION*100:.0f}%
+🔧 LEAGUE BASELINES
+Avg xG: {league_baselines['avg_xg']:.2f} ± {league_baselines['std_xg']:.2f}
+Avg xGA: {league_baselines['avg_xga']:.2f} ± {league_baselines['std_xga']:.2f}
 
 ---
 Generated by Unified Football xG Predictor
@@ -1117,7 +1231,6 @@ with col_exp2:
         st.session_state.validation_history = {
             'prediction_history': deque(maxlen=200),
             'match_type_distribution': defaultdict(int),
-            'correction_effectiveness': defaultdict(lambda: deque(maxlen=50)),
             'match_count': 0
         }
         st.success("Validation data reset!")
@@ -1146,9 +1259,21 @@ with st.sidebar.expander("📁 Data Format Instructions"):
     - ligue_1.csv
     - eredivisie.csv
     
-    **Match Type Classifications:**
-    1. **DEFENSIVE_TACTICAL**: Elite defenses, non-elite attacks
-    2. **ATTACK_DOMINANCE**: Elite attack vs weak defense
-    3. **DEFENSIVE_WEAKNESS**: Both teams have weak defenses
-    4. **STANDARD**: All other matches
+    **Match Type Logic (REVISED):**
+    1. **DEFENSIVE_TACTICAL**: 
+       - One elite defense (< -1.5σ) OR 
+       - Both good defenses (< -0.8σ and < -0.5σ)
+       - Correction: -10% to -35% based on defensive dominance
+    
+    2. **ATTACK_DOMINANCE**: 
+       - Elite attack (> 1.0σ) facing weak defense (> 0.5σ)
+       - Correction: +10% to +25%
+    
+    3. **DEFENSIVE_WEAKNESS**: 
+       - Both defenses weak (> 0.8σ)
+       - Correction: +15% to +30%
+    
+    4. **STANDARD**: 
+       - All other matches
+       - No correction, trust base model
     """)
