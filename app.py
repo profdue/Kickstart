@@ -4,7 +4,6 @@ import numpy as np
 import math
 from datetime import datetime
 import warnings
-import json
 from collections import defaultdict
 warnings.filterwarnings('ignore')
 
@@ -19,10 +18,8 @@ st.set_page_config(
 # Title and description
 st.title("⚽ Football Match Predictor Pro+")
 st.markdown("""
-    Advanced dual-model prediction system with xG regression + defensive gap analysis.
-    Combines statistical modeling with defensive matchup intelligence.
-    
-    **Validation Framework:** 6-test system ensures override layer adds predictive signal, not just complexity
+    Advanced xG prediction system with defensive confirmation layer.
+    **Confirmation layer modulates confidence in predictions - does NOT override them.**
 """)
 
 # Constants
@@ -31,29 +28,22 @@ REG_BASE_FACTOR = 0.75
 REG_MATCH_THRESHOLD = 5
 MAX_REGRESSION = 0.3
 
-# Match type thresholds
-SUPPRESSION_THRESHOLD = 3
-VOLATILITY_THRESHOLD = 3
-
 # Defensive gap thresholds
 STRONG_OVER_THRESHOLD = 1.0
 STRONG_UNDER_THRESHOLD = -1.0
 
-# Validation thresholds
-OVERRIDE_MIN_ACCURACY_ADVANTAGE = 2.0  # percentage points
-MIN_SAMPLE_SIZE = 30
+# Confidence thresholds
+CONFIDENCE_HIGH_THRESHOLD = 0.7
+CONFIDENCE_MEDIUM_THRESHOLD = 0.55
 
 # Initialize session state for validation tracking
 if 'validation_history' not in st.session_state:
     st.session_state.validation_history = {
-        'base_model_accuracy': [],
-        'full_model_accuracy': [],
-        'override_accuracy': [],
-        'no_override_accuracy': [],
+        'main_model_accuracy': [],
+        'confidence_calibration': defaultdict(list),
         'resolution_spread': [],
-        'regime_decay': defaultdict(list),
-        'error_correlations': [],
-        'override_trigger_counts': {'fired': 0, 'available_not_fired': 0, 'no_signal': 0}
+        'agreement_tracking': defaultdict(list),
+        'match_count': 0
     }
 
 if 'factorial_cache' not in st.session_state:
@@ -93,7 +83,7 @@ def load_league_data(league_name):
         required_cols = ['team', 'venue', 'matches', 'xg', 'xga', 'goals_vs_xg']
         for col in ['wins', 'draws', 'losses', 'gf', 'ga']:
             if col not in df.columns:
-                df[col] = 0  # Add missing columns with defaults
+                df[col] = 0
         
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
@@ -102,32 +92,27 @@ def load_league_data(league_name):
             
         return df
     except FileNotFoundError:
-        # Try to create sample data for demo
         st.warning(f"⚠️ League file not found: leagues/{actual_filename}")
-        st.info("Using sample Premier League data for demo...")
-        return create_sample_data()
+        # Create sample data from the CSV provided in the prompt
+        sample_data = {
+            'team': ['Arsenal', 'Arsenal', 'Chelsea', 'Chelsea', 'Manchester City', 'Manchester City',
+                     'Liverpool', 'Liverpool', 'Manchester United', 'Manchester United', 'Tottenham', 'Tottenham'],
+            'venue': ['home', 'away', 'home', 'away', 'home', 'away', 'home', 'away', 'home', 'away', 'home', 'away'],
+            'matches': [12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12],
+            'wins': [9, 7, 6, 5, 9, 5, 7, 4, 7, 4, 2, 5],
+            'draws': [2, 3, 3, 4, 2, 3, 3, 3, 3, 5, 4, 4],
+            'losses': [1, 2, 3, 3, 1, 4, 2, 5, 2, 3, 6, 3],
+            'gf': [28, 18, 20, 22, 29, 20, 20, 19, 23, 21, 15, 20],
+            'ga': [8, 9, 13, 14, 8, 15, 12, 21, 15, 21, 16, 17],
+            'pts': [29, 24, 21, 19, 29, 18, 24, 15, 24, 17, 10, 19],
+            'xg': [25.86, 23.43, 24.29, 23.04, 26.94, 20.12, 23.37, 19.57, 25.39, 21.51, 15.37, 13.93],
+            'xga': [8.64, 10.15, 19.29, 17.37, 13.34, 15.80, 11.11, 19.90, 13.21, 18.93, 16.00, 17.04],
+            'goals_vs_xg': [-2.14, 5.43, 4.29, 1.04, -2.06, 0.12, 3.37, 0.57, 2.39, 0.51, 0.37, 6.07]
+        }
+        return pd.DataFrame(sample_data)
     except Exception as e:
         st.error(f"❌ Error loading data: {str(e)}")
         return None
-
-def create_sample_data():
-    """Create sample data for demonstration"""
-    sample_data = {
-        'team': ['Arsenal', 'Arsenal', 'Man City', 'Man City', 'Liverpool', 'Liverpool', 
-                 'Chelsea', 'Chelsea', 'Man United', 'Man United', 'Tottenham', 'Tottenham'],
-        'venue': ['home', 'away', 'home', 'away', 'home', 'away', 'home', 'away', 'home', 'away', 'home', 'away'],
-        'matches': [12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12],
-        'wins': [9, 7, 9, 5, 7, 4, 6, 5, 7, 4, 2, 5],
-        'draws': [2, 3, 2, 3, 3, 3, 3, 4, 3, 5, 4, 4],
-        'losses': [1, 2, 1, 4, 2, 5, 3, 3, 2, 3, 6, 3],
-        'gf': [28, 18, 29, 20, 20, 19, 20, 22, 23, 21, 15, 20],
-        'ga': [8, 9, 8, 15, 12, 21, 13, 14, 15, 21, 16, 17],
-        'pts': [29, 24, 29, 18, 24, 15, 21, 19, 24, 17, 10, 19],
-        'xg': [25.86, 23.43, 26.94, 20.12, 23.37, 19.57, 24.29, 23.04, 25.39, 21.51, 15.37, 13.93],
-        'xga': [8.64, 10.15, 13.34, 15.80, 11.11, 19.90, 19.29, 17.37, 13.21, 18.93, 16.00, 17.04],
-        'goals_vs_xg': [-2.14, 5.43, -2.06, 0.12, 3.37, 0.57, 4.29, 1.04, 2.39, 0.51, 0.37, 6.07]
-    }
-    return pd.DataFrame(sample_data)
 
 def prepare_team_data(df):
     """Prepare home and away stats from the data"""
@@ -152,57 +137,65 @@ def calculate_league_baselines(df):
     return league_avg_xga, league_std_xga
 
 class ValidationTracker:
-    """Track model performance for validation framework"""
+    """Track confidence calibration for the confirmation layer"""
+    
+    @staticmethod
+    def update_confidence_calibration(confidence_level, prediction_correct):
+        """Track how well confidence levels predict accuracy"""
+        st.session_state.validation_history['confidence_calibration'][confidence_level].append(
+            1 if prediction_correct else 0
+        )
     
     @staticmethod
     def update_resolution_spread(predictions):
         """Track prediction distribution spread"""
         if len(predictions) > 0:
-            spread = max(predictions) - min(predictions)
+            spread = np.std(predictions)  # Standard deviation of predictions
             st.session_state.validation_history['resolution_spread'].append(spread)
     
     @staticmethod
-    def update_regime_decay(signal_type, matches_since_detection, correct):
-        """Track regime signal decay over time"""
-        key = f"{signal_type}_{matches_since_detection}"
-        st.session_state.validation_history['regime_decay'][key].append(1 if correct else 0)
+    def update_agreement_tracking(main_prediction, confirmation_signal, correct):
+        """Track agreement between main model and confirmation layer"""
+        # Determine if they agree (both suggest same direction)
+        if main_prediction >= 0.5:  # Main predicts Over
+            agreement = "AGREE" if "OVER" in confirmation_signal else "DISAGREE" if "UNDER" in confirmation_signal else "NEUTRAL"
+        else:  # Main predicts Under
+            agreement = "AGREE" if "UNDER" in confirmation_signal else "DISAGREE" if "OVER" in confirmation_signal else "NEUTRAL"
+        
+        st.session_state.validation_history['agreement_tracking'][agreement].append(
+            1 if correct else 0
+        )
     
     @staticmethod
-    def update_override_trigger(trigger_type):
-        """Track when override triggers vs when it doesn't"""
-        st.session_state.validation_history['override_trigger_counts'][trigger_type] += 1
+    def increment_match_count():
+        """Increment total match count"""
+        st.session_state.validation_history['match_count'] += 1
     
     @staticmethod
     def calculate_validation_metrics():
         """Calculate all validation metrics"""
         metrics = {}
         
-        # Calculate base vs full model comparison
-        if len(st.session_state.validation_history['base_model_accuracy']) > MIN_SAMPLE_SIZE:
-            base_avg = np.mean(st.session_state.validation_history['base_model_accuracy'][-MIN_SAMPLE_SIZE:])
-            full_avg = np.mean(st.session_state.validation_history['full_model_accuracy'][-MIN_SAMPLE_SIZE:])
-            metrics['base_vs_full_diff'] = full_avg - base_avg
+        # Calculate confidence calibration
+        calibration_data = {}
+        for confidence_level, results in st.session_state.validation_history['confidence_calibration'].items():
+            if len(results) >= 3:  # Minimum sample
+                calibration_data[confidence_level] = np.mean(results)
+        metrics['confidence_calibration'] = calibration_data
         
-        # Calculate override decision quality
-        override_cases = st.session_state.validation_history['override_accuracy']
-        no_override_cases = st.session_state.validation_history['no_override_accuracy']
-        
-        if len(override_cases) > 10:
-            metrics['override_accuracy'] = np.mean(override_cases)
-            metrics['no_override_accuracy'] = np.mean(no_override_cases) if len(no_override_cases) > 0 else 0
-            metrics['override_advantage'] = metrics['override_accuracy'] - metrics['no_override_accuracy']
-        
-        # Calculate resolution preservation
+        # Calculate resolution
         if len(st.session_state.validation_history['resolution_spread']) > 0:
-            recent_spread = np.mean(st.session_state.validation_history['resolution_spread'][-20:])
-            metrics['resolution_spread'] = recent_spread
+            metrics['resolution_spread'] = np.mean(st.session_state.validation_history['resolution_spread'][-20:])
         
-        # Calculate regime decay
-        decay_metrics = {}
-        for key, values in st.session_state.validation_history['regime_decay'].items():
-            if len(values) >= 5:
-                decay_metrics[key] = np.mean(values)
-        metrics['regime_decay'] = decay_metrics
+        # Calculate agreement performance
+        agreement_performance = {}
+        for agreement_type, results in st.session_state.validation_history['agreement_tracking'].items():
+            if len(results) >= 3:
+                agreement_performance[agreement_type] = np.mean(results)
+        metrics['agreement_performance'] = agreement_performance
+        
+        # Calculate overall stats
+        metrics['total_matches'] = st.session_state.validation_history['match_count']
         
         return metrics
     
@@ -210,26 +203,54 @@ class ValidationTracker:
     def get_validation_status(metrics):
         """Determine validation status based on metrics"""
         status = {
-            'base_vs_full': 'PASS' if metrics.get('base_vs_full_diff', 0) > 0 else 'FAIL',
-            'override_decision': 'PASS' if metrics.get('override_advantage', -100) > OVERRIDE_MIN_ACCURACY_ADVANTAGE else 'FAIL',
-            'resolution': 'PASS' if metrics.get('resolution_spread', 0) > 0.2 else 'WARNING',
-            'regime_stability': 'PASS' if len(metrics.get('regime_decay', {})) > 0 else 'INSUFFICIENT_DATA'
+            'confidence_calibration': 'INSUFFICIENT_DATA',
+            'resolution': 'PASS' if metrics.get('resolution_spread', 0) > 0.1 else 'WARNING',
+            'agreement_tracking': 'INSUFFICIENT_DATA'
         }
         
-        overall = 'PASS' if all(v == 'PASS' for k, v in status.items() if k != 'regime_stability') else 'FAIL'
-        status['overall'] = overall
+        # Check confidence calibration
+        calibration = metrics.get('confidence_calibration', {})
+        if calibration:
+            # Ideally, HIGH confidence should have >65% accuracy, MEDIUM 55-65%, LOW <55%
+            valid_calibration = True
+            for level, accuracy in calibration.items():
+                if level == 'HIGH' and accuracy < 0.6:
+                    valid_calibration = False
+                elif level == 'MEDIUM' and (accuracy < 0.5 or accuracy > 0.7):
+                    valid_calibration = False
+            
+            status['confidence_calibration'] = 'PASS' if valid_calibration else 'NEEDS_CALIBRATION'
+        
+        # Check agreement tracking
+        agreement = metrics.get('agreement_performance', {})
+        if agreement:
+            # AGREE should have higher accuracy than DISAGREE
+            agree_acc = agreement.get('AGREE', 0)
+            disagree_acc = agreement.get('DISAGREE', 0)
+            if agree_acc > disagree_acc and len(agreement) >= 2:
+                status['agreement_tracking'] = 'PASS'
+            else:
+                status['agreement_tracking'] = 'NEEDS_IMPROVEMENT'
+        
+        # Overall status
+        if all(v == 'PASS' for v in status.values() if v != 'INSUFFICIENT_DATA'):
+            status['overall'] = 'PASS'
+        elif any(v == 'NEEDS_CALIBRATION' for v in status.values()):
+            status['overall'] = 'NEEDS_CALIBRATION'
+        else:
+            status['overall'] = 'INSUFFICIENT_DATA'
         
         return status
 
-class DefensiveGapModel:
-    """Supporting logic model specializing in Over/Under prediction"""
+class DefensiveConfirmationModel:
+    """Confirmation layer that assesses confidence in main model predictions"""
     
     def __init__(self, league_avg_xga, league_std_xga):
         self.league_avg_xga = league_avg_xga
         self.league_std_xga = league_std_xga
     
-    def analyze_match(self, home_stats, away_stats):
-        """Analyze match for defensive gap signal"""
+    def analyze_defensive_gap(self, home_stats, away_stats):
+        """Analyze match for defensive gap - returns information only"""
         home_xga_per_match = home_stats['xga'] / max(home_stats['matches'], 1)
         away_xga_per_match = away_stats['xga'] / max(away_stats['matches'], 1)
         
@@ -241,11 +262,11 @@ class DefensiveGapModel:
         if match_gap > STRONG_OVER_THRESHOLD:
             signal = "STRONG_OVER"
             confidence = "HIGH"
-            explanation = f"Both teams have weak defenses ({match_gap:.2f} std above league avg)"
+            explanation = f"Both teams have weak defenses ({match_gap:.2f}σ above league avg)"
         elif match_gap < STRONG_UNDER_THRESHOLD:
             signal = "STRONG_UNDER"
             confidence = "HIGH"
-            explanation = f"Both teams have strong defenses ({abs(match_gap):.2f} std below league avg)"
+            explanation = f"Both teams have strong defenses ({abs(match_gap):.2f}σ below league avg)"
         elif abs(match_gap) > 0.5:
             signal = "MILD_OVER" if match_gap > 0 else "MILD_UNDER"
             confidence = "MEDIUM"
@@ -264,74 +285,39 @@ class DefensiveGapModel:
             'explanation': explanation
         }
     
-    def get_bet_recommendation(self, defensive_signal, main_over_prob, main_under_prob):
-        """Generate consensus betting recommendation"""
-        main_over_threshold = 60
-        main_under_threshold = 60
+    def assess_confidence(self, main_over_prob, defensive_signal):
+        """Assess confidence level based on agreement between main model and confirmation"""
+        # Main model direction
+        main_direction = "OVER" if main_over_prob > 50 else "UNDER"
         
-        main_signal = "OVER" if main_over_prob > main_over_threshold else "UNDER" if main_under_prob > main_under_threshold else "NEUTRAL"
-        
-        dg_signal = defensive_signal['signal']
-        dg_confidence = defensive_signal['confidence']
-        
-        if dg_signal in ["STRONG_OVER", "MILD_OVER"]:
-            dg_direction = "OVER"
-        elif dg_signal in ["STRONG_UNDER", "MILD_UNDER"]:
-            dg_direction = "UNDER"
+        # Defensive signal direction
+        if "OVER" in defensive_signal['signal']:
+            defensive_direction = "OVER"
+        elif "UNDER" in defensive_signal['signal']:
+            defensive_direction = "UNDER"
         else:
-            dg_direction = "NEUTRAL"
+            defensive_direction = "NEUTRAL"
         
-        # Determine if override should trigger
-        should_override = False
-        override_strength = None
-        
-        # Override conditions based on our validation framework
-        if main_signal == "NEUTRAL" and dg_direction != "NEUTRAL":
-            # Main model uncertain, defensive model has signal
-            if dg_confidence == "HIGH":
-                should_override = True
-                override_strength = "CONSIDER_BET"
-            elif dg_confidence == "MEDIUM":
-                should_override = True
-                override_strength = "WEAK_BET"
-        
-        elif main_signal != "NEUTRAL" and dg_direction == "NEUTRAL":
-            # Main model has signal, defensive model uncertain
-            should_override = False
-            override_strength = "MAIN_MODEL_ONLY"
-        
-        elif main_signal == dg_direction:
-            # Both agree
-            should_override = True
-            if dg_confidence == "HIGH":
-                override_strength = "STRONG_BET"
+        # Determine confidence level
+        if defensive_direction == "NEUTRAL":
+            confidence_level = "MEDIUM"
+            reason = "Confirmation layer neutral"
+        elif main_direction == defensive_direction:
+            if defensive_signal['confidence'] == "HIGH":
+                confidence_level = "HIGH"
+                reason = f"Strong confirmation for {main_direction}"
             else:
-                override_strength = "MODERATE_BET"
-        
+                confidence_level = "MEDIUM"
+                reason = f"Moderate confirmation for {main_direction}"
         else:
-            # Direct conflict
-            if dg_confidence == "HIGH":
-                should_override = True
-                override_strength = "CONSIDER_BET"  # Give defensive model chance when high confidence
+            if defensive_signal['confidence'] == "HIGH":
+                confidence_level = "LOW"
+                reason = f"Strong defensive signal contradicts main {main_direction}"
             else:
-                should_override = False
-                override_strength = "CONFLICT_AVOID"
+                confidence_level = "MEDIUM"
+                reason = f"Mild defensive disagreement with main {main_direction}"
         
-        # Generate recommendation text
-        if override_strength == "STRONG_BET":
-            return "STRONG_BET", f"Strong consensus on {main_signal}", "✅", should_override
-        elif override_strength == "MODERATE_BET":
-            return "MODERATE_BET", f"Consensus on {main_signal} (medium confidence)", "🟡", should_override
-        elif override_strength == "CONSIDER_BET":
-            return "CONSIDER_BET", f"Defensive model suggests {dg_direction}", "🔵", should_override
-        elif override_strength == "WEAK_BET":
-            return "WEAK_BET", f"Defensive model suggests {dg_direction}", "⚪", should_override
-        elif override_strength == "MAIN_MODEL_ONLY":
-            return "MAIN_MODEL_ONLY", f"Main model suggests {main_signal} (no defensive signal)", "🟠", should_override
-        elif override_strength == "CONFLICT_AVOID":
-            return "CONFLICT_AVOID", f"Conflict: Main {main_signal} vs Defensive {dg_direction}", "❌", should_override
-        else:
-            return "NO_BET", "Both models uncertain", "⚪", should_override
+        return confidence_level, reason
 
 def calculate_regression_factors(home_team_stats, away_team_stats, regression_factor):
     """Calculate attack regression factors with asymmetric capping"""
@@ -451,7 +437,7 @@ def calculate_betting_markets(prob_matrix):
 
 def create_correct_outcome_display(home_win_prob, draw_prob, away_win_prob, home_team, away_team):
     """Create properly ordered outcome display"""
-    st.subheader("📊 Outcome Probability Distribution")
+    st.subheader("📊 Match Outcome Probabilities")
     
     col1, col2, col3 = st.columns(3)
     
@@ -501,7 +487,8 @@ def create_correct_outcome_display(home_win_prob, draw_prob, away_win_prob, home
     with col_comp2:
         favorite_prob = max(home_win_prob, away_win_prob)
         favorite_team = home_team if home_win_prob > away_win_prob else away_team
-        st.metric("Favorite's Advantage", f"{(favorite_prob - min(home_win_prob, away_win_prob))*100:.1f}%")
+        advantage = (favorite_prob - min(home_win_prob, away_win_prob)) * 100
+        st.metric("Favorite's Advantage", f"{advantage:.1f}%")
 
 def create_expected_goals_display(home_xg, away_xg, home_team, away_team):
     """Create expected goals display"""
@@ -592,12 +579,11 @@ with st.sidebar:
                 help="Adjust how much to regress team performance to mean"
             )
             
-            with st.expander("⚙️ Dual Model Settings"):
-                enable_defensive_model = st.checkbox("Enable Defensive Gap Model", value=True,
-                    help="Use independent defensive analysis for Over/Under validation")
+            with st.expander("⚙️ Confirmation Layer Settings"):
+                enable_confirmation_layer = st.checkbox("Enable Defensive Confirmation", value=True,
+                    help="Use defensive analysis to assess confidence in predictions")
                 show_validation = st.checkbox("Show Validation Dashboard", value=True,
-                    help="Show the 6-test validation framework")
-                show_consensus = st.checkbox("Show Consensus Analysis", value=True)
+                    help="Show confidence calibration tracking")
             
             calculate_btn = st.button("🎯 Calculate Predictions", type="primary", use_container_width=True)
             
@@ -611,22 +597,27 @@ with st.sidebar:
                 metrics = ValidationTracker.calculate_validation_metrics()
                 status = ValidationTracker.get_validation_status(metrics)
                 
+                st.write("**Confidence Calibration:**")
+                for level, accuracy in metrics.get('confidence_calibration', {}).items():
+                    st.write(f"  {level}: {accuracy:.1%} accuracy")
+                
+                st.write(f"**Resolution Spread:** {metrics.get('resolution_spread', 0):.3f}")
+                st.write(f"**Total Matches Analyzed:** {metrics.get('total_matches', 0)}")
+                
+                st.write("**Validation Status:**")
                 for test_name, test_status in status.items():
                     if test_name != 'overall':
-                        color = "🟢" if test_status == 'PASS' else "🟡" if test_status == 'WARNING' else "🔴"
+                        color = "🟢" if test_status == 'PASS' else "🟡" if test_status in ['WARNING', 'NEEDS_CALIBRATION', 'NEEDS_IMPROVEMENT'] else "⚪"
                         st.write(f"{color} {test_name.replace('_', ' ').title()}: {test_status}")
-                
-                st.metric("Override Advantage", f"{metrics.get('override_advantage', 0):.1f}%")
-                st.metric("Resolution Spread", f"{metrics.get('resolution_spread', 0):.3f}")
 
 # ========== MAIN CONTENT ==========
 if df is None:
     st.warning("📁 Please add league CSV files to the 'leagues' folder")
     st.info("""
     **Required CSV format:**
-    - Columns: team,venue,matches,wins,draws,losses,gf,ga,pts,xg,xga,xpts,goals_vs_xg
+    - Columns: team,venue,matches,wins,draws,losses,gf,ga,pts,xg,xga,goals_vs_xg
     - One row per team per venue (home/away)
-    - Sample data provided in the app
+    - Using sample data for demonstration
     """)
     st.stop()
 
@@ -682,9 +673,9 @@ with col3:
     
     st.caption(f"Regression factors: Home {home_attack_reg:.3f}, Away {away_attack_reg:.3f}")
 
-# ========== PHASE 2: PROBABILITY CALCULATIONS ==========
+# ========== PHASE 2: MAIN MODEL PREDICTIONS ==========
 st.divider()
-st.header("📈 Probability Calculations")
+st.header("📈 Main Model Predictions")
 
 prob_matrix = create_probability_matrix(home_xg, away_xg)
 home_win_prob, draw_prob, away_win_prob = calculate_outcome_probabilities(prob_matrix)
@@ -694,87 +685,81 @@ over_25_prob, under_25_prob, btts_yes_prob, btts_no_prob = calculate_betting_mar
 predictions = [home_win_prob, draw_prob, away_win_prob, over_25_prob, under_25_prob]
 ValidationTracker.update_resolution_spread(predictions)
 
-# ========== PHASE 3: DEFENSIVE GAP MODEL ==========
-if enable_defensive_model:
-    st.divider()
-    st.header("🛡️ Defensive Gap Analysis (Supporting Model)")
-    
-    defensive_model = DefensiveGapModel(league_avg_xga, league_std_xga)
-    defensive_analysis = defensive_model.analyze_match(home_stats, away_stats)
-    
-    col_def1, col_def2, col_def3 = st.columns(3)
-    
-    with col_def1:
-        signal = defensive_analysis['signal']
-        if "OVER" in signal:
-            st.success(f"**Signal:** {signal}")
-        elif "UNDER" in signal:
-            st.info(f"**Signal:** {signal}")
-        else:
-            st.warning(f"**Signal:** {signal}")
-        
-        st.metric("Gap Score", f"{defensive_analysis['gap_score']:.2f}")
-    
-    with col_def2:
-        st.metric("Home Defense", f"{defensive_analysis['home_def_score']:.2f}σ",
-                 delta="Strong" if defensive_analysis['home_def_score'] < 0 else "Weak")
-    
-    with col_def3:
-        st.metric("Away Defense", f"{defensive_analysis['away_def_score']:.2f}σ",
-                 delta="Strong" if defensive_analysis['away_def_score'] < 0 else "Weak")
-    
-    st.info(defensive_analysis['explanation'])
+# Display main predictions
+col_pred1, col_pred2 = st.columns(2)
 
-# ========== PHASE 4: CONSENSUS ANALYSIS ==========
-if enable_defensive_model and show_consensus:
+with col_pred1:
+    st.subheader("Over/Under 2.5 Goals")
+    st.metric("Over 2.5", f"{over_25_prob*100:.1f}%")
+    st.progress(over_25_prob)
+    st.metric("Under 2.5", f"{under_25_prob*100:.1f}%")
+    st.progress(under_25_prob)
+
+with col_pred2:
+    st.subheader("Both Teams to Score")
+    st.metric("Yes", f"{btts_yes_prob*100:.1f}%")
+    st.progress(btts_yes_prob)
+    st.metric("No", f"{btts_no_prob*100:.1f}%")
+    st.progress(btts_no_prob)
+
+# ========== PHASE 3: CONFIRMATION LAYER ==========
+if enable_confirmation_layer:
     st.divider()
-    st.header("✅ Consensus Analysis")
+    st.header("🛡️ Defensive Confirmation Layer")
     
-    bet_rec, bet_reason, bet_icon, should_override = defensive_model.get_bet_recommendation(
-        defensive_analysis, 
-        over_25_prob * 100, 
-        under_25_prob * 100
+    confirmation_model = DefensiveConfirmationModel(league_avg_xga, league_std_xga)
+    defensive_analysis = confirmation_model.analyze_defensive_gap(home_stats, away_stats)
+    
+    # Assess confidence in main prediction
+    confidence_level, confidence_reason = confirmation_model.assess_confidence(
+        over_25_prob * 100, defensive_analysis
     )
     
-    # Track override trigger for validation
-    if defensive_analysis['signal'] != "NEUTRAL":
-        if should_override:
-            ValidationTracker.update_override_trigger('fired')
+    # Display confirmation analysis
+    col_conf1, col_conf2, col_conf3 = st.columns(3)
+    
+    with col_conf1:
+        signal = defensive_analysis['signal']
+        if "OVER" in signal:
+            st.success(f"**Defensive Signal:** {signal}")
+        elif "UNDER" in signal:
+            st.info(f"**Defensive Signal:** {signal}")
         else:
-            ValidationTracker.update_override_trigger('available_not_fired')
-    else:
-        ValidationTracker.update_override_trigger('no_signal')
-    
-    col_cons1, col_cons2, col_cons3 = st.columns([1, 2, 1])
-    
-    with col_cons1:
-        st.subheader("Main Model")
-        st.metric("Over 2.5", f"{over_25_prob*100:.1f}%")
-        st.metric("Under 2.5", f"{under_25_prob*100:.1f}%")
-    
-    with col_cons2:
-        st.subheader("Consensus")
+            st.warning(f"**Defensive Signal:** {signal}")
         
-        if bet_rec == "STRONG_BET":
-            st.success(f"🎯 **STRONG BET SIGNAL** {bet_icon}")
-        elif bet_rec == "MODERATE_BET":
-            st.info(f"📊 **MODERATE BET** {bet_icon}")
-        elif bet_rec == "CONSIDER_BET":
-            st.info(f"🤔 **CONSIDER BET** {bet_icon}")
-        elif bet_rec == "WEAK_BET":
-            st.warning(f"⚪ **WEAK BET** {bet_icon}")
-        elif bet_rec == "MAIN_MODEL_ONLY":
-            st.warning(f"⚠️ **MAIN MODEL ONLY** {bet_icon}")
-        elif bet_rec == "CONFLICT_AVOID":
-            st.error(f"❌ **AVOID BET** {bet_icon}")
-        else:
-            st.warning(f"⚪ **NO CLEAR SIGNAL** {bet_icon}")
-        
-        st.write(bet_reason)
-        
-        # Show override status for validation transparency
-        if enable_defensive_model:
-            st.caption(f"Override triggered: {'✅ Yes' if should_override else '❌ No'}")
+        gap_score = defensive_analysis['gap_score']
+        st.metric("Gap Score", f"{gap_score:.2f}")
+    
+    with col_conf2:
+        home_def_score = defensive_analysis['home_def_score']
+        st.metric(f"{home_team} Defense", f"{home_def_score:.2f}σ",
+                 delta="Strong" if home_def_score < 0 else "Weak")
+    
+    with col_conf3:
+        away_def_score = defensive_analysis['away_def_score']
+        st.metric(f"{away_team} Defense", f"{away_def_score:.2f}σ",
+                 delta="Strong" if away_def_score < 0 else "Weak")
+    
+    st.info(defensive_analysis['explanation'])
+    
+    # Display confidence assessment
+    st.subheader("🔍 Confidence Assessment")
+    
+    if confidence_level == "HIGH":
+        st.success(f"**Confidence Level: HIGH** 🎯")
+        st.write(f"*{confidence_reason}*")
+        st.info("Main model prediction has strong defensive confirmation")
+    elif confidence_level == "MEDIUM":
+        st.warning(f"**Confidence Level: MEDIUM** ⚠️")
+        st.write(f"*{confidence_reason}*")
+        st.info("Proceed with caution - defensive context is neutral or mildly conflicting")
+    else:  # LOW
+        st.error(f"**Confidence Level: LOW** 🚨")
+        st.write(f"*{confidence_reason}*")
+        st.warning("Strong defensive signal contradicts main prediction - exercise high caution")
+    
+    # Note: No override - prediction remains unchanged
+    st.caption("ℹ️ **Note:** Confirmation layer modulates confidence only - main prediction unchanged")
 
 # ========== SCORE PROBABILITIES ==========
 with st.expander("🎯 Most Likely Scores", expanded=True):
@@ -812,117 +797,91 @@ with st.expander("📊 Match Outcome Probabilities", expanded=True):
     with col_met3:
         st.metric(f"{away_team} Win", f"{away_win_prob*100:.1f}%")
 
-# ========== BETTING MARKETS ==========
-with st.expander("💰 Betting Markets", expanded=True):
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Over/Under 2.5 Goals")
-        st.metric("Over 2.5", f"{over_25_prob*100:.1f}%")
-        st.progress(over_25_prob)
-        st.metric("Under 2.5", f"{under_25_prob*100:.1f}%")
-        st.progress(under_25_prob)
-    
-    with col2:
-        st.subheader("Both Teams to Score")
-        st.metric("Yes", f"{btts_yes_prob*100:.1f}%")
-        st.progress(btts_yes_prob)
-        st.metric("No", f"{btts_no_prob*100:.1f}%")
-        st.progress(btts_no_prob)
-    
-    # Implied odds
-    st.subheader("Implied Odds")
-    col_odds1, col_odds2, col_odds3 = st.columns(3)
-    with col_odds1:
-        if home_win_prob > 0:
-            odds = 1 / home_win_prob
-            st.metric(f"{home_team} Win Odds", f"{odds:.2f}")
-    
-    with col_odds2:
-        if draw_prob > 0:
-            odds = 1 / draw_prob
-            st.metric("Draw Odds", f"{odds:.2f}")
-    
-    with col_odds3:
-        if away_win_prob > 0:
-            odds = 1 / away_win_prob
-            st.metric(f"{away_team} Win Odds", f"{odds:.2f}")
-
 # ========== VALIDATION DASHBOARD ==========
 if show_validation:
     st.divider()
-    st.header("📊 Model Validation Dashboard")
+    st.header("📊 Validation Dashboard")
     
     metrics = ValidationTracker.calculate_validation_metrics()
     status = ValidationTracker.get_validation_status(metrics)
     
     # Display validation results
-    col_val1, col_val2, col_val3, col_val4 = st.columns(4)
+    col_val1, col_val2, col_val3 = st.columns(3)
     
     with col_val1:
-        st.metric("Base vs Full Diff", f"{metrics.get('base_vs_full_diff', 0):.2f}%",
-                 delta="Positive" if metrics.get('base_vs_full_diff', 0) > 0 else "Negative")
-        st.caption(f"Status: {status['base_vs_full']}")
+        st.subheader("Confidence Calibration")
+        calibration = metrics.get('confidence_calibration', {})
+        if calibration:
+            for level, accuracy in calibration.items():
+                st.metric(f"{level} Confidence", f"{accuracy:.1%}")
+        else:
+            st.info("Insufficient data")
     
     with col_val2:
-        st.metric("Override Advantage", f"{metrics.get('override_advantage', 0):.2f}%",
-                 delta="Good" if metrics.get('override_advantage', 0) > OVERRIDE_MIN_ACCURACY_ADVANTAGE else "Poor")
-        st.caption(f"Status: {status['override_decision']}")
+        st.subheader("Model Resolution")
+        resolution = metrics.get('resolution_spread', 0)
+        st.metric("Spread", f"{resolution:.3f}")
+        if resolution > 0.15:
+            st.success("Good differentiation")
+        elif resolution > 0.1:
+            st.warning("Moderate differentiation")
+        else:
+            st.error("Low differentiation")
     
     with col_val3:
-        st.metric("Resolution Spread", f"{metrics.get('resolution_spread', 0):.3f}",
-                 delta="Good" if metrics.get('resolution_spread', 0) > 0.2 else "Poor")
-        st.caption(f"Status: {status['resolution']}")
-    
-    with col_val4:
-        st.metric("Override Triggers", 
-                 f"{st.session_state.validation_history['override_trigger_counts']['fired']}",
-                 delta=f"{st.session_state.validation_history['override_trigger_counts']['available_not_fired']} not fired")
-    
-    # Show regime decay if available
-    if metrics.get('regime_decay'):
-        st.subheader("Regime Signal Decay Analysis")
-        decay_data = metrics['regime_decay']
-        decay_df = pd.DataFrame([
-            {'Signal': k.split('_')[0], 'Matches Since': int(k.split('_')[1]), 'Accuracy': v}
-            for k, v in decay_data.items()
-        ])
-        if not decay_df.empty:
-            st.dataframe(decay_df.sort_values('Matches Since'))
+        st.subheader("Agreement Performance")
+        agreement = metrics.get('agreement_performance', {})
+        if agreement:
+            for agree_type, accuracy in agreement.items():
+                st.metric(agree_type, f"{accuracy:.1%}")
+        else:
+            st.info("Insufficient data")
     
     # Overall validation status
     st.subheader("Overall Validation Status")
     if status['overall'] == 'PASS':
-        st.success("✅ All validation tests passing - override system adding predictive value")
+        st.success("✅ All validation tests passing - confirmation layer properly calibrated")
+    elif status['overall'] == 'NEEDS_CALIBRATION':
+        st.warning("⚠️ Some validation tests need calibration - confidence levels may not match actual accuracy")
     else:
-        st.warning("⚠️ Some validation tests failing - consider simplifying override logic")
+        st.info("📊 Insufficient data for validation - continue accumulating predictions")
 
 # ========== OUTPUT FORMATS ==========
 st.divider()
 st.header("📤 Export & Share")
 
+# Fix the formatting issue by separating conditional logic
+if enable_confirmation_layer:
+    gap_display = f"{defensive_analysis['gap_score']:.2f}"
+    signal_display = defensive_analysis['signal']
+    confidence_display = defensive_analysis['confidence']
+    confirmation_summary = f"""
+    🛡️ DEFENSIVE CONFIRMATION LAYER:
+    • Signal: {signal_display}
+    • Confidence: {confidence_display}
+    • Gap Score: {gap_display}
+    • Confidence Level: {confidence_level}
+    • Reason: {confidence_reason}
+    """
+else:
+    confirmation_summary = "    🛡️ DEFENSIVE CONFIRMATION LAYER: Disabled"
+
 summary = f"""
-⚽ DUAL-MODEL PREDICTION: {home_team} vs {away_team}
+⚽ FOOTBALL MATCH PREDICTION: {home_team} vs {away_team}
 League: {selected_league}
 
-📊 MAIN MODEL (xG Regression):
+📊 MAIN MODEL PREDICTIONS:
 • Expected Goals: {home_team} {home_xg:.2f} - {away_team} {away_xg:.2f}
 • Total xG: {home_xg + away_xg:.2f}
-• Over 2.5: {over_25_prob*100:.1f}%
-• Under 2.5: {under_25_prob*100:.1f}%
+• Over 2.5 Goals: {over_25_prob*100:.1f}%
+• Under 2.5 Goals: {under_25_prob*100:.1f}%
+• Both Teams to Score: {btts_yes_prob*100:.1f}%
 
-🛡️ DEFENSIVE GAP MODEL:
-• Signal: {defensive_analysis['signal'] if enable_defensive_model else 'N/A'}
-• Confidence: {defensive_analysis['confidence'] if enable_defensive_model else 'N/A'}
-• Gap Score: {defensive_analysis['gap_score']:.2f if enable_defensive_model else 'N/A'}
-
-✅ CONSENSUS ANALYSIS:
-• Recommendation: {bet_rec if enable_defensive_model else 'N/A'}
-• Reason: {bet_reason if enable_defensive_model else 'N/A'}
+{confirmation_summary}
 
 📈 Most Likely Score: {score_probs[0][0][0] if score_probs else 'N/A'}-{score_probs[0][0][1] if score_probs else 'N/A'} ({(score_probs[0][1]*100 if score_probs else 0):.1f}%)
 
-🏆 Outcome Probabilities:
+🏆 Match Outcome Probabilities:
 • {home_team} Win: {home_win_prob*100:.1f}%
 • Draw: {draw_prob*100:.1f}%
 • {away_team} Win: {away_win_prob*100:.1f}%
@@ -946,23 +905,20 @@ with col_export1:
 with col_export2:
     if st.button("🔄 Reset Validation History"):
         st.session_state.validation_history = {
-            'base_model_accuracy': [],
-            'full_model_accuracy': [],
-            'override_accuracy': [],
-            'no_override_accuracy': [],
+            'main_model_accuracy': [],
+            'confidence_calibration': defaultdict(list),
             'resolution_spread': [],
-            'regime_decay': defaultdict(list),
-            'error_correlations': [],
-            'override_trigger_counts': {'fired': 0, 'available_not_fired': 0, 'no_signal': 0}
+            'agreement_tracking': defaultdict(list),
+            'match_count': 0
         }
         st.success("Validation history reset!")
         st.rerun()
 
 # ========== FOOTER ==========
 st.divider()
-footer_text = f"⚡ Dual-model prediction system with 6-test validation framework"
-if enable_defensive_model and 'bet_rec' in locals():
-    footer_text += f" | Consensus: {bet_rec}"
+footer_text = f"⚡ xG prediction system with defensive confirmation layer"
+if enable_confirmation_layer and 'confidence_level' in locals():
+    footer_text += f" | Confidence: {confidence_level}"
 footer_text += f" | Validation: {status.get('overall', 'N/A')}"
 footer_text += f" | {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 st.caption(footer_text)
