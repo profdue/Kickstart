@@ -4,7 +4,7 @@ import numpy as np
 import math
 from datetime import datetime
 import warnings
-from collections import defaultdict
+from collections import defaultdict, deque
 warnings.filterwarnings('ignore')
 
 # Page config
@@ -16,10 +16,10 @@ st.set_page_config(
 )
 
 # Title and description
-st.title("⚽ Football Match Predictor Pro+")
+st.title("⚽ Football xG Predictor Pro+")
 st.markdown("""
-    Advanced xG prediction system with defensive confirmation layer.
-    **Confirmation layer modulates confidence in predictions - does NOT override them.**
+    Advanced xG prediction system with operational confidence assessment.
+    **Main model provides predictions → Confirmation layer guides trust → Actionable recommendations**
 """)
 
 # Constants
@@ -32,18 +32,21 @@ MAX_REGRESSION = 0.3
 STRONG_OVER_THRESHOLD = 1.0
 STRONG_UNDER_THRESHOLD = -1.0
 
-# Confidence thresholds
-CONFIDENCE_HIGH_THRESHOLD = 0.7
-CONFIDENCE_MEDIUM_THRESHOLD = 0.55
+# Action thresholds
+ACTION_HIGH_THRESHOLD = 0.65    # 65%+ probability
+ACTION_MEDIUM_THRESHOLD = 0.55  # 55-65% probability
+ACTION_STAKE_REDUCTION = 0.5    # Reduce stake by 50% for LOW confidence
 
 # Initialize session state for validation tracking
 if 'validation_history' not in st.session_state:
     st.session_state.validation_history = {
-        'main_model_accuracy': [],
-        'confidence_calibration': defaultdict(list),
-        'resolution_spread': [],
-        'agreement_tracking': defaultdict(list),
-        'match_count': 0
+        'main_model_accuracy': deque(maxlen=100),
+        'confidence_calibration': defaultdict(lambda: deque(maxlen=50)),
+        'resolution_history': deque(maxlen=100),
+        'agreement_tracking': defaultdict(lambda: deque(maxlen=50)),
+        'action_recommendations': defaultdict(lambda: deque(maxlen=50)),
+        'match_count': 0,
+        'prediction_history': []
     }
 
 if 'factorial_cache' not in st.session_state:
@@ -137,7 +140,14 @@ def calculate_league_baselines(df):
     return league_avg_xga, league_std_xga
 
 class ValidationTracker:
-    """Track confidence calibration for the confirmation layer"""
+    """Track confidence calibration and provide operational insights"""
+    
+    @staticmethod
+    def update_prediction_history(prediction_data):
+        """Store prediction history for operational insights"""
+        st.session_state.validation_history['prediction_history'].append(prediction_data)
+        if len(st.session_state.validation_history['prediction_history']) > 200:
+            st.session_state.validation_history['prediction_history'] = st.session_state.validation_history['prediction_history'][-200:]
     
     @staticmethod
     def update_confidence_calibration(confidence_level, prediction_correct):
@@ -147,22 +157,42 @@ class ValidationTracker:
         )
     
     @staticmethod
-    def update_resolution_spread(predictions):
-        """Track prediction distribution spread"""
-        if len(predictions) > 0:
-            spread = np.std(predictions)  # Standard deviation of predictions
-            st.session_state.validation_history['resolution_spread'].append(spread)
+    def calculate_resolution_metrics(predictions):
+        """Calculate actionable resolution metrics"""
+        if not predictions:
+            return {}
+        
+        pred_array = np.array(predictions)
+        
+        # Distance from 50% (decisiveness metric)
+        distance_from_50 = np.mean(np.abs(pred_array - 0.5))
+        
+        # Spread of predictions (standard deviation)
+        spread = np.std(pred_array)
+        
+        # Percentage of predictions with clear signal (>55% or <45%)
+        clear_signals = np.sum((pred_array > 0.55) | (pred_array < 0.45)) / len(pred_array)
+        
+        # Categorization
+        if distance_from_50 > 0.15:
+            decisiveness = "HIGH"
+        elif distance_from_50 > 0.1:
+            decisiveness = "MODERATE"
+        else:
+            decisiveness = "LOW"
+        
+        return {
+            'decisiveness': decisiveness,
+            'distance_from_50': distance_from_50,
+            'spread': spread,
+            'clear_signals_pct': clear_signals,
+            'prediction_range': f"{pred_array.min():.1%} - {pred_array.max():.1%}"
+        }
     
     @staticmethod
-    def update_agreement_tracking(main_prediction, confirmation_signal, correct):
-        """Track agreement between main model and confirmation layer"""
-        # Determine if they agree (both suggest same direction)
-        if main_prediction >= 0.5:  # Main predicts Over
-            agreement = "AGREE" if "OVER" in confirmation_signal else "DISAGREE" if "UNDER" in confirmation_signal else "NEUTRAL"
-        else:  # Main predicts Under
-            agreement = "AGREE" if "UNDER" in confirmation_signal else "DISAGREE" if "OVER" in confirmation_signal else "NEUTRAL"
-        
-        st.session_state.validation_history['agreement_tracking'][agreement].append(
+    def update_action_recommendation(action_type, correct):
+        """Track performance of action recommendations"""
+        st.session_state.validation_history['action_recommendations'][action_type].append(
             1 if correct else 0
         )
     
@@ -176,67 +206,143 @@ class ValidationTracker:
         """Calculate all validation metrics"""
         metrics = {}
         
-        # Calculate confidence calibration
+        # Calculate confidence calibration with actionable insights
         calibration_data = {}
+        calibration_samples = {}
         for confidence_level, results in st.session_state.validation_history['confidence_calibration'].items():
-            if len(results) >= 3:  # Minimum sample
-                calibration_data[confidence_level] = np.mean(results)
+            if len(results) >= 10:  # Minimum sample for meaningful stats
+                accuracy = np.mean(results)
+                calibration_data[confidence_level] = {
+                    'accuracy': accuracy,
+                    'samples': len(results),
+                    'reliability': 'HIGH' if len(results) >= 30 else 'MODERATE' if len(results) >= 15 else 'LOW'
+                }
+        
         metrics['confidence_calibration'] = calibration_data
         
-        # Calculate resolution
-        if len(st.session_state.validation_history['resolution_spread']) > 0:
-            metrics['resolution_spread'] = np.mean(st.session_state.validation_history['resolution_spread'][-20:])
+        # Calculate resolution metrics from prediction history
+        if st.session_state.validation_history['prediction_history']:
+            all_predictions = []
+            for pred_data in st.session_state.validation_history['prediction_history']:
+                if 'over_25_prob' in pred_data:
+                    all_predictions.append(pred_data['over_25_prob'])
+                if 'home_win_prob' in pred_data:
+                    all_predictions.append(pred_data['home_win_prob'])
+                    all_predictions.append(pred_data['draw_prob'])
+                    all_predictions.append(pred_data['away_win_prob'])
+            
+            metrics['resolution'] = ValidationTracker.calculate_resolution_metrics(all_predictions)
         
         # Calculate agreement performance
         agreement_performance = {}
         for agreement_type, results in st.session_state.validation_history['agreement_tracking'].items():
-            if len(results) >= 3:
-                agreement_performance[agreement_type] = np.mean(results)
+            if len(results) >= 10:
+                agreement_performance[agreement_type] = {
+                    'accuracy': np.mean(results),
+                    'samples': len(results)
+                }
+        
         metrics['agreement_performance'] = agreement_performance
         
-        # Calculate overall stats
+        # Calculate action recommendation performance
+        action_performance = {}
+        for action_type, results in st.session_state.validation_history['action_recommendations'].items():
+            if len(results) >= 5:
+                action_performance[action_type] = {
+                    'accuracy': np.mean(results),
+                    'samples': len(results)
+                }
+        
+        metrics['action_performance'] = action_performance
+        
+        # Overall stats
         metrics['total_matches'] = st.session_state.validation_history['match_count']
+        metrics['total_predictions'] = len(st.session_state.validation_history['prediction_history'])
         
         return metrics
     
     @staticmethod
     def get_validation_status(metrics):
-        """Determine validation status based on metrics"""
+        """Determine validation status with operational context"""
         status = {
-            'confidence_calibration': 'INSUFFICIENT_DATA',
-            'resolution': 'PASS' if metrics.get('resolution_spread', 0) > 0.1 else 'WARNING',
-            'agreement_tracking': 'INSUFFICIENT_DATA'
+            'confidence_calibration': {'status': 'INSUFFICIENT_DATA', 'details': 'Need more samples'},
+            'resolution': {'status': 'INSUFFICIENT_DATA', 'details': 'Need more predictions'},
+            'action_recommendations': {'status': 'INSUFFICIENT_DATA', 'details': 'Need more samples'}
         }
         
         # Check confidence calibration
         calibration = metrics.get('confidence_calibration', {})
         if calibration:
-            # Ideally, HIGH confidence should have >65% accuracy, MEDIUM 55-65%, LOW <55%
-            valid_calibration = True
-            for level, accuracy in calibration.items():
-                if level == 'HIGH' and accuracy < 0.6:
-                    valid_calibration = False
+            all_good = True
+            details = []
+            for level, data in calibration.items():
+                accuracy = data['accuracy']
+                samples = data['samples']
+                reliability = data['reliability']
+                
+                # Check if calibration makes sense
+                if level == 'HIGH' and accuracy < 0.65:
+                    all_good = False
+                    details.append(f"HIGH confidence only {accuracy:.1%} accurate")
                 elif level == 'MEDIUM' and (accuracy < 0.5 or accuracy > 0.7):
-                    valid_calibration = False
+                    all_good = False
+                    details.append(f"MEDIUM confidence {accuracy:.1%} (should be 50-70%)")
+                elif level == 'LOW' and accuracy > 0.55:
+                    all_good = False
+                    details.append(f"LOW confidence {accuracy:.1%} (should be <55%)")
             
-            status['confidence_calibration'] = 'PASS' if valid_calibration else 'NEEDS_CALIBRATION'
+            status['confidence_calibration'] = {
+                'status': 'PASS' if all_good else 'NEEDS_CALIBRATION',
+                'details': ', '.join(details) if details else 'Well calibrated',
+                'reliability': 'HIGH' if all(cal['reliability'] == 'HIGH' for cal in calibration.values()) else 'MODERATE'
+            }
         
-        # Check agreement tracking
-        agreement = metrics.get('agreement_performance', {})
-        if agreement:
-            # AGREE should have higher accuracy than DISAGREE
-            agree_acc = agreement.get('AGREE', 0)
-            disagree_acc = agreement.get('DISAGREE', 0)
-            if agree_acc > disagree_acc and len(agreement) >= 2:
-                status['agreement_tracking'] = 'PASS'
+        # Check resolution
+        resolution = metrics.get('resolution', {})
+        if resolution:
+            decisiveness = resolution.get('decisiveness', 'LOW')
+            distance = resolution.get('distance_from_50', 0)
+            
+            if decisiveness == 'HIGH':
+                status_details = f"Strong model decisiveness ({distance:.3f} from 50%)"
+            elif decisiveness == 'MODERATE':
+                status_details = f"Moderate decisiveness ({distance:.3f} from 50%)"
             else:
-                status['agreement_tracking'] = 'NEEDS_IMPROVEMENT'
+                status_details = f"Low decisiveness ({distance:.3f} from 50%) - model plays safe"
+            
+            status['resolution'] = {
+                'status': 'PASS' if decisiveness in ['HIGH', 'MODERATE'] else 'WARNING',
+                'details': status_details,
+                'decisiveness': decisiveness
+            }
+        
+        # Check action recommendations
+        actions = metrics.get('action_performance', {})
+        if actions:
+            avg_accuracy = np.mean([data['accuracy'] for data in actions.values()])
+            total_samples = sum([data['samples'] for data in actions.values()])
+            
+            if avg_accuracy > 0.55 and total_samples >= 20:
+                status['action_recommendations'] = {
+                    'status': 'PASS',
+                    'details': f"Recommendations {avg_accuracy:.1%} accurate ({total_samples} samples)",
+                    'accuracy': avg_accuracy
+                }
+            elif total_samples >= 10:
+                status['action_recommendations'] = {
+                    'status': 'MODERATE',
+                    'details': f"Early data: {avg_accuracy:.1%} accuracy ({total_samples} samples)",
+                    'accuracy': avg_accuracy
+                }
         
         # Overall status
-        if all(v == 'PASS' for v in status.values() if v != 'INSUFFICIENT_DATA'):
+        status_items = [data['status'] for data in status.values()]
+        if all(s == 'PASS' for s in status_items if s != 'INSUFFICIENT_DATA'):
             status['overall'] = 'PASS'
-        elif any(v == 'NEEDS_CALIBRATION' for v in status.values()):
+        elif any(s == 'NEEDS_CALIBRATION' for s in status_items):
             status['overall'] = 'NEEDS_CALIBRATION'
+        elif any(s == 'WARNING' for s in status_items):
+            status['overall'] = 'WARNING'
         else:
             status['overall'] = 'INSUFFICIENT_DATA'
         
@@ -288,36 +394,102 @@ class DefensiveConfirmationModel:
     def assess_confidence(self, main_over_prob, defensive_signal):
         """Assess confidence level based on agreement between main model and confirmation"""
         # Main model direction
-        main_direction = "OVER" if main_over_prob > 50 else "UNDER"
+        main_prob = main_over_prob / 100  # Convert to decimal
+        if main_prob > 0.5:
+            main_direction = "OVER"
+            main_strength = main_prob - 0.5
+        else:
+            main_direction = "UNDER"
+            main_strength = 0.5 - main_prob
         
         # Defensive signal direction
         if "OVER" in defensive_signal['signal']:
             defensive_direction = "OVER"
+            defensive_strength = defensive_signal['confidence']  # HIGH/MEDIUM/LOW
         elif "UNDER" in defensive_signal['signal']:
             defensive_direction = "UNDER"
+            defensive_strength = defensive_signal['confidence']
         else:
             defensive_direction = "NEUTRAL"
+            defensive_strength = "LOW"
         
         # Determine confidence level
         if defensive_direction == "NEUTRAL":
             confidence_level = "MEDIUM"
-            reason = "Confirmation layer neutral"
+            reason = "Confirmation layer neutral - standard confidence"
+            confidence_score = 0.5
+        
         elif main_direction == defensive_direction:
-            if defensive_signal['confidence'] == "HIGH":
+            # Agreement - boost confidence
+            if defensive_strength == "HIGH":
                 confidence_level = "HIGH"
                 reason = f"Strong confirmation for {main_direction}"
+                confidence_score = 0.8 + min(0.15, main_strength * 0.3)
             else:
                 confidence_level = "MEDIUM"
                 reason = f"Moderate confirmation for {main_direction}"
+                confidence_score = 0.6 + min(0.15, main_strength * 0.3)
+        
         else:
-            if defensive_signal['confidence'] == "HIGH":
+            # Disagreement - reduce confidence
+            if defensive_strength == "HIGH":
                 confidence_level = "LOW"
                 reason = f"Strong defensive signal contradicts main {main_direction}"
+                confidence_score = 0.3 - min(0.1, main_strength * 0.2)
             else:
                 confidence_level = "MEDIUM"
                 reason = f"Mild defensive disagreement with main {main_direction}"
+                confidence_score = 0.5 - min(0.1, main_strength * 0.2)
         
-        return confidence_level, reason
+        return confidence_level, reason, confidence_score
+    
+    def get_action_recommendation(self, main_over_prob, confidence_level, confidence_score, defensive_signal):
+        """Generate actionable betting recommendations based on confidence"""
+        main_prob = main_over_prob / 100
+        
+        # Base recommendation from main model
+        base_recommendation = "OVER" if main_prob > 0.5 else "UNDER"
+        base_strength = abs(main_prob - 0.5)  # How far from 50%
+        
+        # Map confidence to action
+        if confidence_level == "HIGH":
+            action = "NORMAL_STAKE"
+            stake_multiplier = 1.0
+            advice = f"Full confidence in {base_recommendation}"
+            
+        elif confidence_level == "MEDIUM":
+            if confidence_score > 0.55:  # Leaning positive
+                action = "NORMAL_STAKE"
+                stake_multiplier = 1.0
+                advice = f"Standard play on {base_recommendation}"
+            else:  # Leaning negative
+                action = "REDUCED_STAKE"
+                stake_multiplier = ACTION_STAKE_REDUCTION
+                advice = f"Caution advised on {base_recommendation}"
+                
+        else:  # LOW confidence
+            if base_strength > 0.1:  # Strong main signal despite low confidence
+                action = "REDUCED_STAKE"
+                stake_multiplier = ACTION_STAKE_REDUCTION
+                advice = f"Reduced stake on {base_recommendation} due to conflict"
+            else:  # Weak main signal + low confidence
+                action = "AVOID"
+                stake_multiplier = 0.0
+                advice = f"Avoid bet - conflicting signals ({base_recommendation} vs defensive {defensive_signal['signal'].split('_')[1]})"
+        
+        # Special case: Very strong defensive signal may suggest alternative
+        if defensive_signal['confidence'] == "HIGH" and confidence_level == "LOW":
+            alternative = defensive_signal['signal'].split('_')[1]
+            if base_strength < 0.08:  # Very weak main signal
+                advice = f"Consider {alternative} instead - strong defensive signal outweighs weak main prediction"
+        
+        return {
+            'action': action,
+            'stake_multiplier': stake_multiplier,
+            'advice': advice,
+            'confidence_score': confidence_score,
+            'base_recommendation': base_recommendation
+        }
 
 def calculate_regression_factors(home_team_stats, away_team_stats, regression_factor):
     """Calculate attack regression factors with asymmetric capping"""
@@ -582,6 +754,8 @@ with st.sidebar:
             with st.expander("⚙️ Confirmation Layer Settings"):
                 enable_confirmation_layer = st.checkbox("Enable Defensive Confirmation", value=True,
                     help="Use defensive analysis to assess confidence in predictions")
+                show_action_recommendations = st.checkbox("Show Action Recommendations", value=True,
+                    help="Show specific betting actions based on confidence")
                 show_validation = st.checkbox("Show Validation Dashboard", value=True,
                     help="Show confidence calibration tracking")
             
@@ -598,17 +772,32 @@ with st.sidebar:
                 status = ValidationTracker.get_validation_status(metrics)
                 
                 st.write("**Confidence Calibration:**")
-                for level, accuracy in metrics.get('confidence_calibration', {}).items():
-                    st.write(f"  {level}: {accuracy:.1%} accuracy")
+                calibration = metrics.get('confidence_calibration', {})
+                if calibration:
+                    for level, data in calibration.items():
+                        acc = data['accuracy']
+                        samples = data['samples']
+                        rel = data['reliability']
+                        st.write(f"  {level}: {acc:.1%} ({samples} samples, {rel} reliability)")
+                else:
+                    st.write("  Insufficient data")
                 
-                st.write(f"**Resolution Spread:** {metrics.get('resolution_spread', 0):.3f}")
-                st.write(f"**Total Matches Analyzed:** {metrics.get('total_matches', 0)}")
+                resolution = metrics.get('resolution', {})
+                if resolution:
+                    st.write(f"**Model Decisiveness:** {resolution.get('decisiveness', 'N/A')}")
+                    st.write(f"**Avg distance from 50%:** {resolution.get('distance_from_50', 0):.3f}")
+                    st.write(f"**Prediction range:** {resolution.get('prediction_range', 'N/A')}")
                 
-                st.write("**Validation Status:**")
-                for test_name, test_status in status.items():
-                    if test_name != 'overall':
-                        color = "🟢" if test_status == 'PASS' else "🟡" if test_status in ['WARNING', 'NEEDS_CALIBRATION', 'NEEDS_IMPROVEMENT'] else "⚪"
-                        st.write(f"{color} {test_name.replace('_', ' ').title()}: {test_status}")
+                st.write("**Overall Status:**")
+                overall = status.get('overall', 'INSUFFICIENT_DATA')
+                if overall == 'PASS':
+                    st.success("✅ System properly calibrated")
+                elif overall == 'WARNING':
+                    st.warning("⚠️ Some warnings - check details")
+                elif overall == 'NEEDS_CALIBRATION':
+                    st.error("❌ Needs calibration")
+                else:
+                    st.info("📊 Collecting more data")
 
 # ========== MAIN CONTENT ==========
 if df is None:
@@ -681,19 +870,48 @@ prob_matrix = create_probability_matrix(home_xg, away_xg)
 home_win_prob, draw_prob, away_win_prob = calculate_outcome_probabilities(prob_matrix)
 over_25_prob, under_25_prob, btts_yes_prob, btts_no_prob = calculate_betting_markets(prob_matrix)
 
-# Track resolution spread for validation
-predictions = [home_win_prob, draw_prob, away_win_prob, over_25_prob, under_25_prob]
-ValidationTracker.update_resolution_spread(predictions)
+# Store prediction for validation
+prediction_data = {
+    'home_team': home_team,
+    'away_team': away_team,
+    'home_win_prob': home_win_prob,
+    'draw_prob': draw_prob,
+    'away_win_prob': away_win_prob,
+    'over_25_prob': over_25_prob,
+    'under_25_prob': under_25_prob,
+    'btts_yes_prob': btts_yes_prob,
+    'btts_no_prob': btts_no_prob,
+    'timestamp': datetime.now()
+}
+ValidationTracker.update_prediction_history(prediction_data)
+ValidationTracker.increment_match_count()
 
 # Display main predictions
 col_pred1, col_pred2 = st.columns(2)
 
 with col_pred1:
     st.subheader("Over/Under 2.5 Goals")
-    st.metric("Over 2.5", f"{over_25_prob*100:.1f}%")
+    
+    # Calculate decisiveness of prediction
+    over_strength = abs(over_25_prob - 0.5)
+    if over_strength > 0.15:
+        decisiveness = "STRONG"
+        color = "green"
+    elif over_strength > 0.08:
+        decisiveness = "MODERATE"
+        color = "orange"
+    else:
+        decisiveness = "WEAK"
+        color = "gray"
+    
+    st.metric("Over 2.5", f"{over_25_prob*100:.1f}%", 
+              delta=f"{decisiveness} signal" if decisiveness != "WEAK" else None)
     st.progress(over_25_prob)
+    
     st.metric("Under 2.5", f"{under_25_prob*100:.1f}%")
     st.progress(under_25_prob)
+    
+    st.caption(f"Prediction strength: {over_strength:.3f} from 50% ({decisiveness.lower()})")
 
 with col_pred2:
     st.subheader("Both Teams to Score")
@@ -711,7 +929,7 @@ if enable_confirmation_layer:
     defensive_analysis = confirmation_model.analyze_defensive_gap(home_stats, away_stats)
     
     # Assess confidence in main prediction
-    confidence_level, confidence_reason = confirmation_model.assess_confidence(
+    confidence_level, confidence_reason, confidence_score = confirmation_model.assess_confidence(
         over_25_prob * 100, defensive_analysis
     )
     
@@ -728,7 +946,7 @@ if enable_confirmation_layer:
             st.warning(f"**Defensive Signal:** {signal}")
         
         gap_score = defensive_analysis['gap_score']
-        st.metric("Gap Score", f"{gap_score:.2f}")
+        st.metric("Gap Score", f"{gap_score:.2f}σ")
     
     with col_conf2:
         home_def_score = defensive_analysis['home_def_score']
@@ -745,18 +963,82 @@ if enable_confirmation_layer:
     # Display confidence assessment
     st.subheader("🔍 Confidence Assessment")
     
-    if confidence_level == "HIGH":
-        st.success(f"**Confidence Level: HIGH** 🎯")
-        st.write(f"*{confidence_reason}*")
-        st.info("Main model prediction has strong defensive confirmation")
-    elif confidence_level == "MEDIUM":
-        st.warning(f"**Confidence Level: MEDIUM** ⚠️")
-        st.write(f"*{confidence_reason}*")
-        st.info("Proceed with caution - defensive context is neutral or mildly conflicting")
-    else:  # LOW
-        st.error(f"**Confidence Level: LOW** 🚨")
-        st.write(f"*{confidence_reason}*")
-        st.warning("Strong defensive signal contradicts main prediction - exercise high caution")
+    col_conf_assess1, col_conf_assess2 = st.columns([2, 1])
+    
+    with col_conf_assess1:
+        if confidence_level == "HIGH":
+            st.success(f"**Confidence Level: HIGH** 🎯 (Score: {confidence_score:.2f})")
+            st.write(f"*{confidence_reason}*")
+            st.info("Main model prediction has strong defensive confirmation")
+        elif confidence_level == "MEDIUM":
+            st.warning(f"**Confidence Level: MEDIUM** ⚠️ (Score: {confidence_score:.2f})")
+            st.write(f"*{confidence_reason}*")
+            st.info("Proceed with standard caution - defensive context is neutral or mildly conflicting")
+        else:  # LOW
+            st.error(f"**Confidence Level: LOW** 🚨 (Score: {confidence_score:.2f})")
+            st.write(f"*{confidence_reason}*")
+            st.warning("Strong defensive signal contradicts main prediction - exercise high caution")
+    
+    with col_conf_assess2:
+        # Confidence score visualization
+        st.metric("Confidence Score", f"{confidence_score:.2f}")
+        st.progress(confidence_score)
+        if confidence_score > 0.7:
+            st.caption("High confidence")
+        elif confidence_score > 0.5:
+            st.caption("Moderate confidence")
+        else:
+            st.caption("Low confidence")
+    
+    # Action Recommendations
+    if show_action_recommendations:
+        st.subheader("🎯 Action Recommendations")
+        
+        action_recommendation = confirmation_model.get_action_recommendation(
+            over_25_prob * 100, confidence_level, confidence_score, defensive_analysis
+        )
+        
+        col_action1, col_action2, col_action3 = st.columns(3)
+        
+        with col_action1:
+            if action_recommendation['action'] == "NORMAL_STAKE":
+                st.success("**Action:** Normal Stake ✅")
+                st.metric("Stake Multiplier", "1.0x")
+            elif action_recommendation['action'] == "REDUCED_STAKE":
+                st.warning("**Action:** Reduced Stake ⚠️")
+                st.metric("Stake Multiplier", f"{action_recommendation['stake_multiplier']:.1f}x")
+            else:
+                st.error("**Action:** Avoid ❌")
+                st.metric("Stake Multiplier", "0.0x")
+        
+        with col_action2:
+            base_rec = action_recommendation['base_recommendation']
+            if base_rec == "OVER":
+                st.metric("Base Recommendation", "OVER 2.5", 
+                         delta=f"{over_25_prob*100:.1f}%")
+            else:
+                st.metric("Base Recommendation", "UNDER 2.5",
+                         delta=f"{under_25_prob*100:.1f}%")
+        
+        with col_action3:
+            st.metric("Confidence Impact", 
+                     f"{-((over_strength * 100) * (1 - confidence_score)):.1f}%",
+                     delta="Reduction" if confidence_score < 0.7 else "Neutral")
+        
+        st.info(f"**Advice:** {action_recommendation['advice']}")
+        
+        # Decision rationale
+        with st.expander("📋 Decision Rationale"):
+            st.write(f"""
+            1. **Main Model Prediction:** {over_25_prob*100:.1f}% Over 2.5 goals
+            2. **Defensive Signal:** {defensive_analysis['signal']} ({defensive_analysis['confidence']} confidence)
+            3. **Agreement Assessment:** {'Agree' if confidence_level == 'HIGH' else 'Partial' if confidence_level == 'MEDIUM' else 'Disagree'}
+            4. **Confidence Score:** {confidence_score:.2f} (translates to {action_recommendation['action'].replace('_', ' ').lower()})
+            5. **Recommendation:** {action_recommendation['advice']}
+            
+            **Key Insight:** When main model and defensive confirmation disagree (confidence LOW), 
+            the system recommends caution (reduced stake or avoid) rather than overriding the prediction.
+            """)
     
     # Note: No override - prediction remains unchanged
     st.caption("ℹ️ **Note:** Confirmation layer modulates confidence only - main prediction unchanged")
@@ -800,7 +1082,7 @@ with st.expander("📊 Match Outcome Probabilities", expanded=True):
 # ========== VALIDATION DASHBOARD ==========
 if show_validation:
     st.divider()
-    st.header("📊 Validation Dashboard")
+    st.header("📊 Operational Validation Dashboard")
     
     metrics = ValidationTracker.calculate_validation_metrics()
     status = ValidationTracker.get_validation_status(metrics)
@@ -812,39 +1094,118 @@ if show_validation:
         st.subheader("Confidence Calibration")
         calibration = metrics.get('confidence_calibration', {})
         if calibration:
-            for level, accuracy in calibration.items():
-                st.metric(f"{level} Confidence", f"{accuracy:.1%}")
+            for level, data in calibration.items():
+                acc = data['accuracy']
+                samples = data['samples']
+                rel = data['reliability']
+                
+                if level == 'HIGH' and acc >= 0.65:
+                    st.success(f"{level}: {acc:.1%} ✅")
+                elif level == 'MEDIUM' and 0.5 <= acc <= 0.7:
+                    st.info(f"{level}: {acc:.1%} ⚠️")
+                elif level == 'LOW' and acc <= 0.55:
+                    st.warning(f"{level}: {acc:.1%} 🚨")
+                else:
+                    st.error(f"{level}: {acc:.1%} ❌")
+                
+                st.caption(f"{samples} samples, {rel} reliability")
         else:
             st.info("Insufficient data")
     
     with col_val2:
         st.subheader("Model Resolution")
-        resolution = metrics.get('resolution_spread', 0)
-        st.metric("Spread", f"{resolution:.3f}")
-        if resolution > 0.15:
-            st.success("Good differentiation")
-        elif resolution > 0.1:
-            st.warning("Moderate differentiation")
-        else:
-            st.error("Low differentiation")
-    
-    with col_val3:
-        st.subheader("Agreement Performance")
-        agreement = metrics.get('agreement_performance', {})
-        if agreement:
-            for agree_type, accuracy in agreement.items():
-                st.metric(agree_type, f"{accuracy:.1%}")
+        resolution = metrics.get('resolution', {})
+        if resolution:
+            decisiveness = resolution.get('decisiveness', 'LOW')
+            distance = resolution.get('distance_from_50', 0)
+            pred_range = resolution.get('prediction_range', 'N/A')
+            
+            if decisiveness == 'HIGH':
+                st.success(f"**Decisiveness:** HIGH ✅")
+                st.metric("Distance from 50%", f"{distance:.3f}")
+            elif decisiveness == 'MODERATE':
+                st.warning(f"**Decisiveness:** MODERATE ⚠️")
+                st.metric("Distance from 50%", f"{distance:.3f}")
+            else:
+                st.error(f"**Decisiveness:** LOW ❌")
+                st.metric("Distance from 50%", f"{distance:.3f}")
+            
+            st.caption(f"Prediction range: {pred_range}")
         else:
             st.info("Insufficient data")
     
-    # Overall validation status
-    st.subheader("Overall Validation Status")
-    if status['overall'] == 'PASS':
-        st.success("✅ All validation tests passing - confirmation layer properly calibrated")
-    elif status['overall'] == 'NEEDS_CALIBRATION':
-        st.warning("⚠️ Some validation tests need calibration - confidence levels may not match actual accuracy")
+    with col_val3:
+        st.subheader("Action Performance")
+        actions = metrics.get('action_performance', {})
+        if actions:
+            avg_accuracy = np.mean([data['accuracy'] for data in actions.values()])
+            total_samples = sum([data['samples'] for data in actions.values()])
+            
+            if avg_accuracy > 0.55:
+                st.success(f"**Accuracy:** {avg_accuracy:.1%} ✅")
+            elif avg_accuracy > 0.5:
+                st.warning(f"**Accuracy:** {avg_accuracy:.1%} ⚠️")
+            else:
+                st.error(f"**Accuracy:** {avg_accuracy:.1%} ❌")
+            
+            st.metric("Total Samples", total_samples)
+            
+            # Show breakdown
+            with st.expander("Breakdown"):
+                for action_type, data in actions.items():
+                    st.write(f"{action_type}: {data['accuracy']:.1%} ({data['samples']})")
+        else:
+            st.info("Insufficient data")
+    
+    # Overall validation status with operational guidance
+    st.subheader("Overall Operational Status")
+    
+    overall_status = status.get('overall', 'INSUFFICIENT_DATA')
+    
+    if overall_status == 'PASS':
+        st.success("""
+        ✅ **System Properly Calibrated**
+        
+        **Operational Guidance:**
+        - Confidence levels accurately reflect prediction reliability
+        - Model shows good decisiveness in predictions
+        - Action recommendations have proven accuracy
+        - **Proceed with normal decision-making**
+        """)
+    
+    elif overall_status == 'WARNING':
+        st.warning("""
+        ⚠️ **System Has Warnings**
+        
+        **Operational Guidance:**
+        - Some metrics need attention (check details above)
+        - Model may be too cautious or too aggressive
+        - **Proceed with increased caution**
+        - Consider reducing stake sizes until calibration improves
+        """)
+    
+    elif overall_status == 'NEEDS_CALIBRATION':
+        st.error("""
+        ❌ **System Needs Calibration**
+        
+        **Operational Guidance:**
+        - Confidence levels don't match actual accuracy
+        - Action recommendations underperforming
+        - **Avoid significant decisions**
+        - Use system for informational purposes only
+        - Collect more data for recalibration
+        """)
+    
     else:
-        st.info("📊 Insufficient data for validation - continue accumulating predictions")
+        st.info("""
+        📊 **Insufficient Data for Validation**
+        
+        **Operational Guidance:**
+        - System needs more predictions to establish reliability
+        - **Use with caution** - early stage
+        - Track your own results to validate system performance
+        - Recommendations based on theoretical framework, not empirical evidence
+        """)
 
 # ========== OUTPUT FORMATS ==========
 st.divider()
@@ -855,16 +1216,35 @@ if enable_confirmation_layer:
     gap_display = f"{defensive_analysis['gap_score']:.2f}"
     signal_display = defensive_analysis['signal']
     confidence_display = defensive_analysis['confidence']
+    
+    if show_action_recommendations and 'action_recommendation' in locals():
+        action_display = action_recommendation['action'].replace('_', ' ')
+        advice_display = action_recommendation['advice']
+        action_summary = f"""
+    • Recommended Action: {action_display}
+    • Stake Multiplier: {action_recommendation['stake_multiplier']:.1f}x
+    • Advice: {advice_display}
+        """
+    else:
+        action_summary = ""
+    
     confirmation_summary = f"""
     🛡️ DEFENSIVE CONFIRMATION LAYER:
     • Signal: {signal_display}
     • Confidence: {confidence_display}
     • Gap Score: {gap_display}
-    • Confidence Level: {confidence_level}
+    • Confidence Level: {confidence_level} (Score: {confidence_score:.2f})
     • Reason: {confidence_reason}
+    {action_summary}
     """
 else:
     confirmation_summary = "    🛡️ DEFENSIVE CONFIRMATION LAYER: Disabled"
+
+# Get validation insights
+metrics = ValidationTracker.calculate_validation_metrics()
+resolution = metrics.get('resolution', {})
+decisiveness = resolution.get('decisiveness', 'N/A')
+distance_from_50 = resolution.get('distance_from_50', 0)
 
 summary = f"""
 ⚽ FOOTBALL MATCH PREDICTION: {home_team} vs {away_team}
@@ -873,13 +1253,18 @@ League: {selected_league}
 📊 MAIN MODEL PREDICTIONS:
 • Expected Goals: {home_team} {home_xg:.2f} - {away_team} {away_xg:.2f}
 • Total xG: {home_xg + away_xg:.2f}
-• Over 2.5 Goals: {over_25_prob*100:.1f}%
+• Over 2.5 Goals: {over_25_prob*100:.1f}% (Strength: {abs(over_25_prob-0.5):.3f})
 • Under 2.5 Goals: {under_25_prob*100:.1f}%
 • Both Teams to Score: {btts_yes_prob*100:.1f}%
 
 {confirmation_summary}
 
-📈 Most Likely Score: {score_probs[0][0][0] if score_probs else 'N/A'}-{score_probs[0][0][1] if score_probs else 'N/A'} ({(score_probs[0][1]*100 if score_probs else 0):.1f}%)
+📈 MODEL CHARACTERISTICS:
+• Decisiveness: {decisiveness}
+• Avg distance from 50%: {distance_from_50:.3f}
+• Most predictions in range: {resolution.get('prediction_range', 'N/A')}
+
+🎯 Most Likely Score: {score_probs[0][0][0] if score_probs else 'N/A'}-{score_probs[0][0][1] if score_probs else 'N/A'} ({(score_probs[0][1]*100 if score_probs else 0):.1f}%)
 
 🏆 Match Outcome Probabilities:
 • {home_team} Win: {home_win_prob*100:.1f}%
@@ -905,20 +1290,24 @@ with col_export1:
 with col_export2:
     if st.button("🔄 Reset Validation History"):
         st.session_state.validation_history = {
-            'main_model_accuracy': [],
-            'confidence_calibration': defaultdict(list),
-            'resolution_spread': [],
-            'agreement_tracking': defaultdict(list),
-            'match_count': 0
+            'main_model_accuracy': deque(maxlen=100),
+            'confidence_calibration': defaultdict(lambda: deque(maxlen=50)),
+            'resolution_history': deque(maxlen=100),
+            'agreement_tracking': defaultdict(lambda: deque(maxlen=50)),
+            'action_recommendations': defaultdict(lambda: deque(maxlen=50)),
+            'match_count': 0,
+            'prediction_history': []
         }
         st.success("Validation history reset!")
         st.rerun()
 
 # ========== FOOTER ==========
 st.divider()
-footer_text = f"⚡ xG prediction system with defensive confirmation layer"
+footer_text = f"⚡ xG prediction system with operational confidence assessment"
 if enable_confirmation_layer and 'confidence_level' in locals():
     footer_text += f" | Confidence: {confidence_level}"
+if show_action_recommendations and 'action_recommendation' in locals():
+    footer_text += f" | Action: {action_recommendation['action']}"
 footer_text += f" | Validation: {status.get('overall', 'N/A')}"
 footer_text += f" | {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 st.caption(footer_text)
