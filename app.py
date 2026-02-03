@@ -4,7 +4,6 @@ import numpy as np
 import math
 from datetime import datetime
 import warnings
-import plotly.graph_objects as go
 warnings.filterwarnings('ignore')
 
 # Page config
@@ -302,63 +301,114 @@ def calculate_betting_markets(prob_matrix):
     
     return over_25, under_25, btts_yes, btts_no
 
-def create_correct_outcome_chart(home_win_prob, draw_prob, away_win_prob, home_team, away_team):
-    """Create properly ordered outcome chart using Plotly"""
-    categories = [f'{home_team} Win', 'Draw', f'{away_team} Win']
-    probabilities = [home_win_prob, draw_prob, away_win_prob]
+def create_correct_outcome_display(home_win_prob, draw_prob, away_win_prob, home_team, away_team):
+    """Create properly ordered outcome display without Plotly"""
+    # Create a simple but clear visualization
+    st.subheader("📊 Outcome Probability Distribution")
     
-    # Colors for each outcome
-    colors = ['#1f77b4', '#2ca02c', '#ff7f0e']  # Blue, Green, Orange
+    # Create columns for visual representation
+    col1, col2, col3 = st.columns(3)
     
-    fig = go.Figure(data=[
-        go.Bar(
-            x=categories,
-            y=probabilities,
-            text=[f'{p*100:.1f}%' for p in probabilities],
-            textposition='auto',
-            marker_color=colors,
-            hovertemplate='<b>%{x}</b><br>Probability: %{y:.1%}<extra></extra>'
-        )
-    ])
+    with col1:
+        st.markdown(f"**{home_team} Win**")
+        # Create a custom progress bar
+        progress_html = f"""
+        <div style="background-color: #f0f2f6; border-radius: 10px; padding: 5px; margin: 5px 0;">
+            <div style="background-color: #1f77b4; width: {home_win_prob*100}%; height: 25px; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
+                {home_win_prob*100:.1f}%
+            </div>
+        </div>
+        """
+        st.markdown(progress_html, unsafe_allow_html=True)
     
-    fig.update_layout(
-        title='Match Outcome Probabilities',
-        xaxis_title='Outcome',
-        yaxis_title='Probability',
-        yaxis=dict(tickformat='.0%', range=[0, 1]),
-        showlegend=False,
-        height=400,
-        margin=dict(t=50, b=50, l=50, r=50)
-    )
+    with col2:
+        st.markdown("**Draw**")
+        progress_html = f"""
+        <div style="background-color: #f0f2f6; border-radius: 10px; padding: 5px; margin: 5px 0;">
+            <div style="background-color: #2ca02c; width: {draw_prob*100}%; height: 25px; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
+                {draw_prob*100:.1f}%
+            </div>
+        </div>
+        """
+        st.markdown(progress_html, unsafe_allow_html=True)
     
-    return fig
+    with col3:
+        st.markdown(f"**{away_team} Win**")
+        progress_html = f"""
+        <div style="background-color: #f0f2f6; border-radius: 10px; padding: 5px; margin: 5px 0;">
+            <div style="background-color: #ff7f0e; width: {away_win_prob*100}%; height: 25px; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
+                {away_win_prob*100:.1f}%
+            </div>
+        </div>
+        """
+        st.markdown(progress_html, unsafe_allow_html=True)
+    
+    # Add a simple comparison
+    st.markdown("---")
+    col_comp1, col_comp2 = st.columns(2)
+    with col_comp1:
+        if home_win_prob > away_win_prob:
+            st.success(f"📈 **{home_team} is favored to win**")
+        elif away_win_prob > home_win_prob:
+            st.info(f"📈 **{away_team} is favored to win**")
+        else:
+            st.warning("⚖️ **Teams are evenly matched**")
+    
+    with col_comp2:
+        favorite_prob = max(home_win_prob, away_win_prob)
+        favorite_team = home_team if home_win_prob > away_win_prob else away_team
+        st.metric("Favorite's Advantage", f"{(favorite_prob - min(home_win_prob, away_win_prob))*100:.1f}%")
 
-def create_expected_goals_chart(home_xg, away_xg, home_team, away_team):
-    """Create expected goals chart using Plotly"""
-    teams = [home_team, away_team]
-    xg_values = [home_xg, away_xg]
+def create_expected_goals_display(home_xg, away_xg, home_team, away_team):
+    """Create expected goals display without Plotly"""
+    st.subheader("🎯 Expected Goals Comparison")
     
-    fig = go.Figure(data=[
-        go.Bar(
-            x=teams,
-            y=xg_values,
-            text=[f'{xg:.2f}' for xg in xg_values],
-            textposition='auto',
-            marker_color=['#1f77b4', '#ff7f0e'],
-            hovertemplate='<b>%{x}</b><br>Expected Goals: %{y:.2f}<extra></extra>'
-        )
-    ])
+    # Calculate total and ratio
+    total_xg = home_xg + away_xg
+    home_share = (home_xg / total_xg * 100) if total_xg > 0 else 50
+    away_share = (away_xg / total_xg * 100) if total_xg > 0 else 50
     
-    fig.update_layout(
-        title='Expected Goals',
-        xaxis_title='Team',
-        yaxis_title='Expected Goals',
-        showlegend=False,
-        height=300,
-        margin=dict(t=50, b=50, l=50, r=50)
-    )
+    # Create visual comparison
+    col_xg1, col_xg2 = st.columns(2)
     
-    return fig
+    with col_xg1:
+        st.markdown(f"**{home_team}**")
+        # Home xG bar
+        progress_html = f"""
+        <div style="background-color: #f0f2f6; border-radius: 10px; padding: 5px; margin: 5px 0;">
+            <div style="background-color: #1f77b4; width: {min(home_share, 100)}%; height: 30px; border-radius: 5px; display: flex; align-items: center; padding-left: 10px; color: white; font-weight: bold;">
+                {home_xg:.2f} xG
+            </div>
+        </div>
+        """
+        st.markdown(progress_html, unsafe_allow_html=True)
+    
+    with col_xg2:
+        st.markdown(f"**{away_team}**")
+        # Away xG bar
+        progress_html = f"""
+        <div style="background-color: #f0f2f6; border-radius: 10px; padding: 5px; margin: 5px 0;">
+            <div style="background-color: #ff7f0e; width: {min(away_share, 100)}%; height: 30px; border-radius: 5px; display: flex; align-items: center; padding-left: 10px; color: white; font-weight: bold;">
+                {away_xg:.2f} xG
+            </div>
+        </div>
+        """
+        st.markdown(progress_html, unsafe_allow_html=True)
+    
+    # Add summary metrics
+    col_sum1, col_sum2, col_sum3 = st.columns(3)
+    with col_sum1:
+        st.metric("Total xG", f"{total_xg:.2f}")
+    with col_sum2:
+        if home_xg > away_xg:
+            st.metric("Attack Advantage", home_team, delta=f"+{home_xg-away_xg:.2f}")
+        else:
+            st.metric("Attack Advantage", away_team, delta=f"+{away_xg-home_xg:.2f}")
+    with col_sum3:
+        if total_xg > 2.6:
+            st.success("📈 High-scoring expected")
+        elif total_xg < 2.3:
+            st.info("📉 Low-scoring expected")
 
 # ========== SIDEBAR CONTROLS ==========
 with st.sidebar:
@@ -472,25 +522,11 @@ with col3:
         home_stats, away_stats, home_attack_reg, away_attack_reg
     )
     
-    st.subheader("🎯 Expected Goals (Main Model)")
+    # Use custom display for expected goals
+    create_expected_goals_display(home_xg, away_xg, home_team, away_team)
     
-    # Use Plotly for correct visualization
-    xg_chart = create_expected_goals_chart(home_xg, away_xg, home_team, away_team)
-    st.plotly_chart(xg_chart, use_container_width=True)
-    
-    col_xg1, col_xg2, col_xg3 = st.columns(3)
-    with col_xg1:
-        st.metric("Home xG", f"{home_xg:.2f}")
-    with col_xg2:
-        st.metric("Away xG", f"{away_xg:.2f}")
-    with col_xg3:
-        total_xg = home_xg + away_xg
-        st.metric("Total xG", f"{total_xg:.2f}")
-    
-    if total_xg > 2.6:
-        st.success(f"📈 Over bias: Total xG = {total_xg:.2f} > 2.6")
-    elif total_xg < 2.3:
-        st.info(f"📉 Under bias: Total xG = {total_xg:.2f} < 2.3")
+    # Show regression factors
+    st.caption(f"Regression factors: Home {home_attack_reg:.3f}, Away {away_attack_reg:.3f}")
 
 # ========== PHASE 2: PROBABILITY CALCULATIONS ==========
 st.divider()
@@ -593,23 +629,17 @@ with st.expander("🎯 Most Likely Scores", expanded=True):
 
 # ========== LAYER 6: OUTCOME PROBABILITIES ==========
 with st.expander("📊 Match Outcome Probabilities", expanded=True):
-    col1, col2, col3 = st.columns(3)
+    # Use custom display for outcome probabilities
+    create_correct_outcome_display(home_win_prob, draw_prob, away_win_prob, home_team, away_team)
     
-    with col1:
+    # Also show in metrics for clarity
+    col_met1, col_met2, col_met3 = st.columns(3)
+    with col_met1:
         st.metric(f"{home_team} Win", f"{home_win_prob*100:.1f}%")
-        st.progress(home_win_prob)
-    
-    with col2:
+    with col_met2:
         st.metric("Draw", f"{draw_prob*100:.1f}%")
-        st.progress(draw_prob)
-    
-    with col3:
+    with col_met3:
         st.metric(f"{away_team} Win", f"{away_win_prob*100:.1f}%")
-        st.progress(away_win_prob)
-    
-    # Use Plotly for correct visualization
-    outcome_chart = create_correct_outcome_chart(home_win_prob, draw_prob, away_win_prob, home_team, away_team)
-    st.plotly_chart(outcome_chart, use_container_width=True)
 
 # ========== LAYER 7: BETTING MARKETS ==========
 with st.expander("💰 Betting Markets", expanded=True):
@@ -628,6 +658,24 @@ with st.expander("💰 Betting Markets", expanded=True):
         st.progress(btts_yes_prob)
         st.metric("No", f"{btts_no_prob*100:.1f}%")
         st.progress(btts_no_prob)
+    
+    # Implied odds
+    st.subheader("Implied Odds")
+    col_odds1, col_odds2, col_odds3 = st.columns(3)
+    with col_odds1:
+        if home_win_prob > 0:
+            odds = 1 / home_win_prob
+            st.metric(f"{home_team} Win Odds", f"{odds:.2f}")
+    
+    with col_odds2:
+        if draw_prob > 0:
+            odds = 1 / draw_prob
+            st.metric("Draw Odds", f"{odds:.2f}")
+    
+    with col_odds3:
+        if away_win_prob > 0:
+            odds = 1 / away_win_prob
+            st.metric(f"{away_team} Win Odds", f"{odds:.2f}")
 
 # ========== OUTPUT FORMATS ==========
 st.divider()
