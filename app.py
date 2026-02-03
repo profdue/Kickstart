@@ -1135,10 +1135,12 @@ if show_intelligence:
     with col_model2:
         correction = prediction['correction']
         if correction > 0:
-            st.success(f"Intelligent Correction", help="Attack intelligence applied")
+            st.success("Intelligent Correction")
+            st.caption("Attack intelligence applied")
             st.metric("Correction", f"+{correction*100:.1f}%")
         elif correction < 0:
-            st.info(f"Intelligent Correction", help="Defensive intelligence applied")
+            st.info("Intelligent Correction")
+            st.caption("Defensive intelligence applied")
             st.metric("Correction", f"{correction*100:.1f}%")
         else:
             st.metric("Correction", "0.0%", delta="No override needed")
