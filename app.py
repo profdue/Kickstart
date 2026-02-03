@@ -9,44 +9,52 @@ warnings.filterwarnings('ignore')
 
 # Page config
 st.set_page_config(
-    page_title="Football xG Predictor Pro+",
+    page_title="Unified Football xG Predictor",
     page_icon="⚽",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # Title and description
-st.title("⚽ Football xG Predictor Pro+")
+st.title("⚽ Unified Football xG Predictor")
 st.markdown("""
-    Advanced xG prediction system with operational confidence assessment.
-    **Main model provides predictions → Confirmation layer guides trust → Actionable recommendations**
+    **Intelligent xG prediction system with match type classification and asymmetric correction.**
+    *Goals happen when attacks overcome defenses, not when defenses exist in isolation.*
 """)
 
 # Constants
 MAX_GOALS = 8
 REG_BASE_FACTOR = 0.75
-REG_MATCH_THRESHOLD = 5
 MAX_REGRESSION = 0.3
+MAX_CORRECTION = 0.3
+MIN_PROBABILITY = 0.1
+MAX_PROBABILITY = 0.9
 
-# Defensive gap thresholds
-STRONG_OVER_THRESHOLD = 1.0
-STRONG_UNDER_THRESHOLD = -1.0
+# Match Type Thresholds
+ELITE_DEFENSE_THRESHOLD = -1.0
+STRONG_DEFENSE_THRESHOLD = -0.5
+ELITE_ATTACK_THRESHOLD = 1.0
+WEAK_DEFENSE_THRESHOLD = 0.8
+ATTACK_DOM_DEFENSE_THRESHOLD = 0.5
 
-# Action thresholds
-ACTION_HIGH_THRESHOLD = 0.65    # 65%+ probability
-ACTION_MEDIUM_THRESHOLD = 0.55  # 55-65% probability
-ACTION_STAKE_REDUCTION = 0.5    # Reduce stake by 50% for LOW confidence
+# Confidence Thresholds
+LOW_CONFIDENCE_THRESHOLD = 0.05  # 5% from 50%
+MEDIUM_CONFIDENCE_THRESHOLD = 0.15  # 15% from 50%
+HIGH_CONFIDENCE_THRESHOLD = 0.25  # 25% from 50%
 
-# Initialize session state for validation tracking
+# Override Protection
+OVERRIDE_BASE_HIGH = 0.65
+OVERRIDE_BASE_LOW = 0.35
+OVERRIDE_LIMIT_DEFENSE = 0.10
+OVERRIDE_LIMIT_ATTACK = 0.10
+
+# Initialize session state
 if 'validation_history' not in st.session_state:
     st.session_state.validation_history = {
-        'main_model_accuracy': deque(maxlen=100),
-        'confidence_calibration': defaultdict(lambda: deque(maxlen=50)),
-        'resolution_history': deque(maxlen=100),
-        'agreement_tracking': defaultdict(lambda: deque(maxlen=50)),
-        'action_recommendations': defaultdict(lambda: deque(maxlen=50)),
-        'match_count': 0,
-        'prediction_history': []
+        'prediction_history': deque(maxlen=200),
+        'match_type_distribution': defaultdict(int),
+        'correction_effectiveness': defaultdict(lambda: deque(maxlen=50)),
+        'match_count': 0
     }
 
 if 'factorial_cache' not in st.session_state:
@@ -128,424 +136,362 @@ def prepare_team_data(df):
     return home_stats, away_stats
 
 def calculate_league_baselines(df):
-    """Calculate league average xGA for defensive gap analysis"""
+    """Calculate league average statistics for normalization"""
+    # Calculate per-match averages
+    home_xg_per_match = df[df['venue'] == 'home']['xg'] / df[df['venue'] == 'home']['matches']
+    away_xg_per_match = df[df['venue'] == 'away']['xg'] / df[df['venue'] == 'away']['matches']
     home_xga_per_match = df[df['venue'] == 'home']['xga'] / df[df['venue'] == 'home']['matches']
     away_xga_per_match = df[df['venue'] == 'away']['xga'] / df[df['venue'] == 'away']['matches']
     
+    # Combine home and away
+    all_xg_per_match = pd.concat([home_xg_per_match, away_xg_per_match])
     all_xga_per_match = pd.concat([home_xga_per_match, away_xga_per_match])
     
+    # Calculate league averages and standard deviations
+    league_avg_xg = all_xg_per_match.mean()
+    league_std_xg = all_xg_per_match.std()
     league_avg_xga = all_xga_per_match.mean()
     league_std_xga = all_xga_per_match.std()
     
-    return league_avg_xga, league_std_xga
+    return {
+        'avg_xg': league_avg_xg,
+        'std_xg': league_std_xg,
+        'avg_xga': league_avg_xga,
+        'std_xga': league_std_xga
+    }
 
-class ValidationTracker:
-    """Track confidence calibration and provide operational insights"""
+def calculate_team_scores(team_stats, league_baselines):
+    """Calculate Team Attack Score and Team Defense Score"""
+    # Get per-match stats
+    matches = team_stats['matches']
+    xg_per_match = team_stats['xg'] / max(matches, 1)
+    xga_per_match = team_stats['xga'] / max(matches, 1)
+    
+    # Calculate scores (z-scores relative to league)
+    attack_score = (xg_per_match - league_baselines['avg_xg']) / max(league_baselines['std_xg'], 0.1)
+    defense_score = (xga_per_match - league_baselines['avg_xga']) / max(league_baselines['std_xga'], 0.1)
+    
+    # Calculate regression factor (goals vs xG)
+    goals_vs_xg_per_match = team_stats['goals_vs_xg'] / max(matches, 1)
+    
+    return {
+        'attack_score': attack_score,
+        'defense_score': defense_score,
+        'regression_factor': min(max(goals_vs_xg_per_match, -MAX_REGRESSION), MAX_REGRESSION),
+        'xg_per_match': xg_per_match,
+        'xga_per_match': xga_per_match
+    }
+
+class MatchTypeClassifier:
+    """Classify matches into 4 types based on attack/defense scores"""
     
     @staticmethod
-    def update_prediction_history(prediction_data):
-        """Store prediction history for operational insights"""
-        st.session_state.validation_history['prediction_history'].append(prediction_data)
-        if len(st.session_state.validation_history['prediction_history']) > 200:
-            st.session_state.validation_history['prediction_history'] = st.session_state.validation_history['prediction_history'][-200:]
-    
-    @staticmethod
-    def update_confidence_calibration(confidence_level, prediction_correct):
-        """Track how well confidence levels predict accuracy"""
-        st.session_state.validation_history['confidence_calibration'][confidence_level].append(
-            1 if prediction_correct else 0
-        )
-    
-    @staticmethod
-    def calculate_resolution_metrics(predictions):
-        """Calculate actionable resolution metrics"""
-        if not predictions:
-            return {}
+    def classify_match(home_scores, away_scores):
+        """Classify match into one of 4 types"""
         
-        pred_array = np.array(predictions)
+        home_attack = home_scores['attack_score']
+        home_defense = home_scores['defense_score']
+        away_attack = away_scores['attack_score']
+        away_defense = away_scores['defense_score']
         
-        # Distance from 50% (decisiveness metric)
-        distance_from_50 = np.mean(np.abs(pred_array - 0.5))
+        # TYPE A: ELITE DEFENSIVE SHOWDOWN
+        # IF (home_defense_score < -1.0 AND away_defense_score < -0.5)
+        # AND (home_attack_score < 1.0 AND away_attack_score < 1.0)
+        if (home_defense < ELITE_DEFENSE_THRESHOLD and away_defense < STRONG_DEFENSE_THRESHOLD and
+            home_attack < ELITE_ATTACK_THRESHOLD and away_attack < ELITE_ATTACK_THRESHOLD):
+            match_type = "DEFENSIVE_TACTICAL"
+            explanation = "Both teams have elite/strong defenses with non-elite attacks"
         
-        # Spread of predictions (standard deviation)
-        spread = np.std(pred_array)
+        # TYPE B: ATTACK DOMINANCE
+        # IF (home_attack_score > 1.0 AND away_defense_score > 0.5)
+        # OR (away_attack_score > 1.0 AND home_defense_score > 0.5)
+        elif ((home_attack > ELITE_ATTACK_THRESHOLD and away_defense > ATTACK_DOM_DEFENSE_THRESHOLD) or
+              (away_attack > ELITE_ATTACK_THRESHOLD and home_defense > ATTACK_DOM_DEFENSE_THRESHOLD)):
+            match_type = "ATTACK_DOMINANCE"
+            explanation = "Elite attack facing weak defense"
         
-        # Percentage of predictions with clear signal (>55% or <45%)
-        clear_signals = np.sum((pred_array > 0.55) | (pred_array < 0.45)) / len(pred_array)
+        # TYPE C: DEFENSIVE CATASTROPHE
+        # IF (home_defense_score > 1.0 AND away_defense_score > 0.8)
+        elif (home_defense > ELITE_ATTACK_THRESHOLD and away_defense > WEAK_DEFENSE_THRESHOLD):
+            match_type = "DEFENSIVE_WEAKNESS"
+            explanation = "Both teams have very weak defenses"
         
-        # Categorization
-        if distance_from_50 > 0.15:
-            decisiveness = "HIGH"
-        elif distance_from_50 > 0.1:
-            decisiveness = "MODERATE"
+        # TYPE D: STANDARD
         else:
-            decisiveness = "LOW"
+            match_type = "STANDARD"
+            explanation = "Standard match with balanced characteristics"
         
         return {
-            'decisiveness': decisiveness,
-            'distance_from_50': distance_from_50,
-            'spread': spread,
-            'clear_signals_pct': clear_signals,
-            'prediction_range': f"{pred_array.min():.1%} - {pred_array.max():.1%}"
+            'match_type': match_type,
+            'explanation': explanation,
+            'home_attack': home_attack,
+            'home_defense': home_defense,
+            'away_attack': away_attack,
+            'away_defense': away_defense
         }
-    
-    @staticmethod
-    def update_action_recommendation(action_type, correct):
-        """Track performance of action recommendations"""
-        st.session_state.validation_history['action_recommendations'][action_type].append(
-            1 if correct else 0
-        )
-    
-    @staticmethod
-    def increment_match_count():
-        """Increment total match count"""
-        st.session_state.validation_history['match_count'] += 1
-    
-    @staticmethod
-    def calculate_validation_metrics():
-        """Calculate all validation metrics"""
-        metrics = {}
-        
-        # Calculate confidence calibration with actionable insights
-        calibration_data = {}
-        calibration_samples = {}
-        for confidence_level, results in st.session_state.validation_history['confidence_calibration'].items():
-            if len(results) >= 10:  # Minimum sample for meaningful stats
-                accuracy = np.mean(results)
-                calibration_data[confidence_level] = {
-                    'accuracy': accuracy,
-                    'samples': len(results),
-                    'reliability': 'HIGH' if len(results) >= 30 else 'MODERATE' if len(results) >= 15 else 'LOW'
-                }
-        
-        metrics['confidence_calibration'] = calibration_data
-        
-        # Calculate resolution metrics from prediction history
-        if st.session_state.validation_history['prediction_history']:
-            all_predictions = []
-            for pred_data in st.session_state.validation_history['prediction_history']:
-                if 'over_25_prob' in pred_data:
-                    all_predictions.append(pred_data['over_25_prob'])
-                if 'home_win_prob' in pred_data:
-                    all_predictions.append(pred_data['home_win_prob'])
-                    all_predictions.append(pred_data['draw_prob'])
-                    all_predictions.append(pred_data['away_win_prob'])
-            
-            metrics['resolution'] = ValidationTracker.calculate_resolution_metrics(all_predictions)
-        
-        # Calculate agreement performance
-        agreement_performance = {}
-        for agreement_type, results in st.session_state.validation_history['agreement_tracking'].items():
-            if len(results) >= 10:
-                agreement_performance[agreement_type] = {
-                    'accuracy': np.mean(results),
-                    'samples': len(results)
-                }
-        
-        metrics['agreement_performance'] = agreement_performance
-        
-        # Calculate action recommendation performance
-        action_performance = {}
-        for action_type, results in st.session_state.validation_history['action_recommendations'].items():
-            if len(results) >= 5:
-                action_performance[action_type] = {
-                    'accuracy': np.mean(results),
-                    'samples': len(results)
-                }
-        
-        metrics['action_performance'] = action_performance
-        
-        # Overall stats
-        metrics['total_matches'] = st.session_state.validation_history['match_count']
-        metrics['total_predictions'] = len(st.session_state.validation_history['prediction_history'])
-        
-        return metrics
-    
-    @staticmethod
-    def get_validation_status(metrics):
-        """Determine validation status with operational context"""
-        status = {
-            'confidence_calibration': {'status': 'INSUFFICIENT_DATA', 'details': 'Need more samples'},
-            'resolution': {'status': 'INSUFFICIENT_DATA', 'details': 'Need more predictions'},
-            'action_recommendations': {'status': 'INSUFFICIENT_DATA', 'details': 'Need more samples'}
-        }
-        
-        # Check confidence calibration
-        calibration = metrics.get('confidence_calibration', {})
-        if calibration:
-            all_good = True
-            details = []
-            for level, data in calibration.items():
-                accuracy = data['accuracy']
-                samples = data['samples']
-                reliability = data['reliability']
-                
-                # Check if calibration makes sense
-                if level == 'HIGH' and accuracy < 0.65:
-                    all_good = False
-                    details.append(f"HIGH confidence only {accuracy:.1%} accurate")
-                elif level == 'MEDIUM' and (accuracy < 0.5 or accuracy > 0.7):
-                    all_good = False
-                    details.append(f"MEDIUM confidence {accuracy:.1%} (should be 50-70%)")
-                elif level == 'LOW' and accuracy > 0.55:
-                    all_good = False
-                    details.append(f"LOW confidence {accuracy:.1%} (should be <55%)")
-            
-            status['confidence_calibration'] = {
-                'status': 'PASS' if all_good else 'NEEDS_CALIBRATION',
-                'details': ', '.join(details) if details else 'Well calibrated',
-                'reliability': 'HIGH' if all(cal['reliability'] == 'HIGH' for cal in calibration.values()) else 'MODERATE'
-            }
-        
-        # Check resolution
-        resolution = metrics.get('resolution', {})
-        if resolution:
-            decisiveness = resolution.get('decisiveness', 'LOW')
-            distance = resolution.get('distance_from_50', 0)
-            
-            if decisiveness == 'HIGH':
-                status_details = f"Strong model decisiveness ({distance:.3f} from 50%)"
-            elif decisiveness == 'MODERATE':
-                status_details = f"Moderate decisiveness ({distance:.3f} from 50%)"
-            else:
-                status_details = f"Low decisiveness ({distance:.3f} from 50%) - model plays safe"
-            
-            status['resolution'] = {
-                'status': 'PASS' if decisiveness in ['HIGH', 'MODERATE'] else 'WARNING',
-                'details': status_details,
-                'decisiveness': decisiveness
-            }
-        
-        # Check action recommendations
-        actions = metrics.get('action_performance', {})
-        if actions:
-            avg_accuracy = np.mean([data['accuracy'] for data in actions.values()])
-            total_samples = sum([data['samples'] for data in actions.values()])
-            
-            if avg_accuracy > 0.55 and total_samples >= 20:
-                status['action_recommendations'] = {
-                    'status': 'PASS',
-                    'details': f"Recommendations {avg_accuracy:.1%} accurate ({total_samples} samples)",
-                    'accuracy': avg_accuracy
-                }
-            elif total_samples >= 10:
-                status['action_recommendations'] = {
-                    'status': 'MODERATE',
-                    'details': f"Early data: {avg_accuracy:.1%} accuracy ({total_samples} samples)",
-                    'accuracy': avg_accuracy
-                }
-        
-        # Overall status
-        status_items = [data['status'] for data in status.values()]
-        if all(s == 'PASS' for s in status_items if s != 'INSUFFICIENT_DATA'):
-            status['overall'] = 'PASS'
-        elif any(s == 'NEEDS_CALIBRATION' for s in status_items):
-            status['overall'] = 'NEEDS_CALIBRATION'
-        elif any(s == 'WARNING' for s in status_items):
-            status['overall'] = 'WARNING'
-        else:
-            status['overall'] = 'INSUFFICIENT_DATA'
-        
-        return status
 
-class DefensiveConfirmationModel:
-    """Confirmation layer that assesses confidence in main model predictions"""
+class BasePredictionEngine:
+    """Generate base predictions using Poisson distribution"""
     
-    def __init__(self, league_avg_xga, league_std_xga):
-        self.league_avg_xga = league_avg_xga
-        self.league_std_xga = league_std_xga
+    @staticmethod
+    def calculate_expected_goals(home_scores, away_scores, league_baselines):
+        """Calculate expected goals for both teams"""
+        
+        # Get per-match values
+        home_attack = home_scores['xg_per_match']
+        home_defense = home_scores['xga_per_match']
+        away_attack = away_scores['xg_per_match']
+        away_defense = away_scores['xga_per_match']
+        
+        # Calculate expected goals using the formula:
+        # home_expected = (home_attack * away_defense) / league_avg_xG
+        # away_expected = (away_attack * home_defense) / league_avg_xG
+        home_expected = (home_attack * away_defense) / max(league_baselines['avg_xg'], 0.1)
+        away_expected = (away_attack * home_defense) / max(league_baselines['avg_xg'], 0.1)
+        
+        # Apply regression factors (capped at ±30%)
+        home_final = home_expected * (1 + min(MAX_REGRESSION, home_scores['regression_factor']))
+        away_final = away_expected * (1 + min(MAX_REGRESSION, away_scores['regression_factor']))
+        
+        # Apply minimum and maximum bounds
+        home_final = max(min(home_final, 4.0), 0.3)
+        away_final = max(min(away_final, 4.0), 0.3)
+        
+        return home_final, away_final
     
-    def analyze_defensive_gap(self, home_stats, away_stats):
-        """Analyze match for defensive gap - returns information only"""
-        home_xga_per_match = home_stats['xga'] / max(home_stats['matches'], 1)
-        away_xga_per_match = away_stats['xga'] / max(away_stats['matches'], 1)
+    @staticmethod
+    def calculate_base_probability(total_expected_goals):
+        """Calculate base probability of Over 2.5 goals using Poisson"""
+        # Calculate probability of total goals > 2.5
+        prob_0_goals = poisson_pmf(0, total_expected_goals)
+        prob_1_goal = poisson_pmf(1, total_expected_goals)
+        prob_2_goals = poisson_pmf(2, total_expected_goals)
         
-        home_def_score = (home_xga_per_match - self.league_avg_xga) / max(self.league_std_xga, 0.1)
-        away_def_score = (away_xga_per_match - self.league_avg_xga) / max(self.league_std_xga, 0.1)
+        prob_under_25 = prob_0_goals + prob_1_goal + prob_2_goals
+        prob_over_25 = 1 - prob_under_25
         
-        match_gap = home_def_score + away_def_score
+        return prob_over_25
+
+class IntelligentCorrectionSystem:
+    """Apply match type specific corrections to base predictions"""
+    
+    @staticmethod
+    def calculate_correction(match_classification, base_prob, home_scores, away_scores):
+        """Calculate type-specific correction"""
         
-        if match_gap > STRONG_OVER_THRESHOLD:
-            signal = "STRONG_OVER"
-            confidence = "HIGH"
-            explanation = f"Both teams have weak defenses ({match_gap:.2f}σ above league avg)"
-        elif match_gap < STRONG_UNDER_THRESHOLD:
-            signal = "STRONG_UNDER"
-            confidence = "HIGH"
-            explanation = f"Both teams have strong defenses ({abs(match_gap):.2f}σ below league avg)"
-        elif abs(match_gap) > 0.5:
-            signal = "MILD_OVER" if match_gap > 0 else "MILD_UNDER"
-            confidence = "MEDIUM"
-            explanation = f"Defensive matchup leans {'Over' if match_gap > 0 else 'Under'}"
+        match_type = match_classification['match_type']
+        home_defense = match_classification['home_defense']
+        away_defense = match_classification['away_defense']
+        home_attack = match_classification['home_attack']
+        away_attack = match_classification['away_attack']
+        
+        correction = 0.0
+        
+        # RULE 1: DEFENSIVE TACTICAL matches
+        if match_type == "DEFENSIVE_TACTICAL":
+            # Main model overestimates scoring in elite defensive matchups
+            # Correction = -20% to -30% (scale with defense extremity)
+            defense_extremity = abs(min(home_defense, away_defense))
+            correction_range = (-0.30, -0.20)
+            correction = correction_range[0] + (defense_extremity * (correction_range[1] - correction_range[0]))
+            
+            # Apply override protection
+            if base_prob > OVERRIDE_BASE_HIGH:
+                correction = max(correction, -OVERRIDE_LIMIT_DEFENSE)
+        
+        # RULE 2: ATTACK DOMINANCE matches
+        elif match_type == "ATTACK_DOMINANCE":
+            # Main model underestimates elite attacks
+            # Correction = +10% to +25% (scale with attack dominance)
+            attack_extremity = max(home_attack if home_attack > ELITE_ATTACK_THRESHOLD else 0,
+                                 away_attack if away_attack > ELITE_ATTACK_THRESHOLD else 0)
+            correction_range = (0.10, 0.25)
+            correction = correction_range[0] + ((attack_extremity - ELITE_ATTACK_THRESHOLD) * 0.1)
+            correction = min(max(correction, correction_range[0]), correction_range[1])
+            
+            # Apply override protection
+            if base_prob < OVERRIDE_BASE_LOW:
+                correction = min(correction, OVERRIDE_LIMIT_ATTACK)
+        
+        # RULE 3: DEFENSIVE WEAKNESS matches
+        elif match_type == "DEFENSIVE_WEAKNESS":
+            # Main model underestimates terrible defenses
+            # Correction = +15% to +30% (scale with defensive weakness)
+            defense_weakness = max(home_defense, away_defense)
+            correction_range = (0.15, 0.30)
+            correction = correction_range[0] + ((defense_weakness - WEAK_DEFENSE_THRESHOLD) * 0.1)
+            correction = min(max(correction, correction_range[0]), correction_range[1])
+        
+        # RULE 4: STANDARD matches
         else:
-            signal = "NEUTRAL"
+            # Trust main model, confirmation only for confidence
+            correction = 0.0
+        
+        return correction
+    
+    @staticmethod
+    def apply_correction(base_prob, correction):
+        """Apply correction with bounds"""
+        final_prob = base_prob + correction
+        
+        # Clamp between MIN_PROBABILITY and MAX_PROBABILITY
+        final_prob = max(min(final_prob, MAX_PROBABILITY), MIN_PROBABILITY)
+        
+        return final_prob
+
+class ConfidenceValidator:
+    """Determine confidence level based on prediction strength"""
+    
+    @staticmethod
+    def calculate_confidence(final_prob):
+        """Calculate confidence level based on distance from 50%"""
+        distance_from_50 = abs(final_prob - 0.5)
+        
+        if distance_from_50 < LOW_CONFIDENCE_THRESHOLD:
             confidence = "LOW"
-            explanation = "Mixed defensive matchup - no clear signal"
+            confidence_score = 0.3
+        elif distance_from_50 < MEDIUM_CONFIDENCE_THRESHOLD:
+            confidence = "MEDIUM"
+            confidence_score = 0.6
+        else:
+            confidence = "HIGH"
+            confidence_score = 0.8
+        
+        # Adjust confidence based on extremity
+        if distance_from_50 > HIGH_CONFIDENCE_THRESHOLD:
+            confidence = "VERY HIGH"
+            confidence_score = 0.95
+        
+        return confidence, confidence_score, distance_from_50
+
+class UnifiedPredictionSystem:
+    """Main unified prediction system that orchestrates all components"""
+    
+    def __init__(self, league_baselines):
+        self.league_baselines = league_baselines
+        self.classifier = MatchTypeClassifier()
+        self.base_engine = BasePredictionEngine()
+        self.correction_system = IntelligentCorrectionSystem()
+        self.confidence_validator = ConfidenceValidator()
+    
+    def predict(self, home_team, away_team, home_stats, away_stats):
+        """Generate unified prediction for a match"""
+        
+        # PHASE 1: Calculate team scores
+        home_scores = calculate_team_scores(home_stats, self.league_baselines)
+        away_scores = calculate_team_scores(away_stats, self.league_baselines)
+        
+        # PHASE 2: Classify match type
+        match_classification = self.classifier.classify_match(home_scores, away_scores)
+        
+        # PHASE 3: Generate base prediction
+        home_xg, away_xg = self.base_engine.calculate_expected_goals(
+            home_scores, away_scores, self.league_baselines
+        )
+        total_xg = home_xg + away_xg
+        base_prob = self.base_engine.calculate_base_probability(total_xg)
+        
+        # PHASE 4: Apply intelligent correction
+        correction = self.correction_system.calculate_correction(
+            match_classification, base_prob, home_scores, away_scores
+        )
+        final_prob = self.correction_system.apply_correction(base_prob, correction)
+        
+        # PHASE 5: Determine confidence
+        confidence, confidence_score, distance_from_50 = self.confidence_validator.calculate_confidence(final_prob)
+        
+        # PHASE 6: Create final prediction
+        direction = "OVER" if final_prob > 0.5 else "UNDER"
+        
+        # Generate rationale
+        rationale = self._generate_rationale(
+            match_classification, base_prob, correction, final_prob, confidence
+        )
+        
+        # Create probability matrix for additional insights
+        prob_matrix = create_probability_matrix(home_xg, away_xg)
+        home_win_prob, draw_prob, away_win_prob = calculate_outcome_probabilities(prob_matrix)
+        over_25_prob, under_25_prob, btts_yes_prob, btts_no_prob = calculate_betting_markets(prob_matrix)
+        
+        # Store for validation
+        self._store_prediction(
+            home_team, away_team, match_classification['match_type'],
+            base_prob, final_prob, correction, confidence
+        )
         
         return {
-            'signal': signal,
+            # Core prediction
+            'final_probability': final_prob,
+            'direction': direction,
+            'match_type': match_classification['match_type'],
             'confidence': confidence,
-            'gap_score': match_gap,
-            'home_def_score': home_def_score,
-            'away_def_score': away_def_score,
-            'explanation': explanation
-        }
-    
-    def assess_confidence(self, main_over_prob, defensive_signal):
-        """Assess confidence level based on agreement between main model and confirmation"""
-        # Main model direction
-        main_prob = main_over_prob / 100  # Convert to decimal
-        if main_prob > 0.5:
-            main_direction = "OVER"
-            main_strength = main_prob - 0.5
-        else:
-            main_direction = "UNDER"
-            main_strength = 0.5 - main_prob
-        
-        # Defensive signal direction
-        if "OVER" in defensive_signal['signal']:
-            defensive_direction = "OVER"
-            defensive_strength = defensive_signal['confidence']  # HIGH/MEDIUM/LOW
-        elif "UNDER" in defensive_signal['signal']:
-            defensive_direction = "UNDER"
-            defensive_strength = defensive_signal['confidence']
-        else:
-            defensive_direction = "NEUTRAL"
-            defensive_strength = "LOW"
-        
-        # Determine confidence level
-        if defensive_direction == "NEUTRAL":
-            confidence_level = "MEDIUM"
-            reason = "Confirmation layer neutral - standard confidence"
-            confidence_score = 0.5
-        
-        elif main_direction == defensive_direction:
-            # Agreement - boost confidence
-            if defensive_strength == "HIGH":
-                confidence_level = "HIGH"
-                reason = f"Strong confirmation for {main_direction}"
-                confidence_score = 0.8 + min(0.15, main_strength * 0.3)
-            else:
-                confidence_level = "MEDIUM"
-                reason = f"Moderate confirmation for {main_direction}"
-                confidence_score = 0.6 + min(0.15, main_strength * 0.3)
-        
-        else:
-            # Disagreement - reduce confidence
-            if defensive_strength == "HIGH":
-                confidence_level = "LOW"
-                reason = f"Strong defensive signal contradicts main {main_direction}"
-                confidence_score = 0.3 - min(0.1, main_strength * 0.2)
-            else:
-                confidence_level = "MEDIUM"
-                reason = f"Mild defensive disagreement with main {main_direction}"
-                confidence_score = 0.5 - min(0.1, main_strength * 0.2)
-        
-        return confidence_level, reason, confidence_score
-    
-    def get_action_recommendation(self, main_over_prob, confidence_level, confidence_score, defensive_signal):
-        """Generate actionable betting recommendations based on confidence"""
-        main_prob = main_over_prob / 100
-        
-        # Base recommendation from main model
-        base_recommendation = "OVER" if main_prob > 0.5 else "UNDER"
-        base_strength = abs(main_prob - 0.5)  # How far from 50%
-        
-        # Map confidence to action
-        if confidence_level == "HIGH":
-            action = "NORMAL_STAKE"
-            stake_multiplier = 1.0
-            advice = f"Full confidence in {base_recommendation}"
-            
-        elif confidence_level == "MEDIUM":
-            if confidence_score > 0.55:  # Leaning positive
-                action = "NORMAL_STAKE"
-                stake_multiplier = 1.0
-                advice = f"Standard play on {base_recommendation}"
-            else:  # Leaning negative
-                action = "REDUCED_STAKE"
-                stake_multiplier = ACTION_STAKE_REDUCTION
-                advice = f"Caution advised on {base_recommendation}"
-                
-        else:  # LOW confidence
-            if base_strength > 0.1:  # Strong main signal despite low confidence
-                action = "REDUCED_STAKE"
-                stake_multiplier = ACTION_STAKE_REDUCTION
-                advice = f"Reduced stake on {base_recommendation} due to conflict"
-            else:  # Weak main signal + low confidence
-                action = "AVOID"
-                stake_multiplier = 0.0
-                advice = f"Avoid bet - conflicting signals ({base_recommendation} vs defensive {defensive_signal['signal'].split('_')[1]})"
-        
-        # Special case: Very strong defensive signal may suggest alternative
-        if defensive_signal['confidence'] == "HIGH" and confidence_level == "LOW":
-            alternative = defensive_signal['signal'].split('_')[1]
-            if base_strength < 0.08:  # Very weak main signal
-                advice = f"Consider {alternative} instead - strong defensive signal outweighs weak main prediction"
-        
-        return {
-            'action': action,
-            'stake_multiplier': stake_multiplier,
-            'advice': advice,
             'confidence_score': confidence_score,
-            'base_recommendation': base_recommendation
+            'correction_applied': correction,
+            'rationale': rationale,
+            
+            # Base model details
+            'base_probability': base_prob,
+            'expected_goals': {
+                'home': home_xg,
+                'away': away_xg,
+                'total': total_xg
+            },
+            
+            # Team scores
+            'team_scores': {
+                'home': home_scores,
+                'away': away_scores
+            },
+            
+            # Match classification
+            'classification': match_classification,
+            
+            # Additional probabilities
+            'home_win_prob': home_win_prob,
+            'draw_prob': draw_prob,
+            'away_win_prob': away_win_prob,
+            'over_25_prob': over_25_prob,
+            'under_25_prob': under_25_prob,
+            'btts_yes_prob': btts_yes_prob,
+            'btts_no_prob': btts_no_prob,
+            
+            # Metrics
+            'distance_from_50': distance_from_50
         }
-
-def calculate_regression_factors(home_team_stats, away_team_stats, regression_factor):
-    """Calculate attack regression factors with asymmetric capping"""
-    home_matches = home_team_stats['matches']
-    away_matches = away_team_stats['matches']
     
-    if home_matches >= REG_MATCH_THRESHOLD:
-        home_base_reg = (home_team_stats['goals_vs_xg'] / home_matches) * regression_factor
-    else:
-        home_base_reg = 0
+    def _generate_rationale(self, classification, base_prob, correction, final_prob, confidence):
+        """Generate detailed rationale for the prediction"""
+        
+        match_type = classification['match_type']
+        explanation = classification['explanation']
+        
+        if match_type == "DEFENSIVE_TACTICAL":
+            return f"{match_type}: {explanation}. Base model overestimates scoring by {abs(correction*100):.1f}% in elite defensive matchups."
+        elif match_type == "ATTACK_DOMINANCE":
+            return f"{match_type}: {explanation}. Base model underestimates scoring by {correction*100:.1f}% when elite attacks face weak defenses."
+        elif match_type == "DEFENSIVE_WEAKNESS":
+            return f"{match_type}: {explanation}. Base model underestimates scoring by {correction*100:.1f}% when both defenses are weak."
+        else:
+            return f"{match_type}: {explanation}. Trusting base model with {confidence} confidence."
     
-    if away_matches >= REG_MATCH_THRESHOLD:
-        away_base_reg = (away_team_stats['goals_vs_xg'] / away_matches) * regression_factor
-    else:
-        away_base_reg = 0
-    
-    home_wins = home_team_stats.get('wins', 0)
-    away_wins = away_team_stats.get('wins', 0)
-    
-    home_win_rate = home_wins / max(home_matches, 1)
-    away_win_rate = away_wins / max(away_matches, 1)
-    
-    if home_win_rate > 0.6:
-        home_attack_reg = max(min(home_base_reg, MAX_REGRESSION), -MAX_REGRESSION)
-    elif home_win_rate < 0.3:
-        home_attack_reg = max(min(home_base_reg, MAX_REGRESSION * 0.5), -MAX_REGRESSION * 0.5)
-    else:
-        home_attack_reg = max(min(home_base_reg, MAX_REGRESSION * 0.75), -MAX_REGRESSION * 0.75)
-    
-    if away_win_rate > 0.6:
-        away_attack_reg = max(min(away_base_reg, MAX_REGRESSION), -MAX_REGRESSION)
-    elif away_win_rate < 0.3:
-        away_attack_reg = max(min(away_base_reg, MAX_REGRESSION * 0.5), -MAX_REGRESSION * 0.5)
-    else:
-        away_attack_reg = max(min(away_base_reg, MAX_REGRESSION * 0.75), -MAX_REGRESSION * 0.75)
-    
-    return home_attack_reg, away_attack_reg
-
-def calculate_expected_goals(home_stats, away_stats, home_attack_reg, away_attack_reg):
-    """Calculate expected goals for both teams"""
-    home_xg_per_match = home_stats['xg'] / max(home_stats['matches'], 1)
-    away_xga_per_match = away_stats['xga'] / max(away_stats['matches'], 1)
-    
-    away_xg_per_match = away_stats['xg'] / max(away_stats['matches'], 1)
-    home_xga_per_match = home_stats['xga'] / max(home_stats['matches'], 1)
-    
-    home_expected = np.sqrt(home_xg_per_match * away_xga_per_match) * (1 + home_attack_reg)
-    away_expected = np.sqrt(away_xg_per_match * home_xga_per_match) * (1 + away_attack_reg)
-    
-    home_expected = max(home_expected, 0.3)
-    away_expected = max(away_expected, 0.3)
-    
-    home_expected = min(home_expected, 4.0)
-    away_expected = min(away_expected, 4.0)
-    
-    return home_expected, away_expected
+    def _store_prediction(self, home_team, away_team, match_type, base_prob, final_prob, correction, confidence):
+        """Store prediction for validation tracking"""
+        
+        st.session_state.validation_history['match_type_distribution'][match_type] += 1
+        st.session_state.validation_history['match_count'] += 1
+        
+        prediction_data = {
+            'home_team': home_team,
+            'away_team': away_team,
+            'match_type': match_type,
+            'base_prob': base_prob,
+            'final_prob': final_prob,
+            'correction': correction,
+            'confidence': confidence,
+            'timestamp': datetime.now()
+        }
+        
+        st.session_state.validation_history['prediction_history'].append(prediction_data)
 
 def create_probability_matrix(home_lam, away_lam, max_goals=MAX_GOALS):
     """Create probability matrix for all score combinations"""
@@ -607,106 +553,40 @@ def calculate_betting_markets(prob_matrix):
     
     return over_25, under_25, btts_yes, btts_no
 
-def create_correct_outcome_display(home_win_prob, draw_prob, away_win_prob, home_team, away_team):
-    """Create properly ordered outcome display"""
-    st.subheader("📊 Match Outcome Probabilities")
+def create_team_score_display(team_scores, team_name, is_home=True):
+    """Create display for team attack/defense scores"""
+    bg_color = "#1f77b4" if is_home else "#ff7f0e"
     
-    col1, col2, col3 = st.columns(3)
+    attack_score = team_scores['attack_score']
+    defense_score = team_scores['defense_score']
+    
+    attack_label = "Elite" if attack_score > 1.0 else "Above Avg" if attack_score > 0 else "Below Avg" if attack_score > -1.0 else "Weak"
+    defense_label = "Elite" if defense_score < -1.0 else "Strong" if defense_score < -0.5 else "Avg" if defense_score < 0.5 else "Weak" if defense_score < 1.0 else "Very Weak"
+    
+    attack_color = "green" if attack_score > 0.5 else "orange" if attack_score > -0.5 else "red"
+    defense_color = "green" if defense_score < -0.5 else "orange" if defense_score < 0.5 else "red"
+    
+    col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown(f"**{home_team} Win**")
-        progress_html = f"""
-        <div style="background-color: #f0f2f6; border-radius: 10px; padding: 5px; margin: 5px 0;">
-            <div style="background-color: #1f77b4; width: {home_win_prob*100}%; height: 25px; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
-                {home_win_prob*100:.1f}%
-            </div>
+        st.markdown(f"**Attack Score:**")
+        st.markdown(f"""
+        <div style="background-color: {bg_color}; color: white; padding: 10px; border-radius: 5px;">
+            <div style="font-size: 20px; font-weight: bold;">{attack_score:.2f}</div>
+            <div style="color: {attack_color};">{attack_label}</div>
         </div>
-        """
-        st.markdown(progress_html, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     
     with col2:
-        st.markdown("**Draw**")
-        progress_html = f"""
-        <div style="background-color: #f0f2f6; border-radius: 10px; padding: 5px; margin: 5px 0;">
-            <div style="background-color: #2ca02c; width: {draw_prob*100}%; height: 25px; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
-                {draw_prob*100:.1f}%
-            </div>
+        st.markdown(f"**Defense Score:**")
+        st.markdown(f"""
+        <div style="background-color: {bg_color}; color: white; padding: 10px; border-radius: 5px;">
+            <div style="font-size: 20px; font-weight: bold;">{defense_score:.2f}</div>
+            <div style="color: {defense_color};">{defense_label}</div>
         </div>
-        """
-        st.markdown(progress_html, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     
-    with col3:
-        st.markdown(f"**{away_team} Win**")
-        progress_html = f"""
-        <div style="background-color: #f0f2f6; border-radius: 10px; padding: 5px; margin: 5px 0;">
-            <div style="background-color: #ff7f0e; width: {away_win_prob*100}%; height: 25px; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
-                {away_win_prob*100:.1f}%
-            </div>
-        </div>
-        """
-        st.markdown(progress_html, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    col_comp1, col_comp2 = st.columns(2)
-    with col_comp1:
-        if home_win_prob > away_win_prob:
-            st.success(f"📈 **{home_team} is favored to win**")
-        elif away_win_prob > home_win_prob:
-            st.info(f"📈 **{away_team} is favored to win**")
-        else:
-            st.warning("⚖️ **Teams are evenly matched**")
-    
-    with col_comp2:
-        favorite_prob = max(home_win_prob, away_win_prob)
-        favorite_team = home_team if home_win_prob > away_win_prob else away_team
-        advantage = (favorite_prob - min(home_win_prob, away_win_prob)) * 100
-        st.metric("Favorite's Advantage", f"{advantage:.1f}%")
-
-def create_expected_goals_display(home_xg, away_xg, home_team, away_team):
-    """Create expected goals display"""
-    st.subheader("🎯 Expected Goals Comparison")
-    
-    total_xg = home_xg + away_xg
-    home_share = (home_xg / total_xg * 100) if total_xg > 0 else 50
-    away_share = (away_xg / total_xg * 100) if total_xg > 0 else 50
-    
-    col_xg1, col_xg2 = st.columns(2)
-    
-    with col_xg1:
-        st.markdown(f"**{home_team}**")
-        progress_html = f"""
-        <div style="background-color: #f0f2f6; border-radius: 10px; padding: 5px; margin: 5px 0;">
-            <div style="background-color: #1f77b4; width: {min(home_share, 100)}%; height: 30px; border-radius: 5px; display: flex; align-items: center; padding-left: 10px; color: white; font-weight: bold;">
-                {home_xg:.2f} xG
-            </div>
-        </div>
-        """
-        st.markdown(progress_html, unsafe_allow_html=True)
-    
-    with col_xg2:
-        st.markdown(f"**{away_team}**")
-        progress_html = f"""
-        <div style="background-color: #f0f2f6; border-radius: 10px; padding: 5px; margin: 5px 0;">
-            <div style="background-color: #ff7f0e; width: {min(away_share, 100)}%; height: 30px; border-radius: 5px; display: flex; align-items: center; padding-left: 10px; color: white; font-weight: bold;">
-                {away_xg:.2f} xG
-            </div>
-        </div>
-        """
-        st.markdown(progress_html, unsafe_allow_html=True)
-    
-    col_sum1, col_sum2, col_sum3 = st.columns(3)
-    with col_sum1:
-        st.metric("Total xG", f"{total_xg:.2f}")
-    with col_sum2:
-        if home_xg > away_xg:
-            st.metric("Attack Advantage", home_team, delta=f"+{home_xg-away_xg:.2f}")
-        else:
-            st.metric("Attack Advantage", away_team, delta=f"+{away_xg-home_xg:.2f}")
-    with col_sum3:
-        if total_xg > 2.6:
-            st.success("📈 High-scoring expected")
-        elif total_xg < 2.3:
-            st.info("📉 Low-scoring expected")
+    return attack_label, defense_label
 
 # ========== SIDEBAR CONTROLS ==========
 with st.sidebar:
@@ -728,7 +608,7 @@ with st.sidebar:
     df = load_league_data(league_key)
     
     if df is not None:
-        league_avg_xga, league_std_xga = calculate_league_baselines(df)
+        league_baselines = calculate_league_baselines(df)
         
         home_stats_df, away_stats_df = prepare_team_data(df)
         
@@ -742,62 +622,28 @@ with st.sidebar:
             home_team = st.selectbox("Home Team", common_teams)
             away_team = st.selectbox("Away Team", [t for t in common_teams if t != home_team])
             
-            regression_factor = st.slider(
-                "Regression Factor",
-                min_value=0.0,
-                max_value=2.0,
-                value=REG_BASE_FACTOR,
-                step=0.05,
-                help="Adjust how much to regress team performance to mean"
-            )
-            
-            with st.expander("⚙️ Confirmation Layer Settings"):
-                enable_confirmation_layer = st.checkbox("Enable Defensive Confirmation", value=True,
-                    help="Use defensive analysis to assess confidence in predictions")
-                show_action_recommendations = st.checkbox("Show Action Recommendations", value=True,
-                    help="Show specific betting actions based on confidence")
-                show_validation = st.checkbox("Show Validation Dashboard", value=True,
-                    help="Show confidence calibration tracking")
-            
-            calculate_btn = st.button("🎯 Calculate Predictions", type="primary", use_container_width=True)
-            
             st.divider()
-            st.subheader("📊 Display Options")
-            show_matrix = st.checkbox("Show Score Probability Matrix", value=False)
+            st.subheader("🎯 Display Options")
+            show_detailed_analysis = st.checkbox("Show Detailed Analysis", value=True)
+            show_validation = st.checkbox("Show Validation Dashboard", value=True)
+            
+            calculate_btn = st.button("🎯 Generate Unified Prediction", type="primary", use_container_width=True)
             
             if show_validation:
                 st.divider()
                 st.subheader("📈 Validation Dashboard")
-                metrics = ValidationTracker.calculate_validation_metrics()
-                status = ValidationTracker.get_validation_status(metrics)
                 
-                st.write("**Confidence Calibration:**")
-                calibration = metrics.get('confidence_calibration', {})
-                if calibration:
-                    for level, data in calibration.items():
-                        acc = data['accuracy']
-                        samples = data['samples']
-                        rel = data['reliability']
-                        st.write(f"  {level}: {acc:.1%} ({samples} samples, {rel} reliability)")
+                total_matches = st.session_state.validation_history['match_count']
+                match_types = st.session_state.validation_history['match_type_distribution']
+                
+                if total_matches > 0:
+                    st.write(f"**Total Predictions:** {total_matches}")
+                    st.write("**Match Type Distribution:**")
+                    for match_type, count in match_types.items():
+                        percentage = (count / total_matches) * 100
+                        st.write(f"  {match_type}: {count} ({percentage:.1f}%)")
                 else:
-                    st.write("  Insufficient data")
-                
-                resolution = metrics.get('resolution', {})
-                if resolution:
-                    st.write(f"**Model Decisiveness:** {resolution.get('decisiveness', 'N/A')}")
-                    st.write(f"**Avg distance from 50%:** {resolution.get('distance_from_50', 0):.3f}")
-                    st.write(f"**Prediction range:** {resolution.get('prediction_range', 'N/A')}")
-                
-                st.write("**Overall Status:**")
-                overall = status.get('overall', 'INSUFFICIENT_DATA')
-                if overall == 'PASS':
-                    st.success("✅ System properly calibrated")
-                elif overall == 'WARNING':
-                    st.warning("⚠️ Some warnings - check details")
-                elif overall == 'NEEDS_CALIBRATION':
-                    st.error("❌ Needs calibration")
-                else:
-                    st.info("📊 Collecting more data")
+                    st.info("No predictions generated yet")
 
 # ========== MAIN CONTENT ==========
 if df is None:
@@ -808,13 +654,26 @@ if df is None:
     - One row per team per venue (home/away)
     - Using sample data for demonstration
     """)
-    st.stop()
-
-if 'calculate_btn' not in locals() or not calculate_btn:
-    st.info("👈 Select teams and click 'Calculate Predictions' to start")
     
     with st.expander("📋 Preview of Loaded Data"):
         st.dataframe(df.head(10))
+    st.stop()
+
+if 'calculate_btn' not in locals() or not calculate_btn:
+    st.info("👈 Select teams and click 'Generate Unified Prediction' to start")
+    
+    # Show league baselines
+    st.subheader("📊 League Baselines")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Avg xG/match", f"{league_baselines['avg_xg']:.2f}")
+    with col2:
+        st.metric("Std xG", f"{league_baselines['std_xg']:.2f}")
+    with col3:
+        st.metric("Avg xGA/match", f"{league_baselines['avg_xga']:.2f}")
+    with col4:
+        st.metric("Std xGA", f"{league_baselines['std_xga']:.2f}")
+    
     st.stop()
 
 try:
@@ -824,227 +683,228 @@ except KeyError as e:
     st.error(f"❌ Team data not found: {e}")
     st.stop()
 
-# ========== PHASE 1: MAIN MODEL CALCULATIONS ==========
-st.header(f"📊 {home_team} vs {away_team}")
+# ========== PHASE 1: UNIFIED PREDICTION SYSTEM ==========
+st.header(f"🎯 {home_team} vs {away_team}")
 
-col1, col2, col3 = st.columns([1, 1, 2])
+# Initialize prediction system
+prediction_system = UnifiedPredictionSystem(league_baselines)
 
-with col1:
-    st.subheader(f"🏠 {home_team} (Home)")
-    st.metric("Matches", int(home_stats['matches']))
-    if 'wins' in home_stats:
-        st.metric("Wins", int(home_stats['wins']))
-    home_xg_per_match = home_stats['xg'] / max(home_stats['matches'], 1)
-    home_xga_per_match = home_stats['xga'] / max(home_stats['matches'], 1)
-    st.metric("xG/match", f"{home_xg_per_match:.2f}")
-    st.metric("xGA/match", f"{home_xga_per_match:.2f}")
+# Generate prediction
+prediction = prediction_system.predict(home_team, away_team, home_stats, away_stats)
+
+# ========== PHASE 2: DISPLAY PREDICTION ==========
+# Main prediction card
+col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
-    st.subheader(f"✈️ {away_team} (Away)")
-    st.metric("Matches", int(away_stats['matches']))
-    if 'wins' in away_stats:
-        st.metric("Wins", int(away_stats['wins']))
-    away_xg_per_match = away_stats['xg'] / max(away_stats['matches'], 1)
-    away_xga_per_match = away_stats['xga'] / max(away_stats['matches'], 1)
-    st.metric("xG/match", f"{away_xg_per_match:.2f}")
-    st.metric("xGA/match", f"{away_xga_per_match:.2f}")
-
-with col3:
-    home_attack_reg, away_attack_reg = calculate_regression_factors(
-        home_stats, away_stats, regression_factor
-    )
+    final_prob = prediction['final_probability']
+    direction = prediction['direction']
+    confidence = prediction['confidence']
     
-    home_xg, away_xg = calculate_expected_goals(
-        home_stats, away_stats, home_attack_reg, away_attack_reg
-    )
-    
-    create_expected_goals_display(home_xg, away_xg, home_team, away_team)
-    
-    st.caption(f"Regression factors: Home {home_attack_reg:.3f}, Away {away_attack_reg:.3f}")
-
-# ========== PHASE 2: MAIN MODEL PREDICTIONS ==========
-st.divider()
-st.header("📈 Main Model Predictions")
-
-prob_matrix = create_probability_matrix(home_xg, away_xg)
-home_win_prob, draw_prob, away_win_prob = calculate_outcome_probabilities(prob_matrix)
-over_25_prob, under_25_prob, btts_yes_prob, btts_no_prob = calculate_betting_markets(prob_matrix)
-
-# Store prediction for validation
-prediction_data = {
-    'home_team': home_team,
-    'away_team': away_team,
-    'home_win_prob': home_win_prob,
-    'draw_prob': draw_prob,
-    'away_win_prob': away_win_prob,
-    'over_25_prob': over_25_prob,
-    'under_25_prob': under_25_prob,
-    'btts_yes_prob': btts_yes_prob,
-    'btts_no_prob': btts_no_prob,
-    'timestamp': datetime.now()
-}
-ValidationTracker.update_prediction_history(prediction_data)
-ValidationTracker.increment_match_count()
-
-# Display main predictions
-col_pred1, col_pred2 = st.columns(2)
-
-with col_pred1:
-    st.subheader("Over/Under 2.5 Goals")
-    
-    # Calculate decisiveness of prediction
-    over_strength = abs(over_25_prob - 0.5)
-    if over_strength > 0.15:
-        decisiveness = "STRONG"
-        color = "green"
-    elif over_strength > 0.08:
-        decisiveness = "MODERATE"
-        color = "orange"
+    # Determine card color based on confidence and direction
+    if confidence == "VERY HIGH":
+        card_color = "#4CAF50" if direction == "OVER" else "#FF5722"
+    elif confidence == "HIGH":
+        card_color = "#8BC34A" if direction == "OVER" else "#FF9800"
+    elif confidence == "MEDIUM":
+        card_color = "#FFC107" if direction == "OVER" else "#FFA726"
     else:
-        decisiveness = "WEAK"
-        color = "gray"
+        card_color = "#FFEB3B" if direction == "OVER" else "#FFCC80"
     
-    st.metric("Over 2.5", f"{over_25_prob*100:.1f}%", 
-              delta=f"{decisiveness} signal" if decisiveness != "WEAK" else None)
-    st.progress(over_25_prob)
-    
-    st.metric("Under 2.5", f"{under_25_prob*100:.1f}%")
-    st.progress(under_25_prob)
-    
-    st.caption(f"Prediction strength: {over_strength:.3f} from 50% ({decisiveness.lower()})")
+    st.markdown(f"""
+    <div style="background-color: {card_color}; padding: 25px; border-radius: 15px; text-align: center; margin: 20px 0;">
+        <h1 style="color: white; margin: 0;">{direction} 2.5</h1>
+        <div style="font-size: 48px; font-weight: bold; color: white; margin: 10px 0;">{final_prob*100:.1f}%</div>
+        <div style="font-size: 18px; color: white;">Confidence: {confidence}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-with col_pred2:
-    st.subheader("Both Teams to Score")
-    st.metric("Yes", f"{btts_yes_prob*100:.1f}%")
-    st.progress(btts_yes_prob)
-    st.metric("No", f"{btts_no_prob*100:.1f}%")
-    st.progress(btts_no_prob)
+# Match type and rationale
+st.subheader("📋 Prediction Analysis")
 
-# ========== PHASE 3: CONFIRMATION LAYER ==========
-if enable_confirmation_layer:
+col_info1, col_info2 = st.columns(2)
+
+with col_info1:
+    match_type = prediction['match_type']
+    type_colors = {
+        "DEFENSIVE_TACTICAL": "#2196F3",
+        "ATTACK_DOMINANCE": "#4CAF50",
+        "DEFENSIVE_WEAKNESS": "#FF5722",
+        "STANDARD": "#FFC107"
+    }
+    
+    st.markdown(f"""
+    <div style="background-color: {type_colors.get(match_type, '#9E9E9E')}; 
+                color: white; padding: 15px; border-radius: 10px;">
+        <h3 style="margin: 0;">Match Type: {match_type}</h3>
+        <p style="margin: 10px 0 0 0;">{prediction['classification']['explanation']}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_info2:
+    correction = prediction['correction_applied']
+    base_prob = prediction['base_probability']
+    
+    st.markdown("**Correction Analysis**")
+    
+    if abs(correction) > 0.01:
+        if correction > 0:
+            st.success(f"📈 **Applied +{correction*100:.1f}% correction**")
+            st.write(f"Base model: {base_prob*100:.1f}% → Final: {final_prob*100:.1f}%")
+        else:
+            st.info(f"📉 **Applied {correction*100:.1f}% correction**")
+            st.write(f"Base model: {base_prob*100:.1f}% → Final: {final_prob*100:.1f}%")
+    else:
+        st.write("🔄 **No correction applied**")
+        st.write(f"Trusting base model: {final_prob*100:.1f}%")
+
+# Display rationale
+st.info(f"**Rationale:** {prediction['rationale']}")
+
+# ========== PHASE 3: DETAILED ANALYSIS ==========
+if show_detailed_analysis:
     st.divider()
-    st.header("🛡️ Defensive Confirmation Layer")
+    st.header("🔍 Detailed Analysis")
     
-    confirmation_model = DefensiveConfirmationModel(league_avg_xga, league_std_xga)
-    defensive_analysis = confirmation_model.analyze_defensive_gap(home_stats, away_stats)
+    # Team Scores
+    col_team1, col_team2 = st.columns(2)
     
-    # Assess confidence in main prediction
-    confidence_level, confidence_reason, confidence_score = confirmation_model.assess_confidence(
-        over_25_prob * 100, defensive_analysis
-    )
+    with col_team1:
+        st.subheader(f"🏠 {home_team} Analysis")
+        home_scores = prediction['team_scores']['home']
+        create_team_score_display(home_scores, home_team, True)
+        
+        # Additional stats
+        st.write("**Additional Stats:**")
+        col_h1, col_h2 = st.columns(2)
+        with col_h1:
+            st.metric("xG/match", f"{home_scores['xg_per_match']:.2f}")
+        with col_h2:
+            st.metric("xGA/match", f"{home_scores['xga_per_match']:.2f}")
     
-    # Display confirmation analysis
+    with col_team2:
+        st.subheader(f"✈️ {away_team} Analysis")
+        away_scores = prediction['team_scores']['away']
+        create_team_score_display(away_scores, away_team, False)
+        
+        # Additional stats
+        st.write("**Additional Stats:**")
+        col_a1, col_a2 = st.columns(2)
+        with col_a1:
+            st.metric("xG/match", f"{away_scores['xg_per_match']:.2f}")
+        with col_a2:
+            st.metric("xGA/match", f"{away_scores['xga_per_match']:.2f}")
+    
+    # Expected Goals Comparison
+    st.subheader("🎯 Expected Goals")
+    
+    col_xg1, col_xg2, col_xg3 = st.columns(3)
+    
+    with col_xg1:
+        home_xg = prediction['expected_goals']['home']
+        st.metric(f"{home_team} xG", f"{home_xg:.2f}")
+    
+    with col_xg2:
+        away_xg = prediction['expected_goals']['away']
+        st.metric(f"{away_team} xG", f"{away_xg:.2f}")
+    
+    with col_xg3:
+        total_xg = prediction['expected_goals']['total']
+        st.metric("Total xG", f"{total_xg:.2f}")
+        
+        # Scoring expectation
+        if total_xg > 3.0:
+            st.success("Very high scoring expected")
+        elif total_xg > 2.5:
+            st.info("High scoring expected")
+        elif total_xg > 2.0:
+            st.warning("Moderate scoring expected")
+        else:
+            st.error("Low scoring expected")
+    
+    # Base vs Final Comparison
+    st.subheader("🔄 Model Comparison")
+    
+    col_base1, col_base2, col_base3 = st.columns(3)
+    
+    with col_base1:
+        st.metric("Base Model", f"{prediction['base_probability']*100:.1f}%")
+    
+    with col_base2:
+        correction_display = f"{prediction['correction_applied']*100:+.1f}%"
+        st.metric("Correction Applied", correction_display)
+    
+    with col_base3:
+        st.metric("Final Prediction", f"{prediction['final_probability']*100:.1f}%",
+                 delta=f"{prediction['direction']}")
+    
+    # Confidence Metrics
+    st.subheader("📊 Confidence Metrics")
+    
     col_conf1, col_conf2, col_conf3 = st.columns(3)
     
     with col_conf1:
-        signal = defensive_analysis['signal']
-        if "OVER" in signal:
-            st.success(f"**Defensive Signal:** {signal}")
-        elif "UNDER" in signal:
-            st.info(f"**Defensive Signal:** {signal}")
-        else:
-            st.warning(f"**Defensive Signal:** {signal}")
+        distance = prediction['distance_from_50']
+        st.metric("Distance from 50%", f"{distance:.3f}")
         
-        gap_score = defensive_analysis['gap_score']
-        st.metric("Gap Score", f"{gap_score:.2f}σ")
+        if distance > 0.2:
+            st.success("Strong signal")
+        elif distance > 0.1:
+            st.warning("Moderate signal")
+        else:
+            st.error("Weak signal")
     
     with col_conf2:
-        home_def_score = defensive_analysis['home_def_score']
-        st.metric(f"{home_team} Defense", f"{home_def_score:.2f}σ",
-                 delta="Strong" if home_def_score < 0 else "Weak")
-    
-    with col_conf3:
-        away_def_score = defensive_analysis['away_def_score']
-        st.metric(f"{away_team} Defense", f"{away_def_score:.2f}σ",
-                 delta="Strong" if away_def_score < 0 else "Weak")
-    
-    st.info(defensive_analysis['explanation'])
-    
-    # Display confidence assessment
-    st.subheader("🔍 Confidence Assessment")
-    
-    col_conf_assess1, col_conf_assess2 = st.columns([2, 1])
-    
-    with col_conf_assess1:
-        if confidence_level == "HIGH":
-            st.success(f"**Confidence Level: HIGH** 🎯 (Score: {confidence_score:.2f})")
-            st.write(f"*{confidence_reason}*")
-            st.info("Main model prediction has strong defensive confirmation")
-        elif confidence_level == "MEDIUM":
-            st.warning(f"**Confidence Level: MEDIUM** ⚠️ (Score: {confidence_score:.2f})")
-            st.write(f"*{confidence_reason}*")
-            st.info("Proceed with standard caution - defensive context is neutral or mildly conflicting")
-        else:  # LOW
-            st.error(f"**Confidence Level: LOW** 🚨 (Score: {confidence_score:.2f})")
-            st.write(f"*{confidence_reason}*")
-            st.warning("Strong defensive signal contradicts main prediction - exercise high caution")
-    
-    with col_conf_assess2:
-        # Confidence score visualization
+        confidence_score = prediction['confidence_score']
         st.metric("Confidence Score", f"{confidence_score:.2f}")
         st.progress(confidence_score)
-        if confidence_score > 0.7:
-            st.caption("High confidence")
-        elif confidence_score > 0.5:
-            st.caption("Moderate confidence")
+    
+    with col_conf3:
+        st.metric("Prediction Strength", prediction['confidence'])
+        
+        if confidence == "VERY HIGH" or confidence == "HIGH":
+            st.success("High reliability")
+        elif confidence == "MEDIUM":
+            st.warning("Moderate reliability")
         else:
-            st.caption("Low confidence")
+            st.error("Low reliability")
     
-    # Action Recommendations
-    if show_action_recommendations:
-        st.subheader("🎯 Action Recommendations")
-        
-        action_recommendation = confirmation_model.get_action_recommendation(
-            over_25_prob * 100, confidence_level, confidence_score, defensive_analysis
-        )
-        
-        col_action1, col_action2, col_action3 = st.columns(3)
-        
-        with col_action1:
-            if action_recommendation['action'] == "NORMAL_STAKE":
-                st.success("**Action:** Normal Stake ✅")
-                st.metric("Stake Multiplier", "1.0x")
-            elif action_recommendation['action'] == "REDUCED_STAKE":
-                st.warning("**Action:** Reduced Stake ⚠️")
-                st.metric("Stake Multiplier", f"{action_recommendation['stake_multiplier']:.1f}x")
-            else:
-                st.error("**Action:** Avoid ❌")
-                st.metric("Stake Multiplier", "0.0x")
-        
-        with col_action2:
-            base_rec = action_recommendation['base_recommendation']
-            if base_rec == "OVER":
-                st.metric("Base Recommendation", "OVER 2.5", 
-                         delta=f"{over_25_prob*100:.1f}%")
-            else:
-                st.metric("Base Recommendation", "UNDER 2.5",
-                         delta=f"{under_25_prob*100:.1f}%")
-        
-        with col_action3:
-            st.metric("Confidence Impact", 
-                     f"{-((over_strength * 100) * (1 - confidence_score)):.1f}%",
-                     delta="Reduction" if confidence_score < 0.7 else "Neutral")
-        
-        st.info(f"**Advice:** {action_recommendation['advice']}")
-        
-        # Decision rationale
-        with st.expander("📋 Decision Rationale"):
-            st.write(f"""
-            1. **Main Model Prediction:** {over_25_prob*100:.1f}% Over 2.5 goals
-            2. **Defensive Signal:** {defensive_analysis['signal']} ({defensive_analysis['confidence']} confidence)
-            3. **Agreement Assessment:** {'Agree' if confidence_level == 'HIGH' else 'Partial' if confidence_level == 'MEDIUM' else 'Disagree'}
-            4. **Confidence Score:** {confidence_score:.2f} (translates to {action_recommendation['action'].replace('_', ' ').lower()})
-            5. **Recommendation:** {action_recommendation['advice']}
-            
-            **Key Insight:** When main model and defensive confirmation disagree (confidence LOW), 
-            the system recommends caution (reduced stake or avoid) rather than overriding the prediction.
-            """)
+    # Match Outcome Probabilities
+    st.subheader("🏆 Match Outcome Probabilities")
     
-    # Note: No override - prediction remains unchanged
-    st.caption("ℹ️ **Note:** Confirmation layer modulates confidence only - main prediction unchanged")
-
-# ========== SCORE PROBABILITIES ==========
-with st.expander("🎯 Most Likely Scores", expanded=True):
+    col_out1, col_out2, col_out3 = st.columns(3)
+    
+    with col_out1:
+        st.metric(f"{home_team} Win", f"{prediction['home_win_prob']*100:.1f}%")
+        st.progress(prediction['home_win_prob'])
+    
+    with col_out2:
+        st.metric("Draw", f"{prediction['draw_prob']*100:.1f}%")
+        st.progress(prediction['draw_prob'])
+    
+    with col_out3:
+        st.metric(f"{away_team} Win", f"{prediction['away_win_prob']*100:.1f}%")
+        st.progress(prediction['away_win_prob'])
+    
+    # Additional Betting Markets
+    st.subheader("💰 Additional Markets")
+    
+    col_mkt1, col_mkt2 = st.columns(2)
+    
+    with col_mkt1:
+        st.metric("Both Teams to Score", f"{prediction['btts_yes_prob']*100:.1f}%")
+        st.progress(prediction['btts_yes_prob'])
+    
+    with col_mkt2:
+        st.metric("Clean Sheet Probability", f"{prediction['btts_no_prob']*100:.1f}%")
+        st.progress(prediction['btts_no_prob'])
+    
+    # Most Likely Scores
+    st.subheader("🎯 Most Likely Scores")
+    
+    prob_matrix = create_probability_matrix(prediction['expected_goals']['home'], 
+                                          prediction['expected_goals']['away'])
+    
     score_probs = []
     for i in range(min(6, prob_matrix.shape[0])):
         for j in range(min(6, prob_matrix.shape[1])):
@@ -1067,252 +927,208 @@ with st.expander("🎯 Most Likely Scores", expanded=True):
         most_likely_score, most_likely_prob = score_probs[0]
         st.success(f"**Most Likely Score:** {most_likely_score[0]}-{most_likely_score[1]} ({(most_likely_prob*100):.1f}%)")
 
-# ========== OUTCOME PROBABILITIES ==========
-with st.expander("📊 Match Outcome Probabilities", expanded=True):
-    create_correct_outcome_display(home_win_prob, draw_prob, away_win_prob, home_team, away_team)
-    
-    col_met1, col_met2, col_met3 = st.columns(3)
-    with col_met1:
-        st.metric(f"{home_team} Win", f"{home_win_prob*100:.1f}%")
-    with col_met2:
-        st.metric("Draw", f"{draw_prob*100:.1f}%")
-    with col_met3:
-        st.metric(f"{away_team} Win", f"{away_win_prob*100:.1f}%")
-
-# ========== VALIDATION DASHBOARD ==========
-if show_validation:
+# ========== PHASE 4: VALIDATION DASHBOARD ==========
+if show_validation and st.session_state.validation_history['match_count'] > 0:
     st.divider()
-    st.header("📊 Operational Validation Dashboard")
+    st.header("📊 Validation Dashboard")
     
-    metrics = ValidationTracker.calculate_validation_metrics()
-    status = ValidationTracker.get_validation_status(metrics)
+    total_matches = st.session_state.validation_history['match_count']
+    match_types = st.session_state.validation_history['match_type_distribution']
+    predictions = st.session_state.validation_history['prediction_history']
     
-    # Display validation results
+    # Summary Statistics
     col_val1, col_val2, col_val3 = st.columns(3)
     
     with col_val1:
-        st.subheader("Confidence Calibration")
-        calibration = metrics.get('confidence_calibration', {})
-        if calibration:
-            for level, data in calibration.items():
-                acc = data['accuracy']
-                samples = data['samples']
-                rel = data['reliability']
-                
-                if level == 'HIGH' and acc >= 0.65:
-                    st.success(f"{level}: {acc:.1%} ✅")
-                elif level == 'MEDIUM' and 0.5 <= acc <= 0.7:
-                    st.info(f"{level}: {acc:.1%} ⚠️")
-                elif level == 'LOW' and acc <= 0.55:
-                    st.warning(f"{level}: {acc:.1%} 🚨")
-                else:
-                    st.error(f"{level}: {acc:.1%} ❌")
-                
-                st.caption(f"{samples} samples, {rel} reliability")
-        else:
-            st.info("Insufficient data")
+        st.metric("Total Predictions", total_matches)
     
     with col_val2:
-        st.subheader("Model Resolution")
-        resolution = metrics.get('resolution', {})
-        if resolution:
-            decisiveness = resolution.get('decisiveness', 'LOW')
-            distance = resolution.get('distance_from_50', 0)
-            pred_range = resolution.get('prediction_range', 'N/A')
-            
-            if decisiveness == 'HIGH':
-                st.success(f"**Decisiveness:** HIGH ✅")
-                st.metric("Distance from 50%", f"{distance:.3f}")
-            elif decisiveness == 'MODERATE':
-                st.warning(f"**Decisiveness:** MODERATE ⚠️")
-                st.metric("Distance from 50%", f"{distance:.3f}")
-            else:
-                st.error(f"**Decisiveness:** LOW ❌")
-                st.metric("Distance from 50%", f"{distance:.3f}")
-            
-            st.caption(f"Prediction range: {pred_range}")
-        else:
-            st.info("Insufficient data")
+        avg_correction = np.mean([p['correction'] for p in predictions]) * 100
+        st.metric("Avg Correction", f"{avg_correction:+.1f}%")
     
     with col_val3:
-        st.subheader("Action Performance")
-        actions = metrics.get('action_performance', {})
-        if actions:
-            avg_accuracy = np.mean([data['accuracy'] for data in actions.values()])
-            total_samples = sum([data['samples'] for data in actions.values()])
+        over_predictions = sum(1 for p in predictions if p['final_prob'] > 0.5)
+        over_percentage = (over_predictions / total_matches) * 100
+        st.metric("Over Predictions", f"{over_percentage:.1f}%")
+    
+    # Match Type Distribution
+    st.subheader("📈 Match Type Distribution")
+    
+    type_df = pd.DataFrame({
+        'Match Type': list(match_types.keys()),
+        'Count': list(match_types.values()),
+        'Percentage': [(count / total_matches) * 100 for count in match_types.values()]
+    })
+    
+    if not type_df.empty:
+        col_chart1, col_chart2 = st.columns(2)
+        
+        with col_chart1:
+            st.dataframe(type_df.style.format({'Percentage': '{:.1f}%'}))
+        
+        with col_chart2:
+            # Simple bar chart using matplotlib
+            import matplotlib.pyplot as plt
             
-            if avg_accuracy > 0.55:
-                st.success(f"**Accuracy:** {avg_accuracy:.1%} ✅")
-            elif avg_accuracy > 0.5:
-                st.warning(f"**Accuracy:** {avg_accuracy:.1%} ⚠️")
-            else:
-                st.error(f"**Accuracy:** {avg_accuracy:.1%} ❌")
+            fig, ax = plt.subplots(figsize=(8, 4))
+            colors = [type_colors.get(t, '#9E9E9E') for t in type_df['Match Type']]
+            bars = ax.bar(type_df['Match Type'], type_df['Count'], color=colors)
             
-            st.metric("Total Samples", total_samples)
+            # Add count labels on bars
+            for bar in bars:
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                       f'{int(height)}', ha='center', va='bottom')
             
-            # Show breakdown
-            with st.expander("Breakdown"):
-                for action_type, data in actions.items():
-                    st.write(f"{action_type}: {data['accuracy']:.1%} ({data['samples']})")
-        else:
-            st.info("Insufficient data")
+            ax.set_ylabel('Count')
+            ax.set_title('Match Type Distribution')
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            st.pyplot(fig)
     
-    # Overall validation status with operational guidance
-    st.subheader("Overall Operational Status")
+    # Correction Analysis
+    st.subheader("🔄 Correction Analysis")
     
-    overall_status = status.get('overall', 'INSUFFICIENT_DATA')
+    corrections = [p['correction'] * 100 for p in predictions]
     
-    if overall_status == 'PASS':
-        st.success("""
-        ✅ **System Properly Calibrated**
+    if corrections:
+        col_corr1, col_corr2, col_corr3 = st.columns(3)
         
-        **Operational Guidance:**
-        - Confidence levels accurately reflect prediction reliability
-        - Model shows good decisiveness in predictions
-        - Action recommendations have proven accuracy
-        - **Proceed with normal decision-making**
-        """)
-    
-    elif overall_status == 'WARNING':
-        st.warning("""
-        ⚠️ **System Has Warnings**
+        with col_corr1:
+            avg_corr = np.mean(corrections)
+            st.metric("Average Correction", f"{avg_corr:+.1f}%")
         
-        **Operational Guidance:**
-        - Some metrics need attention (check details above)
-        - Model may be too cautious or too aggressive
-        - **Proceed with increased caution**
-        - Consider reducing stake sizes until calibration improves
-        """)
-    
-    elif overall_status == 'NEEDS_CALIBRATION':
-        st.error("""
-        ❌ **System Needs Calibration**
+        with col_corr2:
+            max_corr = np.max(corrections)
+            st.metric("Maximum Correction", f"{max_corr:+.1f}%")
         
-        **Operational Guidance:**
-        - Confidence levels don't match actual accuracy
-        - Action recommendations underperforming
-        - **Avoid significant decisions**
-        - Use system for informational purposes only
-        - Collect more data for recalibration
-        """)
-    
-    else:
-        st.info("""
-        📊 **Insufficient Data for Validation**
+        with col_corr3:
+            min_corr = np.min(corrections)
+            st.metric("Minimum Correction", f"{min_corr:+.1f}%")
         
-        **Operational Guidance:**
-        - System needs more predictions to establish reliability
-        - **Use with caution** - early stage
-        - Track your own results to validate system performance
-        - Recommendations based on theoretical framework, not empirical evidence
-        """)
+        # Correction distribution
+        st.write("**Correction Distribution:**")
+        
+        # Create bins for correction sizes
+        correction_bins = {
+            "Large Negative (< -20%)": len([c for c in corrections if c < -20]),
+            "Moderate Negative (-20% to -5%)": len([c for c in corrections if -20 <= c < -5]),
+            "Small (-5% to 5%)": len([c for c in corrections if -5 <= c <= 5]),
+            "Moderate Positive (5% to 20%)": len([c for c in corrections if 5 < c <= 20]),
+            "Large Positive (> 20%)": len([c for c in corrections if c > 20])
+        }
+        
+        for label, count in correction_bins.items():
+            percentage = (count / len(corrections)) * 100
+            st.write(f"  {label}: {count} ({percentage:.1f}%)")
+    
+    # Recent Predictions
+    st.subheader("📋 Recent Predictions")
+    
+    if len(predictions) > 0:
+        recent_predictions = predictions[-10:]  # Last 10 predictions
+        display_data = []
+        
+        for pred in recent_predictions:
+            display_data.append({
+                'Home': pred['home_team'],
+                'Away': pred['away_team'],
+                'Type': pred['match_type'],
+                'Base %': f"{pred['base_prob']*100:.1f}",
+                'Final %': f"{pred['final_prob']*100:.1f}",
+                'Correction': f"{pred['correction']*100:+.1f}",
+                'Confidence': pred['confidence']
+            })
+        
+        st.dataframe(pd.DataFrame(display_data), use_container_width=True)
 
-# ========== OUTPUT FORMATS ==========
+# ========== PHASE 5: EXPORT PREDICTION ==========
 st.divider()
-st.header("📤 Export & Share")
+st.header("📤 Export Prediction")
 
-# Fix the formatting issue by separating conditional logic
-if enable_confirmation_layer:
-    gap_display = f"{defensive_analysis['gap_score']:.2f}"
-    signal_display = defensive_analysis['signal']
-    confidence_display = defensive_analysis['confidence']
-    
-    if show_action_recommendations and 'action_recommendation' in locals():
-        action_display = action_recommendation['action'].replace('_', ' ')
-        advice_display = action_recommendation['advice']
-        action_summary = f"""
-    • Recommended Action: {action_display}
-    • Stake Multiplier: {action_recommendation['stake_multiplier']:.1f}x
-    • Advice: {advice_display}
-        """
-    else:
-        action_summary = ""
-    
-    confirmation_summary = f"""
-    🛡️ DEFENSIVE CONFIRMATION LAYER:
-    • Signal: {signal_display}
-    • Confidence: {confidence_display}
-    • Gap Score: {gap_display}
-    • Confidence Level: {confidence_level} (Score: {confidence_score:.2f})
-    • Reason: {confidence_reason}
-    {action_summary}
-    """
-else:
-    confirmation_summary = "    🛡️ DEFENSIVE CONFIRMATION LAYER: Disabled"
-
-# Get validation insights
-metrics = ValidationTracker.calculate_validation_metrics()
-resolution = metrics.get('resolution', {})
-decisiveness = resolution.get('decisiveness', 'N/A')
-distance_from_50 = resolution.get('distance_from_50', 0)
-
+# Create comprehensive summary
 summary = f"""
-⚽ FOOTBALL MATCH PREDICTION: {home_team} vs {away_team}
+⚽ UNIFIED FOOTBALL PREDICTION
+Match: {home_team} vs {away_team}
 League: {selected_league}
+Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 
-📊 MAIN MODEL PREDICTIONS:
-• Expected Goals: {home_team} {home_xg:.2f} - {away_team} {away_xg:.2f}
-• Total xG: {home_xg + away_xg:.2f}
-• Over 2.5 Goals: {over_25_prob*100:.1f}% (Strength: {abs(over_25_prob-0.5):.3f})
-• Under 2.5 Goals: {under_25_prob*100:.1f}%
-• Both Teams to Score: {btts_yes_prob*100:.1f}%
+🎯 FINAL PREDICTION
+{direction} 2.5 Goals: {final_prob*100:.1f}%
+Confidence: {confidence} (Score: {prediction['confidence_score']:.2f})
 
-{confirmation_summary}
+📋 MATCH ANALYSIS
+Match Type: {match_type}
+Rationale: {prediction['rationale']}
 
-📈 MODEL CHARACTERISTICS:
-• Decisiveness: {decisiveness}
-• Avg distance from 50%: {distance_from_50:.3f}
-• Most predictions in range: {resolution.get('prediction_range', 'N/A')}
+⚽ EXPECTED GOALS
+{home_team}: {prediction['expected_goals']['home']:.2f} xG
+{away_team}: {prediction['expected_goals']['away']:.2f} xG
+Total: {prediction['expected_goals']['total']:.2f} xG
 
-🎯 Most Likely Score: {score_probs[0][0][0] if score_probs else 'N/A'}-{score_probs[0][0][1] if score_probs else 'N/A'} ({(score_probs[0][1]*100 if score_probs else 0):.1f}%)
+📊 TEAM SCORES (vs League Average)
+{home_team} Attack: {prediction['team_scores']['home']['attack_score']:.2f}σ
+{home_team} Defense: {prediction['team_scores']['home']['defense_score']:.2f}σ
+{away_team} Attack: {prediction['team_scores']['away']['attack_score']:.2f}σ
+{away_team} Defense: {prediction['team_scores']['away']['defense_score']:.2f}σ
 
-🏆 Match Outcome Probabilities:
-• {home_team} Win: {home_win_prob*100:.1f}%
-• Draw: {draw_prob*100:.1f}%
-• {away_team} Win: {away_win_prob*100:.1f}%
+🔄 MODEL COMPARISON
+Base Model Probability: {prediction['base_probability']*100:.1f}%
+Applied Correction: {prediction['correction_applied']*100:+.1f}%
+Correction Rationale: {prediction['rationale']}
 
-📅 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-Regression Factor: {regression_factor}
+🏆 ADDITIONAL PROBABILITIES
+{home_team} Win: {prediction['home_win_prob']*100:.1f}%
+Draw: {prediction['draw_prob']*100:.1f}%
+{away_team} Win: {prediction['away_win_prob']*100:.1f}%
+Both Teams to Score: {prediction['btts_yes_prob']*100:.1f}%
+
+🎯 KEY INSIGHTS
+• Distance from 50%: {prediction['distance_from_50']:.3f}
+• Prediction Strength: {prediction['confidence']}
+• Match Type: {match_type}
+
+🔧 SYSTEM PARAMETERS
+League Avg xG: {league_baselines['avg_xg']:.2f}
+League Avg xGA: {league_baselines['avg_xga']:.2f}
+Max Correction: ±{MAX_CORRECTION*100:.0f}%
+Max Regression: ±{MAX_REGRESSION*100:.0f}%
+
+---
+Generated by Unified Football xG Predictor
+"Goals happen when attacks overcome defenses"
 """
 
 st.code(summary, language="text")
 
-col_export1, col_export2 = st.columns(2)
+# Export buttons
+col_exp1, col_exp2 = st.columns(2)
 
-with col_export1:
+with col_exp1:
     st.download_button(
         label="📥 Download Summary",
         data=summary,
-        file_name=f"prediction_{home_team}_vs_{away_team}.txt",
+        file_name=f"unified_prediction_{home_team}_vs_{away_team}.txt",
         mime="text/plain"
     )
 
-with col_export2:
-    if st.button("🔄 Reset Validation History"):
+with col_exp2:
+    if st.button("🔄 Reset Validation Data"):
         st.session_state.validation_history = {
-            'main_model_accuracy': deque(maxlen=100),
-            'confidence_calibration': defaultdict(lambda: deque(maxlen=50)),
-            'resolution_history': deque(maxlen=100),
-            'agreement_tracking': defaultdict(lambda: deque(maxlen=50)),
-            'action_recommendations': defaultdict(lambda: deque(maxlen=50)),
-            'match_count': 0,
-            'prediction_history': []
+            'prediction_history': deque(maxlen=200),
+            'match_type_distribution': defaultdict(int),
+            'correction_effectiveness': defaultdict(lambda: deque(maxlen=50)),
+            'match_count': 0
         }
-        st.success("Validation history reset!")
+        st.success("Validation data reset!")
         st.rerun()
 
 # ========== FOOTER ==========
 st.divider()
-footer_text = f"⚡ xG prediction system with operational confidence assessment"
-if enable_confirmation_layer and 'confidence_level' in locals():
-    footer_text += f" | Confidence: {confidence_level}"
-if show_action_recommendations and 'action_recommendation' in locals():
-    footer_text += f" | Action: {action_recommendation['action']}"
-footer_text += f" | Validation: {status.get('overall', 'N/A')}"
-footer_text += f" | {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+footer_text = f"🎯 Unified Prediction: {direction} 2.5 ({final_prob*100:.1f}%) | Match Type: {match_type} | Confidence: {confidence}"
 st.caption(footer_text)
 
-# ========== SAMPLE DATA CREATION INSTRUCTIONS ==========
+# ========== DATA FORMAT INSTRUCTIONS ==========
 with st.sidebar.expander("📁 Data Format Instructions"):
     st.markdown("""
     **CSV Format Requirements:**
@@ -1329,4 +1145,10 @@ with st.sidebar.expander("📁 Data Format Instructions"):
     - laliga.csv
     - ligue_1.csv
     - eredivisie.csv
+    
+    **Match Type Classifications:**
+    1. **DEFENSIVE_TACTICAL**: Elite defenses, non-elite attacks
+    2. **ATTACK_DOMINANCE**: Elite attack vs weak defense
+    3. **DEFENSIVE_WEAKNESS**: Both teams have weak defenses
+    4. **STANDARD**: All other matches
     """)
