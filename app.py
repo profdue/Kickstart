@@ -4,6 +4,7 @@ import numpy as np
 import math
 from datetime import datetime
 import warnings
+import plotly.graph_objects as go
 warnings.filterwarnings('ignore')
 
 # Page config
@@ -166,7 +167,6 @@ class DefensiveGapModel:
         else:
             dg_direction = "NEUTRAL"
         
-        # Consensus logic
         if main_signal == "NEUTRAL" and dg_direction == "NEUTRAL":
             return "NO_BET", "Both models uncertain", "⚪"
         
@@ -302,22 +302,63 @@ def calculate_betting_markets(prob_matrix):
     
     return over_25, under_25, btts_yes, btts_no
 
-def create_properly_ordered_chart_data(home_win_prob, draw_prob, away_win_prob):
-    """Create chart data with correct ordering to prevent visualization bugs"""
-    # Define the desired display order
-    display_order = ['Home Win', 'Draw', 'Away Win']
+def create_correct_outcome_chart(home_win_prob, draw_prob, away_win_prob, home_team, away_team):
+    """Create properly ordered outcome chart using Plotly"""
+    categories = [f'{home_team} Win', 'Draw', f'{away_team} Win']
+    probabilities = [home_win_prob, draw_prob, away_win_prob]
     
-    # Create DataFrame with correct mapping
-    outcome_data = pd.DataFrame({
-        'Outcome': display_order,
-        'Probability': [home_win_prob, draw_prob, away_win_prob]
-    })
+    # Colors for each outcome
+    colors = ['#1f77b4', '#2ca02c', '#ff7f0e']  # Blue, Green, Orange
     
-    # Set index and maintain order
-    outcome_data = outcome_data.set_index('Outcome')
-    outcome_data = outcome_data.reindex(display_order)
+    fig = go.Figure(data=[
+        go.Bar(
+            x=categories,
+            y=probabilities,
+            text=[f'{p*100:.1f}%' for p in probabilities],
+            textposition='auto',
+            marker_color=colors,
+            hovertemplate='<b>%{x}</b><br>Probability: %{y:.1%}<extra></extra>'
+        )
+    ])
     
-    return outcome_data
+    fig.update_layout(
+        title='Match Outcome Probabilities',
+        xaxis_title='Outcome',
+        yaxis_title='Probability',
+        yaxis=dict(tickformat='.0%', range=[0, 1]),
+        showlegend=False,
+        height=400,
+        margin=dict(t=50, b=50, l=50, r=50)
+    )
+    
+    return fig
+
+def create_expected_goals_chart(home_xg, away_xg, home_team, away_team):
+    """Create expected goals chart using Plotly"""
+    teams = [home_team, away_team]
+    xg_values = [home_xg, away_xg]
+    
+    fig = go.Figure(data=[
+        go.Bar(
+            x=teams,
+            y=xg_values,
+            text=[f'{xg:.2f}' for xg in xg_values],
+            textposition='auto',
+            marker_color=['#1f77b4', '#ff7f0e'],
+            hovertemplate='<b>%{x}</b><br>Expected Goals: %{y:.2f}<extra></extra>'
+        )
+    ])
+    
+    fig.update_layout(
+        title='Expected Goals',
+        xaxis_title='Team',
+        yaxis_title='Expected Goals',
+        showlegend=False,
+        height=300,
+        margin=dict(t=50, b=50, l=50, r=50)
+    )
+    
+    return fig
 
 # ========== SIDEBAR CONTROLS ==========
 with st.sidebar:
@@ -433,12 +474,9 @@ with col3:
     
     st.subheader("🎯 Expected Goals (Main Model)")
     
-    xg_data = pd.DataFrame({
-        'Team': [home_team, away_team],
-        'Expected Goals': [home_xg, away_xg]
-    })
-    
-    st.bar_chart(xg_data.set_index('Team'))
+    # Use Plotly for correct visualization
+    xg_chart = create_expected_goals_chart(home_xg, away_xg, home_team, away_team)
+    st.plotly_chart(xg_chart, use_container_width=True)
     
     col_xg1, col_xg2, col_xg3 = st.columns(3)
     with col_xg1:
@@ -484,22 +522,14 @@ if enable_defensive_model:
         st.metric("Gap Score", f"{defensive_analysis['gap_score']:.2f}")
     
     with col_def2:
-        home_def_score = defensive_analysis['home_def_score']
-        delta_text = "Strong" if home_def_score < 0 else "Weak"
-        st.metric("Home Defense", f"{home_def_score:.2f}σ", delta=delta_text)
+        st.metric("Home Defense", f"{defensive_analysis['home_def_score']:.2f}σ",
+                 delta="Strong" if defensive_analysis['home_def_score'] < 0 else "Weak")
     
     with col_def3:
-        away_def_score = defensive_analysis['away_def_score']
-        delta_text = "Strong" if away_def_score < 0 else "Weak"
-        st.metric("Away Defense", f"{away_def_score:.2f}σ", delta=delta_text)
+        st.metric("Away Defense", f"{defensive_analysis['away_def_score']:.2f}σ",
+                 delta="Strong" if defensive_analysis['away_def_score'] < 0 else "Weak")
     
     st.info(defensive_analysis['explanation'])
-    
-    with st.expander("📊 League Context"):
-        st.write(f"**League:** {selected_league}")
-        st.write(f"Average xGA/match: {league_avg_xga:.2f}")
-        st.write(f"Standard Deviation: {league_std_xga:.2f}")
-        st.write(f"Thresholds: Over > {STRONG_OVER_THRESHOLD}, Under < {STRONG_UNDER_THRESHOLD}")
 
 # ========== PHASE 4: CONSENSUS ANALYSIS ==========
 if enable_defensive_model and show_consensus:
@@ -536,22 +566,6 @@ if enable_defensive_model and show_consensus:
             st.warning(f"⚪ **NO CLEAR SIGNAL** {bet_icon}")
         
         st.write(bet_reason)
-        
-        with st.expander("📋 Decision Matrix"):
-            st.write("""
-            | Main Model | Defensive Model | Consensus | Action |
-            |------------|-----------------|-----------|--------|
-            | Strong Over | Strong Over | ✅ Strong Agreement | Strong Bet |
-            | Strong Over | Strong Under | ❌ Strong Conflict | Avoid Bet |
-            | Strong Over | Neutral | 🟠 Main Only | Caution |
-            | Neutral | Strong Over | 🔵 Defensive Only | Consider |
-            | Both Neutral | - | ⚪ No Signal | No Bet |
-            """)
-    
-    with col_cons3:
-        st.subheader("Defensive Model")
-        st.metric("Signal", defensive_analysis['signal'])
-        st.metric("Confidence", defensive_analysis['confidence'])
 
 # ========== LAYER 5: SCORE PROBABILITIES ==========
 with st.expander("🎯 Most Likely Scores", expanded=True):
@@ -582,7 +596,7 @@ with st.expander("📊 Match Outcome Probabilities", expanded=True):
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Home Win", f"{home_win_prob*100:.1f}%")
+        st.metric(f"{home_team} Win", f"{home_win_prob*100:.1f}%")
         st.progress(home_win_prob)
     
     with col2:
@@ -590,14 +604,12 @@ with st.expander("📊 Match Outcome Probabilities", expanded=True):
         st.progress(draw_prob)
     
     with col3:
-        st.metric("Away Win", f"{away_win_prob*100:.1f}%")
+        st.metric(f"{away_team} Win", f"{away_win_prob*100:.1f}%")
         st.progress(away_win_prob)
     
-    # FIXED: Create properly ordered chart data
-    outcome_data = create_properly_ordered_chart_data(home_win_prob, draw_prob, away_win_prob)
-    
-    # Create custom bar chart with correct ordering
-    st.bar_chart(outcome_data)
+    # Use Plotly for correct visualization
+    outcome_chart = create_correct_outcome_chart(home_win_prob, draw_prob, away_win_prob, home_team, away_team)
+    st.plotly_chart(outcome_chart, use_container_width=True)
 
 # ========== LAYER 7: BETTING MARKETS ==========
 with st.expander("💰 Betting Markets", expanded=True):
@@ -616,53 +628,6 @@ with st.expander("💰 Betting Markets", expanded=True):
         st.progress(btts_yes_prob)
         st.metric("No", f"{btts_no_prob*100:.1f}%")
         st.progress(btts_no_prob)
-    
-    st.subheader("Implied Odds")
-    col_odds1, col_odds2, col_odds3 = st.columns(3)
-    with col_odds1:
-        if home_win_prob > 0:
-            odds = 1 / home_win_prob
-            st.metric("Home Win Odds", f"{odds:.2f}")
-    
-    with col_odds2:
-        if draw_prob > 0:
-            odds = 1 / draw_prob
-            st.metric("Draw Odds", f"{odds:.2f}")
-    
-    with col_odds3:
-        if away_win_prob > 0:
-            odds = 1 / away_win_prob
-            st.metric("Away Win Odds", f"{odds:.2f}")
-
-# ========== LAYER 8: RISK ASSESSMENT ==========
-with st.expander("⚠️ Risk Assessment", expanded=False):
-    flags = []
-    
-    if enable_defensive_model:
-        bet_rec, _, _ = defensive_model.get_bet_recommendation(
-            defensive_analysis, over_25_prob * 100, under_25_prob * 100
-        )
-        
-        if bet_rec in ["CONFLICT_AVOID", "WEAK_CONFLICT"]:
-            flags.append("❌ **Model Conflict**: Main and defensive models disagree on Over/Under")
-        elif bet_rec == "STRONG_BET":
-            flags.append("✅ **Strong Consensus**: Both models agree on direction")
-    
-    if home_xg > 2.5 or away_xg > 2.5:
-        flags.append("⚠️ **Extreme xG**: One team expected to score > 2.5 goals")
-    
-    if abs(home_attack_reg) > 0.2 or abs(away_attack_reg) > 0.2:
-        flags.append("⚠️ **High Regression**: Significant over/underperformance adjustment")
-    
-    if enable_defensive_model:
-        if defensive_analysis['home_def_score'] > 1.5 or defensive_analysis['away_def_score'] > 1.5:
-            flags.append("🛡️ **Very Weak Defense**: One team concedes significantly more than league average")
-    
-    if flags:
-        for flag in flags:
-            st.warning(flag)
-    else:
-        st.success("No significant risk flags identified")
 
 # ========== OUTPUT FORMATS ==========
 st.divider()
@@ -681,8 +646,7 @@ League: {selected_league}
 🛡️ DEFENSIVE GAP MODEL:
 • Signal: {defensive_analysis['signal'] if enable_defensive_model else 'N/A'}
 • Confidence: {defensive_analysis['confidence'] if enable_defensive_model else 'N/A'}
-• Gap Score: {defensive_analysis['gap_score']:.2f if enable_defensive_model else 'N/A'}
-• Explanation: {defensive_analysis['explanation'] if enable_defensive_model else 'N/A'}
+• Gap Score: {defensive_analysis['gap_score']:.2f} if enable_defensive_model else 'N/A'
 
 ✅ CONSENSUS ANALYSIS:
 • Recommendation: {bet_rec if enable_defensive_model else 'N/A'}
@@ -697,7 +661,6 @@ League: {selected_league}
 
 📅 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 Regression Factor: {regression_factor}
-Dual Model Enabled: {enable_defensive_model}
 """
 
 st.code(summary, language="text")
@@ -708,42 +671,8 @@ with col_export1:
     st.download_button(
         label="📥 Download Summary",
         data=summary,
-        file_name=f"dual_model_prediction_{home_team}_vs_{away_team}.txt",
+        file_name=f"prediction_{home_team}_vs_{away_team}.txt",
         mime="text/plain"
-    )
-
-with col_export2:
-    export_data = {
-        'Metric': [
-            'Home Team', 'Away Team', 'League', 'Home xG', 'Away xG', 'Total xG',
-            'Over 2.5 %', 'Under 2.5 %', 'BTTS Yes %', 'BTTS No %',
-            'Home Win %', 'Draw %', 'Away Win %',
-            'Defensive Signal', 'Defensive Confidence', 'Gap Score',
-            'Consensus Recommendation', 'Most Likely Score', 'Regression Factor'
-        ],
-        'Value': [
-            home_team, away_team, selected_league,
-            f"{home_xg:.2f}", f"{away_xg:.2f}", f"{home_xg+away_xg:.2f}",
-            f"{over_25_prob*100:.1f}", f"{under_25_prob*100:.1f}",
-            f"{btts_yes_prob*100:.1f}", f"{btts_no_prob*100:.1f}",
-            f"{home_win_prob*100:.1f}", f"{draw_prob*100:.1f}", f"{away_win_prob*100:.1f}",
-            defensive_analysis['signal'] if enable_defensive_model else 'N/A',
-            defensive_analysis['confidence'] if enable_defensive_model else 'N/A',
-            f"{defensive_analysis['gap_score']:.2f}" if enable_defensive_model else 'N/A',
-            bet_rec if enable_defensive_model else 'N/A',
-            f"{score_probs[0][0][0] if score_probs else 'N/A'}-{score_probs[0][0][1] if score_probs else 'N/A'}",
-            f"{regression_factor}"
-        ]
-    }
-    
-    df_export = pd.DataFrame(export_data)
-    csv = df_export.to_csv(index=False)
-    
-    st.download_button(
-        label="📥 Download CSV",
-        data=csv,
-        file_name=f"dual_model_data_{home_team}_vs_{away_team}.csv",
-        mime="text/csv"
     )
 
 # ========== FOOTER ==========
