@@ -96,14 +96,11 @@ def prepare_team_data(df):
 
 def calculate_league_baselines(df):
     """Calculate league average xGA for defensive gap analysis"""
-    # Calculate xGA per match for all teams
     home_xga_per_match = df[df['venue'] == 'home']['xga'] / df[df['venue'] == 'home']['matches']
     away_xga_per_match = df[df['venue'] == 'away']['xga'] / df[df['venue'] == 'away']['matches']
     
-    # Combine home and away
     all_xga_per_match = pd.concat([home_xga_per_match, away_xga_per_match])
     
-    # Calculate league averages
     league_avg_xga = all_xga_per_match.mean()
     league_std_xga = all_xga_per_match.std()
     
@@ -121,14 +118,11 @@ class DefensiveGapModel:
         home_xga_per_match = home_stats['xga'] / max(home_stats['matches'], 1)
         away_xga_per_match = away_stats['xga'] / max(away_stats['matches'], 1)
         
-        # Calculate defensive scores relative to league
         home_def_score = (home_xga_per_match - self.league_avg_xga) / max(self.league_std_xga, 0.1)
         away_def_score = (away_xga_per_match - self.league_avg_xga) / max(self.league_std_xga, 0.1)
         
-        # Match defensive gap
         match_gap = home_def_score + away_def_score
         
-        # Determine signal
         if match_gap > STRONG_OVER_THRESHOLD:
             signal = "STRONG_OVER"
             confidence = "HIGH"
@@ -157,17 +151,14 @@ class DefensiveGapModel:
     
     def get_bet_recommendation(self, defensive_signal, main_over_prob, main_under_prob):
         """Generate consensus betting recommendation"""
-        main_over_threshold = 60  # 60% probability threshold
+        main_over_threshold = 60
         main_under_threshold = 60
         
-        # Main model signals
         main_signal = "OVER" if main_over_prob > main_over_threshold else "UNDER" if main_under_prob > main_under_threshold else "NEUTRAL"
         
-        # Defensive gap signals
         dg_signal = defensive_signal['signal']
         dg_confidence = defensive_signal['confidence']
         
-        # Determine consensus
         if dg_signal in ["STRONG_OVER", "MILD_OVER"]:
             dg_direction = "OVER"
         elif dg_signal in ["STRONG_UNDER", "MILD_UNDER"]:
@@ -180,25 +171,21 @@ class DefensiveGapModel:
             return "NO_BET", "Both models uncertain", "⚪"
         
         if main_signal == dg_direction:
-            # Strong agreement
             if dg_confidence == "HIGH":
                 return "STRONG_BET", f"Strong consensus on {main_signal}", "✅"
             else:
                 return "MODERATE_BET", f"Consensus on {main_signal} (medium confidence)", "🟡"
         
         elif main_signal == "NEUTRAL" and dg_direction != "NEUTRAL":
-            # Only defensive model has signal
             if dg_confidence == "HIGH":
                 return "CONSIDER_BET", f"Defensive model strongly suggests {dg_direction}", "🔵"
             else:
                 return "WEAK_BET", f"Defensive model suggests {dg_direction}", "⚪"
         
         elif dg_direction == "NEUTRAL" and main_signal != "NEUTRAL":
-            # Only main model has signal
             return "MAIN_MODEL_ONLY", f"Main model suggests {main_signal} (no defensive signal)", "🟠"
         
         else:
-            # Direct conflict
             if dg_confidence == "HIGH":
                 return "CONFLICT_AVOID", f"Strong conflict: Main {main_signal} vs Defensive {dg_direction}", "❌"
             else:
@@ -209,7 +196,6 @@ def calculate_regression_factors(home_team_stats, away_team_stats, regression_fa
     home_matches = home_team_stats['matches']
     away_matches = away_team_stats['matches']
     
-    # Base regression
     if home_matches >= REG_MATCH_THRESHOLD:
         home_base_reg = (home_team_stats['goals_vs_xg'] / home_matches) * regression_factor
     else:
@@ -220,14 +206,12 @@ def calculate_regression_factors(home_team_stats, away_team_stats, regression_fa
     else:
         away_base_reg = 0
     
-    # Asymmetric capping based on win rate
     home_wins = home_team_stats.get('wins', 0)
     away_wins = away_team_stats.get('wins', 0)
     
     home_win_rate = home_wins / max(home_matches, 1)
     away_win_rate = away_wins / max(away_matches, 1)
     
-    # Apply asymmetric capping
     if home_win_rate > 0.6:
         home_attack_reg = max(min(home_base_reg, MAX_REGRESSION), -MAX_REGRESSION)
     elif home_win_rate < 0.3:
@@ -252,11 +236,9 @@ def calculate_expected_goals(home_stats, away_stats, home_attack_reg, away_attac
     away_xg_per_match = away_stats['xg'] / max(away_stats['matches'], 1)
     home_xga_per_match = home_stats['xga'] / max(home_stats['matches'], 1)
     
-    # Geometric mean
     home_expected = np.sqrt(home_xg_per_match * away_xga_per_match) * (1 + home_attack_reg)
     away_expected = np.sqrt(away_xg_per_match * home_xga_per_match) * (1 + away_attack_reg)
     
-    # Apply bounds
     home_expected = max(home_expected, 0.3)
     away_expected = max(away_expected, 0.3)
     
@@ -320,6 +302,23 @@ def calculate_betting_markets(prob_matrix):
     
     return over_25, under_25, btts_yes, btts_no
 
+def create_properly_ordered_chart_data(home_win_prob, draw_prob, away_win_prob):
+    """Create chart data with correct ordering to prevent visualization bugs"""
+    # Define the desired display order
+    display_order = ['Home Win', 'Draw', 'Away Win']
+    
+    # Create DataFrame with correct mapping
+    outcome_data = pd.DataFrame({
+        'Outcome': display_order,
+        'Probability': [home_win_prob, draw_prob, away_win_prob]
+    })
+    
+    # Set index and maintain order
+    outcome_data = outcome_data.set_index('Outcome')
+    outcome_data = outcome_data.reindex(display_order)
+    
+    return outcome_data
+
 # ========== SIDEBAR CONTROLS ==========
 with st.sidebar:
     st.header("⚙️ Match Settings")
@@ -340,7 +339,6 @@ with st.sidebar:
     df = load_league_data(league_key)
     
     if df is not None:
-        # Calculate league baselines for defensive model
         league_avg_xga, league_std_xga = calculate_league_baselines(df)
         
         home_stats_df, away_stats_df = prepare_team_data(df)
@@ -364,7 +362,6 @@ with st.sidebar:
                 help="Adjust how much to regress team performance to mean"
             )
             
-            # Dual model settings
             with st.expander("⚙️ Dual Model Settings"):
                 enable_defensive_model = st.checkbox("Enable Defensive Gap Model", value=True,
                     help="Use independent defensive analysis for Over/Under validation")
@@ -426,7 +423,6 @@ with col2:
     st.metric("xGA/match", f"{away_xga_per_match:.2f}")
 
 with col3:
-    # Main model calculations
     home_attack_reg, away_attack_reg = calculate_regression_factors(
         home_stats, away_stats, regression_factor
     )
@@ -462,13 +458,8 @@ with col3:
 st.divider()
 st.header("📈 Probability Calculations")
 
-# Create probability matrix
 prob_matrix = create_probability_matrix(home_xg, away_xg)
-
-# Calculate outcome probabilities
 home_win_prob, draw_prob, away_win_prob = calculate_outcome_probabilities(prob_matrix)
-
-# Calculate market probabilities
 over_25_prob, under_25_prob, btts_yes_prob, btts_no_prob = calculate_betting_markets(prob_matrix)
 
 # ========== PHASE 3: DEFENSIVE GAP MODEL ==========
@@ -476,13 +467,9 @@ if enable_defensive_model:
     st.divider()
     st.header("🛡️ Defensive Gap Analysis (Supporting Model)")
     
-    # Initialize defensive model
     defensive_model = DefensiveGapModel(league_avg_xga, league_std_xga)
-    
-    # Analyze match
     defensive_analysis = defensive_model.analyze_match(home_stats, away_stats)
     
-    # Display defensive analysis
     col_def1, col_def2, col_def3 = st.columns(3)
     
     with col_def1:
@@ -497,17 +484,17 @@ if enable_defensive_model:
         st.metric("Gap Score", f"{defensive_analysis['gap_score']:.2f}")
     
     with col_def2:
-        st.metric("Home Defense", f"{defensive_analysis['home_def_score']:.2f}σ",
-                 delta="Strong" if defensive_analysis['home_def_score'] < 0 else "Weak")
+        home_def_score = defensive_analysis['home_def_score']
+        delta_text = "Strong" if home_def_score < 0 else "Weak"
+        st.metric("Home Defense", f"{home_def_score:.2f}σ", delta=delta_text)
     
     with col_def3:
-        st.metric("Away Defense", f"{defensive_analysis['away_def_score']:.2f}σ",
-                 delta="Strong" if defensive_analysis['away_def_score'] < 0 else "Weak")
+        away_def_score = defensive_analysis['away_def_score']
+        delta_text = "Strong" if away_def_score < 0 else "Weak"
+        st.metric("Away Defense", f"{away_def_score:.2f}σ", delta=delta_text)
     
-    # Show explanation
     st.info(defensive_analysis['explanation'])
     
-    # Show league context
     with st.expander("📊 League Context"):
         st.write(f"**League:** {selected_league}")
         st.write(f"Average xGA/match: {league_avg_xga:.2f}")
@@ -519,14 +506,12 @@ if enable_defensive_model and show_consensus:
     st.divider()
     st.header("✅ Consensus Analysis")
     
-    # Get bet recommendation
     bet_rec, bet_reason, bet_icon = defensive_model.get_bet_recommendation(
         defensive_analysis, 
         over_25_prob * 100, 
         under_25_prob * 100
     )
     
-    # Display consensus
     col_cons1, col_cons2, col_cons3 = st.columns([1, 2, 1])
     
     with col_cons1:
@@ -537,7 +522,6 @@ if enable_defensive_model and show_consensus:
     with col_cons2:
         st.subheader("Consensus")
         
-        # Determine consensus level
         if bet_rec == "STRONG_BET":
             st.success(f"🎯 **STRONG BET SIGNAL** {bet_icon}")
         elif bet_rec == "MODERATE_BET":
@@ -553,7 +537,6 @@ if enable_defensive_model and show_consensus:
         
         st.write(bet_reason)
         
-        # Show decision matrix
         with st.expander("📋 Decision Matrix"):
             st.write("""
             | Main Model | Defensive Model | Consensus | Action |
@@ -610,12 +593,11 @@ with st.expander("📊 Match Outcome Probabilities", expanded=True):
         st.metric("Away Win", f"{away_win_prob*100:.1f}%")
         st.progress(away_win_prob)
     
-    outcome_data = pd.DataFrame({
-        'Outcome': ['Home Win', 'Draw', 'Away Win'],
-        'Probability': [home_win_prob, draw_prob, away_win_prob]
-    })
+    # FIXED: Create properly ordered chart data
+    outcome_data = create_properly_ordered_chart_data(home_win_prob, draw_prob, away_win_prob)
     
-    st.bar_chart(outcome_data.set_index('Outcome'))
+    # Create custom bar chart with correct ordering
+    st.bar_chart(outcome_data)
 
 # ========== LAYER 7: BETTING MARKETS ==========
 with st.expander("💰 Betting Markets", expanded=True):
@@ -635,7 +617,6 @@ with st.expander("💰 Betting Markets", expanded=True):
         st.metric("No", f"{btts_no_prob*100:.1f}%")
         st.progress(btts_no_prob)
     
-    # Implied odds
     st.subheader("Implied Odds")
     col_odds1, col_odds2, col_odds3 = st.columns(3)
     with col_odds1:
@@ -657,7 +638,6 @@ with st.expander("💰 Betting Markets", expanded=True):
 with st.expander("⚠️ Risk Assessment", expanded=False):
     flags = []
     
-    # Model conflict warning
     if enable_defensive_model:
         bet_rec, _, _ = defensive_model.get_bet_recommendation(
             defensive_analysis, over_25_prob * 100, under_25_prob * 100
@@ -668,15 +648,12 @@ with st.expander("⚠️ Risk Assessment", expanded=False):
         elif bet_rec == "STRONG_BET":
             flags.append("✅ **Strong Consensus**: Both models agree on direction")
     
-    # Extreme xG warning
     if home_xg > 2.5 or away_xg > 2.5:
         flags.append("⚠️ **Extreme xG**: One team expected to score > 2.5 goals")
     
-    # High volatility warning
     if abs(home_attack_reg) > 0.2 or abs(away_attack_reg) > 0.2:
         flags.append("⚠️ **High Regression**: Significant over/underperformance adjustment")
     
-    # Defensive extreme warning
     if enable_defensive_model:
         if defensive_analysis['home_def_score'] > 1.5 or defensive_analysis['away_def_score'] > 1.5:
             flags.append("🛡️ **Very Weak Defense**: One team concedes significantly more than league average")
@@ -704,7 +681,7 @@ League: {selected_league}
 🛡️ DEFENSIVE GAP MODEL:
 • Signal: {defensive_analysis['signal'] if enable_defensive_model else 'N/A'}
 • Confidence: {defensive_analysis['confidence'] if enable_defensive_model else 'N/A'}
-• Gap Score: {defensive_analysis['gap_score']:.2f} if enable_defensive_model else 'N/A'
+• Gap Score: {defensive_analysis['gap_score']:.2f if enable_defensive_model else 'N/A'}
 • Explanation: {defensive_analysis['explanation'] if enable_defensive_model else 'N/A'}
 
 ✅ CONSENSUS ANALYSIS:
