@@ -122,7 +122,6 @@ class TeamIntelligence:
         attack_score = (xg_per_match - league_baselines['avg_xg']) / league_baselines['std_xg']
         
         # Defense WEAKNESS score: higher = worse defense (more conceding)
-        # CRITICAL FIX: We track how WEAK the defense is, not how good
         defense_weakness = (xga_per_match - league_baselines['avg_xga']) / league_baselines['std_xga']
         
         regression_factor = min(max(goals_vs_xg_per_match, -MAX_REGRESSION), MAX_REGRESSION)
@@ -133,9 +132,9 @@ class TeamIntelligence:
         return {
             'venue': venue,
             'attack_score': attack_score,
-            'defense_weakness': defense_weakness,  # Changed from defense_score
+            'defense_weakness': defense_weakness,
             'attack_tier': attack_tier,
-            'defense_tier': defense_tier,  # Now represents WEAKNESS tier
+            'defense_tier': defense_tier,
             'regression_factor': regression_factor,
             'xg_per_match': xg_per_match,
             'xga_per_match': xga_per_match,
@@ -144,7 +143,6 @@ class TeamIntelligence:
     
     @staticmethod
     def _classify_attack(score):
-        # Higher attack score = better attack
         if score >= ATTACK_ELITE_PLUS: return "ELITE_PLUS"
         elif score >= ATTACK_ELITE: return "ELITE"
         elif score >= ATTACK_ABOVE_AVG: return "ABOVE_AVG"
@@ -154,7 +152,6 @@ class TeamIntelligence:
     
     @staticmethod
     def _classify_defense_weakness(score):
-        # Higher defense weakness score = WORSE defense
         if score >= DEFENSE_VERY_WEAK: return "VERY_WEAK"
         elif score >= DEFENSE_WEAK: return "WEAK"
         elif score >= DEFENSE_AVERAGE: return "AVERAGE"
@@ -181,14 +178,12 @@ class MatchIntelligence:
                              total_xg > HIGH_XG_THRESHOLD)
         
         # CORRECTED NET DOMINANCE CALCULATION
-        # Net Dominance = Team Attack + Opponent Defense Weakness
-        # Higher = more likely to score and win
         home_net_dominance = home_analysis['attack_score'] + away_analysis['defense_weakness']
         away_net_dominance = away_analysis['attack_score'] + home_analysis['defense_weakness']
         
         # Match type classification
-        home_def = home_analysis['defense_tier']  # Now represents weakness
-        away_def = away_analysis['defense_tier']  # Now represents weakness
+        home_def = home_analysis['defense_tier']
+        away_def = away_analysis['defense_tier']
         home_att = home_analysis['attack_tier']
         away_att = away_analysis['attack_tier']
         
@@ -210,7 +205,7 @@ class MatchIntelligence:
                 'net_dominance_difference': home_net_dominance - away_net_dominance
             }
         
-        # 2. ATTACK DOMINANCE (Good attack vs Weak defense)
+        # 2. ATTACK DOMINANCE
         elif ((home_att in ["ELITE", "ELITE_PLUS", "ABOVE_AVG"] and away_def in ["WEAK", "VERY_WEAK", "AVERAGE"]) or
               (away_att in ["ELITE", "ELITE_PLUS", "ABOVE_AVG"] and home_def in ["WEAK", "VERY_WEAK", "AVERAGE"])):
             return {
@@ -229,7 +224,7 @@ class MatchIntelligence:
                 'net_dominance_difference': home_net_dominance - away_net_dominance
             }
         
-        # 3. GENUINE DEFENSIVE TACTICAL (Strong defense faces capable attack)
+        # 3. GENUINE DEFENSIVE TACTICAL
         elif ((home_def in ["ELITE", "STRONG"] and away_att in ["ABOVE_AVG", "ELITE", "ELITE_PLUS"]) or
               (away_def in ["ELITE", "STRONG"] and home_att in ["ABOVE_AVG", "ELITE", "ELITE_PLUS"])):
             return {
@@ -248,7 +243,7 @@ class MatchIntelligence:
                 'net_dominance_difference': home_net_dominance - away_net_dominance
             }
         
-        # 4. FALSE DEFENSIVE (Strong defense but irrelevant due to weak attack)
+        # 4. FALSE DEFENSIVE
         elif ((home_def in ["ELITE", "STRONG", "GOOD"] and away_att in ["BELOW_AVG", "VERY_POOR"]) or
               (away_def in ["ELITE", "STRONG", "GOOD"] and home_att in ["BELOW_AVG", "VERY_POOR"])):
             return {
@@ -267,7 +262,7 @@ class MatchIntelligence:
                 'net_dominance_difference': home_net_dominance - away_net_dominance
             }
         
-        # 5. STANDARD (Balanced matchup)
+        # 5. STANDARD
         else:
             return {
                 'match_type': "STANDARD",
@@ -289,13 +284,13 @@ class WinnerPrediction:
     @staticmethod
     def predict_winner(home_analysis, away_analysis, match_analysis, home_xg, away_xg):
         """
-        CORRECTED winner prediction based on net dominance
+        CALIBRATED winner prediction - less extreme probabilities
         """
         home_net = match_analysis['home_net_dominance']
         away_net = match_analysis['away_net_dominance']
         
-        # Home advantage boost
-        home_advantage = 0.15
+        # Home advantage boost (smaller)
+        home_advantage = 0.10
         
         # Adjusted net dominances with home advantage
         home_adjusted = home_net + home_advantage
@@ -304,33 +299,44 @@ class WinnerPrediction:
         # Calculate win probabilities from net dominance difference
         diff = home_adjusted - away_adjusted
         
-        # Use logistic function to convert to probabilities
+        # FLATTER logistic function for less extreme probabilities
         def logistic(x):
             return 1 / (1 + math.exp(-x))
         
-        home_win_base = logistic(diff * 1.5)  # Steeper curve for clearer favorites
+        # Flatter curve (0.7 instead of 1.5)
+        home_win_base = logistic(diff * 0.7)
         away_win_base = 1 - home_win_base
         
-        # Draw probability based on closeness
-        draw_prob = max(0.15, min(0.35, 0.3 - abs(diff) * 0.4))
+        # HIGHER base draw probability
+        draw_prob = max(0.20, min(0.40, 0.35 - abs(diff) * 0.25))
         
-        # Match type adjustments
+        # Match type adjustments (smaller)
         match_type = match_analysis['match_type']
         
         if match_type == "DOMINANCE":
             if match_analysis['dominant_team'] == "HOME":
-                home_win_base = min(1.0, home_win_base + 0.15)
+                home_win_base = min(0.85, home_win_base + 0.08)
             else:
-                away_win_base = min(1.0, away_win_base + 0.15)
-            draw_prob *= 0.7
+                away_win_base = min(0.85, away_win_base + 0.08)
+            draw_prob *= 0.8
         
         elif match_type == "DEFENSIVE_TACTICAL":
-            draw_prob = min(0.4, draw_prob + 0.1)
+            draw_prob = min(0.45, draw_prob + 0.08)
         
         # Normalize to account for draw probability
         total_win_prob = home_win_base + away_win_base
         home_win_prob = home_win_base / total_win_prob * (1 - draw_prob)
         away_win_prob = away_win_base / total_win_prob * (1 - draw_prob)
+        
+        # MINIMUM probability floors (no team below 5%)
+        home_win_prob = max(0.05, home_win_prob)
+        away_win_prob = max(0.05, away_win_prob)
+        
+        # Renormalize after applying floors
+        total = home_win_prob + away_win_prob + draw_prob
+        home_win_prob /= total
+        away_win_prob /= total
+        draw_prob /= total
         
         # Determine predicted winner
         max_prob = max(home_win_prob, away_win_prob, draw_prob)
@@ -345,8 +351,8 @@ class WinnerPrediction:
             predicted_winner = "DRAW"
             confidence = "HIGH" if draw_prob > 0.4 else "MEDIUM" if draw_prob > 0.35 else "LOW"
         
-        # Most likely score
-        most_likely_score = WinnerPrediction._predict_most_likely_score(home_xg, away_xg)
+        # Most likely score (improved to align with over/under)
+        most_likely_score = WinnerPrediction._predict_most_likely_score(home_xg, away_xg, home_win_prob > away_win_prob)
         
         return {
             'home_win_probability': home_win_prob,
@@ -362,29 +368,33 @@ class WinnerPrediction:
         }
     
     @staticmethod
-    def _predict_most_likely_score(home_xg, away_xg):
-        # Simple Poisson-based prediction
-        max_prob = 0
-        best_score = "1-1"
+    def _predict_most_likely_score(home_xg, away_xg, home_favorite=True):
+        # Improved score prediction that considers favorite status
+        home_goals = round(home_xg)
+        away_goals = round(away_xg)
         
-        # Check most likely scores up to 3 goals each
-        for i in range(4):
-            for j in range(4):
-                prob = poisson_pmf(i, home_xg) * poisson_pmf(j, away_xg)
-                if prob > max_prob:
-                    max_prob = prob
-                    best_score = f"{i}-{j}"
+        # Adjust based on expected goals
+        if home_xg < 0.8: home_goals = 0
+        elif home_xg < 1.3: home_goals = 1
+        elif home_xg < 2.0: home_goals = 2
+        else: home_goals = 3
         
-        return best_score
+        if away_xg < 0.8: away_goals = 0
+        elif away_xg < 1.3: away_goals = 1
+        elif away_xg < 2.0: away_goals = 2
+        else: away_goals = 3
+        
+        # If home favorite and close, give home extra goal
+        if home_favorite and abs(home_goals - away_goals) <= 1:
+            home_goals += 1
+        
+        return f"{home_goals}-{away_goals}"
 
 class PredictionEngine:
     def __init__(self, league_baselines):
         self.league_baselines = league_baselines
     
     def predict_expected_goals(self, home_analysis, away_analysis):
-        """
-        Predict expected goals based on attack and opponent defense weakness
-        """
         home_attack = home_analysis['xg_per_match']
         away_defense_weakness_factor = 1 + (away_analysis['defense_weakness'] * 0.3)
         
@@ -395,7 +405,7 @@ class PredictionEngine:
         home_expected = home_attack * away_defense_weakness_factor
         away_expected = away_attack * home_defense_weakness_factor
         
-        # Apply regression (over/underperformance vs xG)
+        # Apply regression
         home_final = home_expected * (1 + home_analysis['regression_factor'])
         away_final = away_expected * (1 + away_analysis['regression_factor'])
         
@@ -406,7 +416,6 @@ class PredictionEngine:
         return home_final, away_final
     
     def calculate_base_probability(self, total_xg):
-        # Probability of over 2.5 goals using Poisson distribution
         prob_under = (poisson_pmf(0, total_xg) + 
                      poisson_pmf(1, total_xg) + 
                      poisson_pmf(2, total_xg))
@@ -419,12 +428,12 @@ class CorrectionIntelligence:
         correction = 0.0
         rationale = []
         
-        # Corrections based on match type
+        # SMALLER corrections
         corrections = {
-            "DOMINANCE": 0.10,           # Dominant team more likely over
-            "ATTACK_DOMINANCE": 0.15,    # Attack dominance = more goals
-            "DEFENSIVE_TACTICAL": -0.20, # Strong defense = fewer goals
-            "FALSE_DEFENSIVE": -0.05,    # Weak attacks = fewer goals
+            "DOMINANCE": 0.08,           # Reduced from 0.10
+            "ATTACK_DOMINANCE": 0.10,    # Reduced from 0.15
+            "DEFENSIVE_TACTICAL": -0.15, # Reduced from -0.20
+            "FALSE_DEFENSIVE": -0.03,    # Reduced from -0.05
             "STANDARD": 0.0
         }
         
@@ -432,13 +441,11 @@ class CorrectionIntelligence:
             correction = corrections[match_type]
             rationale.append(f"Match type: {match_type}")
         
-        # Limit extreme corrections
+        # More conservative correction limits
         if base_prob > 0.70 and correction < 0:
-            correction = max(correction, -0.15)
-            rationale.append("Limited negative correction due to high base probability")
+            correction = max(correction, -0.10)
         elif base_prob < 0.30 and correction > 0:
-            correction = min(correction, 0.15)
-            rationale.append("Limited positive correction due to low base probability")
+            correction = min(correction, 0.10)
         
         return correction, rationale, match_type
 
