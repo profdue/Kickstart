@@ -24,16 +24,6 @@ MAX_GOALS_CALC = 8  # Maximum goals to calculate in Poisson
 MIN_PROBABILITY = 0.01
 MAX_PROBABILITY = 0.99
 
-# League average goals (will be calculated from data)
-LEAGUE_AVG_GOALS = {
-    "Premier League": 2.8,
-    "Bundesliga": 3.2,
-    "Serie A": 2.6,
-    "La Liga": 2.5,
-    "Ligue 1": 2.7,
-    "Eredivisie": 3.1
-}
-
 # Initialize session state
 if 'prediction_history' not in st.session_state:
     st.session_state.prediction_history = []
@@ -69,10 +59,11 @@ def load_league_data(league_name):
         
         df = pd.read_csv(file_path)
         
-        # Required columns check
-        required = ['team', 'venue', 'matches', 'goals_for', 'goals_against', 
-                   'goals_vs_xg', 'goals_allowed_vs_xga', 'xg', 'xga', 'points']
-        missing = [col for col in required if col not in df.columns]
+        # Check if we have the expected columns from your CSV
+        expected_columns = ['team', 'venue', 'matches', 'wins', 'draws', 'losses', 'gf', 'ga', 
+                          'pts', 'xg', 'xga', 'xpts', 'goals_vs_xg', 'goals_allowed_vs_xga', 'pts_vs_xpts']
+        
+        missing = [col for col in expected_columns if col not in df.columns]
         if missing:
             st.warning(f"Missing columns: {missing}. Some features may be limited.")
             
@@ -83,18 +74,27 @@ def load_league_data(league_name):
 
 def prepare_team_data(df):
     """Prepare home and away data with per-match averages"""
+    if df is None or len(df) == 0:
+        return pd.DataFrame(), pd.DataFrame()
+    
+    # Create copies for home and away data
     home_data = df[df['venue'] == 'home'].copy()
     away_data = df[df['venue'] == 'away'].copy()
     
-    # Calculate per-match averages
-    for df_part in [home_data, away_data]:
-        df_part['goals_for_pm'] = df_part['goals_for'] / df_part['matches']
-        df_part['goals_against_pm'] = df_part['goals_against'] / df_part['matches']
-        df_part['goals_vs_xg_pm'] = df_part['goals_vs_xg'] / df_part['matches']
-        df_part['goals_allowed_vs_xga_pm'] = df_part['goals_allowed_vs_xga'] / df_part['matches']
-        df_part['xg_pm'] = df_part['xg'] / df_part['matches']
-        df_part['xga_pm'] = df_part['xga'] / df_part['matches']
-        df_part['points_pm'] = df_part['points'] / df_part['matches']
+    # Calculate per-match averages for both datasets
+    for df_part, venue in [(home_data, 'home'), (away_data, 'away')]:
+        if len(df_part) > 0:
+            # Calculate basic per-match stats
+            df_part['goals_for_pm'] = df_part['gf'] / df_part['matches']
+            df_part['goals_against_pm'] = df_part['ga'] / df_part['matches']
+            df_part['goals_vs_xg_pm'] = df_part['goals_vs_xg'] / df_part['matches']
+            df_part['goals_allowed_vs_xga_pm'] = df_part['goals_allowed_vs_xga'] / df_part['matches']
+            df_part['xg_pm'] = df_part['xg'] / df_part['matches']
+            df_part['xga_pm'] = df_part['xga'] / df_part['matches']
+            df_part['points_pm'] = df_part['pts'] / df_part['matches']
+            df_part['win_rate'] = df_part['wins'] / df_part['matches']
+            df_part['draw_rate'] = df_part['draws'] / df_part['matches']
+            df_part['loss_rate'] = df_part['losses'] / df_part['matches']
     
     return home_data.set_index('team'), away_data.set_index('team')
 
@@ -103,27 +103,38 @@ def calculate_league_metrics(df):
     if df is None or len(df) == 0:
         return {}
     
-    # Calculate total goals per match in the league
+    # Calculate total goals per match in the league using 'gf' column
     total_matches = df['matches'].sum() / 2  # Each match counted twice (home & away)
-    total_goals = df['goals_for'].sum()
+    total_goals = df['gf'].sum()
     
     avg_goals_per_match = total_goals / total_matches if total_matches > 0 else 2.5
     
-    # Calculate home/away points averages
+    # Calculate home/away points averages using 'pts' column
     home_data = df[df['venue'] == 'home']
     away_data = df[df['venue'] == 'away']
     
-    home_pts_avg = home_data['points_pm'].mean() if 'points_pm' in home_data.columns else 1.5
-    away_pts_avg = away_data['points_pm'].mean() if 'points_pm' in away_data.columns else 1.0
+    home_pts_avg = home_data['pts'].sum() / home_data['matches'].sum() if len(home_data) > 0 else 1.5
+    away_pts_avg = away_data['pts'].sum() / away_data['matches'].sum() if len(away_data) > 0 else 1.0
+    
+    # Calculate home/away goal averages
+    home_gf_avg = home_data['gf'].sum() / home_data['matches'].sum() if len(home_data) > 0 else 1.5
+    away_gf_avg = away_data['gf'].sum() / away_data['matches'].sum() if len(away_data) > 0 else 1.2
+    
+    home_ga_avg = home_data['ga'].sum() / home_data['matches'].sum() if len(home_data) > 0 else 1.2
+    away_ga_avg = away_data['ga'].sum() / away_data['matches'].sum() if len(away_data) > 0 else 1.5
     
     return {
         'avg_goals_per_match': avg_goals_per_match,
         'home_pts_avg': home_pts_avg,
-        'away_pts_avg': away_pts_avg
+        'away_pts_avg': away_pts_avg,
+        'home_gf_avg': home_gf_avg,
+        'away_gf_avg': away_gf_avg,
+        'home_ga_avg': home_ga_avg,
+        'away_ga_avg': away_ga_avg
     }
 
 class ExpectedGoalsPredictor:
-    """Implements the step-by-step expected goals formula"""
+    """Implements the step-by-step expected goals formula using available data"""
     
     def __init__(self, league_metrics):
         self.league_metrics = league_metrics
@@ -133,24 +144,18 @@ class ExpectedGoalsPredictor:
         """
         Step-by-step expected goals calculation using the refined logic
         
-        Parameters:
-        -----------
-        home_stats: Series with home team statistics (per match averages)
-        away_stats: Series with away team statistics (per match averages)
-        
-        Returns:
-        --------
-        tuple: (home_expected_goals, away_expected_goals)
+        Uses available columns: gf, ga, goals_vs_xg, goals_allowed_vs_xga, pts
         """
         
         # Step 1: Adjusted Goals (Weighted xG Adjustment)
+        # Using goals_for_pm (gf/matches) and goals_against_pm (ga/matches)
         home_adjGF = home_stats['goals_for_pm'] + 0.6 * home_stats['goals_vs_xg_pm']
         home_adjGA = home_stats['goals_against_pm'] + 0.6 * home_stats['goals_allowed_vs_xga_pm']
         
         away_adjGF = away_stats['goals_for_pm'] + 0.6 * away_stats['goals_vs_xg_pm']
         away_adjGA = away_stats['goals_against_pm'] + 0.6 * away_stats['goals_allowed_vs_xga_pm']
         
-        # Step 2: Dynamic Venue Factor
+        # Step 2: Dynamic Venue Factor (using points per match)
         venue_factor_home = 1 + 0.05 * (home_stats['points_pm'] - away_stats['points_pm']) / 3
         venue_factor_away = 1 + 0.05 * (away_stats['points_pm'] - home_stats['points_pm']) / 3
         
@@ -479,27 +484,31 @@ with st.sidebar:
         league_metrics = calculate_league_metrics(df)
         home_stats_df, away_stats_df = prepare_team_data(df)
         
-        home_teams = sorted(home_stats_df.index.unique())
-        away_teams = sorted(away_stats_df.index.unique())
-        common_teams = sorted(list(set(home_teams) & set(away_teams)))
-        
-        if len(common_teams) == 0:
-            st.error("No teams with complete data")
-            st.stop()
-        
-        home_team = st.selectbox("Home Team", common_teams)
-        away_team = st.selectbox("Away Team", [t for t in common_teams if t != home_team])
-        
-        st.divider()
-        
-        st.markdown("### 🎯 Prediction Settings")
-        show_calculations = st.checkbox("Show Detailed Calculations", value=True)
-        show_poisson = st.checkbox("Show Poisson Probabilities", value=True)
-        
-        if st.button("🚀 Generate Prediction", type="primary", use_container_width=True):
-            calculate_btn = True
+        if len(home_stats_df) > 0 and len(away_stats_df) > 0:
+            home_teams = sorted(home_stats_df.index.unique())
+            away_teams = sorted(away_stats_df.index.unique())
+            common_teams = sorted(list(set(home_teams) & set(away_teams)))
+            
+            if len(common_teams) == 0:
+                st.error("No teams with complete home and away data")
+                st.stop()
+            
+            home_team = st.selectbox("Home Team", common_teams)
+            away_team = st.selectbox("Away Team", [t for t in common_teams if t != home_team])
+            
+            st.divider()
+            
+            st.markdown("### 🎯 Prediction Settings")
+            show_calculations = st.checkbox("Show Detailed Calculations", value=True)
+            show_poisson = st.checkbox("Show Poisson Probabilities", value=True)
+            
+            if st.button("🚀 Generate Prediction", type="primary", use_container_width=True):
+                calculate_btn = True
+            else:
+                calculate_btn = False
         else:
-            calculate_btn = False
+            st.error("Could not prepare team data. Check your CSV format.")
+            st.stop()
 
 if df is None:
     st.error("Please add CSV files to the 'leagues' folder")
@@ -508,7 +517,7 @@ if df is None:
 if 'calculate_btn' not in locals() or not calculate_btn:
     st.info("👈 Select teams and click 'Generate Prediction'")
     
-    # Show league statistics
+    # Show league statistics if available
     if league_metrics:
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -517,6 +526,10 @@ if 'calculate_btn' not in locals() or not calculate_btn:
             st.metric("Avg Home Points", f"{league_metrics['home_pts_avg']:.2f}")
         with col3:
             st.metric("Avg Away Points", f"{league_metrics['away_pts_avg']:.2f}")
+    
+    # Show sample data
+    with st.expander("📊 View Sample Data"):
+        st.dataframe(df.head(10), use_container_width=True)
     
     st.stop()
 
@@ -651,14 +664,14 @@ if show_calculations:
         col1, col2 = st.columns(2)
         
         with col1:
-            st.write(f"**{home_team}:**")
+            st.write(f"**{home_team} (Home):**")
             st.write(f"- Goals/Game: {home_stats['goals_for_pm']:.2f}")
             st.write(f"- Goals vs xG/Game: {home_stats['goals_vs_xg_pm']:.2f}")
             st.write(f"- Adjusted GF: {calc_details['home_adjGF']:.2f}")
             st.write(f"- Adjusted GA: {calc_details['home_adjGA']:.2f}")
         
         with col2:
-            st.write(f"**{away_team}:**")
+            st.write(f"**{away_team} (Away):**")
             st.write(f"- Goals/Game: {away_stats['goals_for_pm']:.2f}")
             st.write(f"- Goals vs xG/Game: {away_stats['goals_vs_xg_pm']:.2f}")
             st.write(f"- Adjusted GF: {calc_details['away_adjGF']:.2f}")
@@ -678,34 +691,6 @@ if show_calculations:
         st.write(f"**Normalization Factor:** {calc_details['normalization_factor']:.3f}")
         st.write(f"*Adjusts to league scoring environment*")
 
-# Poisson Distribution Details (Expandable)
-if show_poisson:
-    with st.expander("📈 Poisson Distribution Details", expanded=False):
-        st.write("### Probability Mass Function")
-        st.write(f"P(Home = k, Away = l) = (λ₁ᵏ e⁻λ₁ / k!) × (λ₂ˡ e⁻λ₂ / l!)")
-        st.write(f"Where λ₁ = {prediction['expected_goals']['home']:.2f}, λ₂ = {prediction['expected_goals']['away']:.2f}")
-        
-        # Show probability matrix
-        st.write("### Score Probability Matrix")
-        max_show = 4
-        matrix_data = []
-        
-        for home in range(max_show + 1):
-            row = []
-            for away in range(max_show + 1):
-                prob = poisson_pmf(home, prediction['expected_goals']['home']) * \
-                       poisson_pmf(away, prediction['expected_goals']['away'])
-                row.append(f"{prob*100:.1f}%")
-            matrix_data.append(row)
-        
-        matrix_df = pd.DataFrame(
-            matrix_data,
-            index=[f"Home {i}" for i in range(max_show + 1)],
-            columns=[f"Away {i}" for i in range(max_show + 1)]
-        )
-        
-        st.dataframe(matrix_df, use_container_width=True)
-
 # Team Statistics Comparison
 with st.expander("📋 Team Statistics Comparison", expanded=False):
     col1, col2 = st.columns(2)
@@ -713,27 +698,33 @@ with st.expander("📋 Team Statistics Comparison", expanded=False):
     with col1:
         st.subheader(f"🏠 {home_team} (Home)")
         stats_data = {
-            'Statistic': ['Goals/Game', 'Conceded/Game', 'Goals vs xG/Game', 
-                         'Conceded vs xGA/Game', 'xG/Game', 'xGA/Game', 'Points/Game'],
-            'Value': [home_stats['goals_for_pm'], home_stats['goals_against_pm'],
+            'Statistic': ['Matches', 'Wins', 'Draws', 'Losses', 
+                         'Goals/Game', 'Conceded/Game', 'xG/Game', 'xGA/Game',
+                         'Goals vs xG/Game', 'Conceded vs xGA/Game', 'Points/Game'],
+            'Value': [home_stats['matches'], home_stats['wins'], home_stats['draws'], home_stats['losses'],
+                     home_stats['goals_for_pm'], home_stats['goals_against_pm'],
+                     home_stats['xg_pm'], home_stats['xga_pm'],
                      home_stats['goals_vs_xg_pm'], home_stats['goals_allowed_vs_xga_pm'],
-                     home_stats['xg_pm'], home_stats['xga_pm'], home_stats['points_pm']]
+                     home_stats['points_pm']]
         }
         stats_df = pd.DataFrame(stats_data)
-        stats_df['Value'] = stats_df['Value'].apply(lambda x: f"{x:.2f}")
+        stats_df['Value'] = stats_df['Value'].apply(lambda x: f"{x:.2f}" if isinstance(x, float) else str(x))
         st.table(stats_df)
     
     with col2:
         st.subheader(f"✈️ {away_team} (Away)")
         stats_data = {
-            'Statistic': ['Goals/Game', 'Conceded/Game', 'Goals vs xG/Game', 
-                         'Conceded vs xGA/Game', 'xG/Game', 'xGA/Game', 'Points/Game'],
-            'Value': [away_stats['goals_for_pm'], away_stats['goals_against_pm'],
+            'Statistic': ['Matches', 'Wins', 'Draws', 'Losses', 
+                         'Goals/Game', 'Conceded/Game', 'xG/Game', 'xGA/Game',
+                         'Goals vs xG/Game', 'Conceded vs xGA/Game', 'Points/Game'],
+            'Value': [away_stats['matches'], away_stats['wins'], away_stats['draws'], away_stats['losses'],
+                     away_stats['goals_for_pm'], away_stats['goals_against_pm'],
+                     away_stats['xg_pm'], away_stats['xga_pm'],
                      away_stats['goals_vs_xg_pm'], away_stats['goals_allowed_vs_xga_pm'],
-                     away_stats['xg_pm'], away_stats['xga_pm'], away_stats['points_pm']]
+                     away_stats['points_pm']]
         }
         stats_df = pd.DataFrame(stats_data)
-        stats_df['Value'] = stats_df['Value'].apply(lambda x: f"{x:.2f}")
+        stats_df['Value'] = stats_df['Value'].apply(lambda x: f"{x:.2f}" if isinstance(x, float) else str(x))
         st.table(stats_df)
 
 # Export Report
@@ -745,6 +736,7 @@ report = f"""
 Match: {home_team} vs {away_team}
 League: {selected_league}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+League Avg Goals: {league_metrics['avg_goals_per_match']:.2f}
 
 🎯 TOTAL GOALS PREDICTION
 {prediction['total_goals']['direction']} 2.5 Goals: {prediction['total_goals']['probability']*100:.1f}%
