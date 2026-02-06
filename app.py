@@ -89,8 +89,6 @@ def prepare_team_data(df):
             df_part['xga_pm'] = df_part['xga'] / df_part['matches']
             df_part['points_pm'] = df_part['pts'] / df_part['matches']
             df_part['win_rate'] = df_part['wins'] / df_part['matches']
-            df_part['draw_rate'] = df_part['draws'] / df_part['matches']
-            df_part['loss_rate'] = df_part['losses'] / df_part['matches']
     
     return home_data.set_index('team'), away_data.set_index('team')
 
@@ -497,48 +495,51 @@ class InsightsGenerator:
     """OUR LOGIC: Generate enhanced insights"""
     
     @staticmethod
-    def generate_insights(prediction):
+    def generate_insights(winner_prediction, totals_prediction):
         insights = []
         
         # Winner insights
-        winner_pred = prediction['winner_prediction']
-        if winner_pred['confidence_category'] == "VERY HIGH":
-            insights.append(f"🎯 **High Confidence Winner**: Model strongly favors {winner_pred['predicted_winner']}")
+        if winner_prediction['winner_confidence_category'] == "VERY HIGH":
+            insights.append(f"🎯 **High Confidence Winner**: Model strongly favors {winner_prediction['predicted_winner']}")
+        elif winner_prediction['winner_confidence_category'] == "LOW":
+            insights.append(f"⚠️ **Low Confidence Winner**: Exercise caution on {winner_prediction['predicted_winner']} prediction")
         
         # Totals insights
-        totals_pred = prediction['totals_prediction']
-        if totals_pred['confidence'] == "VERY HIGH":
-            insights.append(f"🎯 **High Confidence Totals**: Strong signal for {totals_pred['direction']} 2.5")
+        if totals_prediction['confidence'] == "VERY HIGH":
+            insights.append(f"🎯 **High Confidence Totals**: Strong signal for {totals_prediction['direction']} 2.5")
+        elif totals_prediction['confidence'] == "VERY LOW":
+            insights.append(f"⚠️ **Low Confidence Totals**: High risk on {totals_prediction['direction']} 2.5 prediction")
         
         # Finishing trend insights
-        home_finish = totals_pred['home_finishing']
-        away_finish = totals_pred['away_finishing']
+        home_finish = totals_prediction['home_finishing']
+        away_finish = totals_prediction['away_finishing']
         
         if home_finish > 0.3:
-            insights.append(f"⚡ Home team overperforms xG by {home_finish:.2f}/game (clinical finishing)")
+            insights.append(f"⚡ **Home team overperforms xG** by {home_finish:.2f}/game (clinical finishing)")
         elif home_finish < -0.3:
-            insights.append(f"⚡ Home team underperforms xG by {abs(home_finish):.2f}/game (wasteful finishing)")
+            insights.append(f"⚡ **Home team underperforms xG** by {abs(home_finish):.2f}/game (wasteful finishing)")
         
         if away_finish > 0.3:
-            insights.append(f"⚡ Away team overperforms xG by {away_finish:.2f}/game (clinical finishing)")
+            insights.append(f"⚡ **Away team overperforms xG** by {away_finish:.2f}/game (clinical finishing)")
         elif away_finish < -0.3:
-            insights.append(f"⚡ Away team underperforms xG by {abs(away_finish):.2f}/game (wasteful finishing)")
-        
-        # Risk flag insights
-        if totals_pred['risk_flags']:
-            risk_count = len(totals_pred['risk_flags'])
-            insights.append(f"⚠️ **{risk_count} risk flag(s) detected** - Exercise caution")
+            insights.append(f"⚡ **Away team underperforms xG** by {abs(away_finish):.2f}/game (wasteful finishing)")
         
         # Finishing alignment insights
-        alignment = totals_pred['finishing_alignment']
+        alignment = totals_prediction['finishing_alignment']
         if alignment == "HIGH_OVER":
-            insights.append("🔥 Both teams show strong overperformance - High probability of OVER")
+            insights.append("🔥 **Both teams show strong overperformance** - High probability of OVER")
         elif alignment == "HIGH_UNDER":
-            insights.append("🛡️ Both teams show strong underperformance - High probability of UNDER")
+            insights.append("🛡️ **Both teams show strong underperformance** - High probability of UNDER")
         elif "RISKY" in alignment:
-            insights.append("🎲 Mixed finishing trends - Higher variance expected")
+            insights.append("🎲 **Mixed finishing trends** - Higher variance expected")
         
-        return insights[:5]  # Limit to 5 most important insights
+        # Risk flag insights
+        if totals_prediction['risk_flags']:
+            risk_count = len(totals_prediction['risk_flags'])
+            flag_list = ", ".join(totals_prediction['risk_flags'])
+            insights.append(f"⚠️ **{risk_count} risk flag(s) detected**: {flag_list}")
+        
+        return insights[:5]
 
 class FootballIntelligenceEngineV3:
     """OUR LOGIC: Complete prediction engine"""
@@ -576,11 +577,7 @@ class FootballIntelligenceEngineV3:
         )
         
         # Step 5: OUR LOGIC - Insights
-        prediction_data = {
-            'winner_prediction': winner_prediction,
-            'totals_prediction': totals_prediction
-        }
-        insights = self.insights_generator.generate_insights(prediction_data)
+        insights = self.insights_generator.generate_insights(winner_prediction, totals_prediction)
         
         # Step 6: Determine final probabilities
         if winner_prediction['predicted_winner'] == "HOME":
@@ -619,7 +616,9 @@ class FootballIntelligenceEngineV3:
                 'confidence_score': totals_prediction['confidence_score'],
                 'total_xg': totals_prediction['total_xg'],
                 'finishing_alignment': totals_prediction['finishing_alignment'],
-                'risk_flags': totals_prediction['risk_flags']
+                'risk_flags': totals_prediction['risk_flags'],
+                'home_finishing': totals_prediction['home_finishing'],
+                'away_finishing': totals_prediction['away_finishing']
             },
             
             # All probabilities
@@ -636,13 +635,7 @@ class FootballIntelligenceEngineV3:
             'insights': insights,
             
             # Calculation details
-            'calculation_details': calc_details,
-            
-            # Team stats
-            'team_stats': {
-                'home': home_stats.to_dict(),
-                'away': away_stats.to_dict()
-            }
+            'calculation_details': calc_details
         }
 
 # ========== STREAMLIT UI ==========
@@ -832,7 +825,7 @@ with col2:
     finish_cat = engine.totals_predictor.categorize_finishing(away_finish)
     st.metric(f"{away_team} Finishing", f"{away_finish:+.2f}", finish_cat)
 
-st.info(f"**Finishing Alignment**: {prediction['totals']['finishing_alignment']}")
+st.info(f"**Finishing Alignment**: {prediction['totals']['finishing_alignment']} | **Total xG Category**: {prediction['totals']['total_category']}")
 
 # Detailed Probabilities
 st.subheader("🎲 Detailed Probabilities")
@@ -904,11 +897,12 @@ with col2:
 if show_details:
     with st.expander("🔍 Detailed Analysis", expanded=False):
         st.write("### Winner Prediction Analysis")
-        st.write(f"- Expected Goals Difference: {prediction['winner'].get('delta', 0):.2f}")
-        st.write(f"- Strength: {prediction['winner']['strength']}")
+        st.write(f"- Expected Goals Difference: {prediction['winner'].get('strength', 'N/A')}")
+        st.write(f"- Confidence Level: {prediction['winner']['confidence']}")
         
         st.write("### Totals Prediction Analysis")
-        st.write(f"- Total xG Category: {prediction['totals']['total_category']}")
+        st.write(f"- Total xG: {prediction['totals']['total_xg']:.2f}")
+        st.write(f"- Finishing Alignment: {prediction['totals']['finishing_alignment']}")
         st.write(f"- League-adjusted threshold: {LEAGUE_ADJUSTMENTS.get(selected_league, LEAGUE_ADJUSTMENTS['Premier League'])['over_threshold']}")
         
         if prediction['totals']['risk_flags']:
@@ -939,6 +933,7 @@ Probability: {prediction['probabilities'][f'{prediction["totals"]["direction"].l
 Confidence: {prediction['totals']['confidence']} ({prediction['totals']['confidence_score']:.0f}/100)
 Total Expected Goals: {prediction['expected_goals']['total']:.2f}
 Finishing Alignment: {prediction['totals']['finishing_alignment']}
+Total xG Category: {prediction['totals']['total_category']}
 
 📊 EXPECTED GOALS
 {home_team}: {prediction['expected_goals']['home']:.2f} xG
@@ -989,7 +984,7 @@ if st.session_state.prediction_history:
     with st.expander("📚 Prediction History", expanded=False):
         for i, hist in enumerate(reversed(st.session_state.prediction_history[-5:])):
             with st.container():
-                col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+                col1, col2, col3 = st.columns([3, 2, 2])
                 with col1:
                     st.write(f"**{hist['home_team']} vs {hist['away_team']}**")
                     st.caption(f"{hist['timestamp'].strftime('%Y-%m-%d %H:%M')}")
@@ -999,12 +994,4 @@ if st.session_state.prediction_history:
                 with col3:
                     direction = hist['prediction']['totals']['direction']
                     st.write(f"📈 {direction} 2.5")
-                with col4:
-                    if st.button("↻", key=f"reload_{i}"):
-                        st.experimental_set_query_params(
-                            league=hist['league'],
-                            home=hist['home_team'],
-                            away=hist['away_team']
-                        )
-                        st.experimental_rerun()
                 st.divider()
