@@ -50,6 +50,60 @@ def poisson_pmf(k, lam):
         return 0
     return (math.exp(-lam) * (lam ** k)) / factorial_cache(k)
 
+def generate_pattern_indicators(prediction):
+    """Generate pattern indicators based on backtest findings"""
+    indicators = {'winner': None, 'totals': None}
+    
+    # WINNER PATTERNS
+    winner_conf_score = prediction['winner']['confidence_score']
+    if winner_conf_score >= 90:
+        indicators['winner'] = {
+            'type': 'MET',
+            'color': 'green',
+            'text': 'WINNER CONDITION MET',
+            'explanation': 'Backtest: VERY HIGH confidence (90+) winners went 4/4 correct'
+        }
+    elif winner_conf_score < 45:
+        indicators['winner'] = {
+            'type': 'AVOID',
+            'color': 'red',
+            'text': 'AVOID WINNER BET',
+            'explanation': 'Backtest: VERY LOW confidence (<45) winners went 0/3 correct'
+        }
+    else:
+        indicators['winner'] = {
+            'type': 'NO_PATTERN',
+            'color': 'gray',
+            'text': 'NO CLEAR PATTERN',
+            'explanation': 'Backtest: Mixed results for this confidence range'
+        }
+    
+    # TOTALS PATTERNS
+    alignment = prediction['totals']['finishing_alignment']
+    if alignment in ['MED_OVER', 'NEUTRAL', 'HIGH_OVER']:
+        indicators['totals'] = {
+            'type': 'MET',
+            'color': 'green',
+            'text': 'TOTALS CONDITION MET',
+            'explanation': f'Backtest: {alignment} alignment totals went 8/8 correct'
+        }
+    elif alignment in ['LOW_UNDER', 'RISKY']:
+        indicators['totals'] = {
+            'type': 'AVOID',
+            'color': 'red',
+            'text': 'AVOID TOTALS BET',
+            'explanation': f'Backtest: {alignment} alignment totals went 1/4 correct'
+        }
+    else:
+        indicators['totals'] = {
+            'type': 'NO_PATTERN',
+            'color': 'gray',
+            'text': 'NO CLEAR PATTERN',
+            'explanation': 'Backtest: Insufficient data for this alignment'
+        }
+    
+    return indicators
+
 @st.cache_data(ttl=3600)
 def load_league_data(league_name):
     try:
@@ -498,7 +552,7 @@ class InsightsGenerator:
     def generate_insights(winner_prediction, totals_prediction):
         insights = []
         
-        # Winner insights - FIXED: using correct key name
+        # Winner insights
         if winner_prediction.get('winner_confidence_category') == "VERY HIGH":
             insights.append(f"🎯 **High Confidence Winner**: Model strongly favors {winner_prediction.get('predicted_winner', 'N/A')}")
         elif winner_prediction.get('winner_confidence_category') == "LOW":
@@ -803,6 +857,90 @@ with col2:
     </div>
     """, unsafe_allow_html=True)
 
+# ========== PATTERN INDICATORS ==========
+st.divider()
+st.subheader("🎯 Backtest-Proven Patterns")
+
+pattern_indicators = generate_pattern_indicators(prediction)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    winner_indicator = pattern_indicators['winner']
+    if winner_indicator['type'] == 'MET':
+        st.markdown(f"""
+        <div style="background-color: #14532D; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0; border: 2px solid #22C55E;">
+            <div style="font-size: 20px; font-weight: bold; color: #22C55E; margin: 5px 0;">
+                ✅ {winner_indicator['text']}
+            </div>
+            <div style="font-size: 14px; color: #BBF7D0;">
+                {winner_indicator['explanation']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    elif winner_indicator['type'] == 'AVOID':
+        st.markdown(f"""
+        <div style="background-color: #7F1D1D; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0; border: 2px solid #EF4444;">
+            <div style="font-size: 20px; font-weight: bold; color: #EF4444; margin: 5px 0;">
+                ❌ {winner_indicator['text']}
+            </div>
+            <div style="font-size: 14px; color: #FECACA;">
+                {winner_indicator['explanation']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div style="background-color: #374151; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0; border: 2px solid #9CA3AF;">
+            <div style="font-size: 20px; font-weight: bold; color: #D1D5DB; margin: 5px 0;">
+                ⚪ {winner_indicator['text']}
+            </div>
+            <div style="font-size: 14px; color: #E5E7EB;">
+                {winner_indicator['explanation']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+with col2:
+    totals_indicator = pattern_indicators['totals']
+    if totals_indicator['type'] == 'MET':
+        st.markdown(f"""
+        <div style="background-color: #14532D; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0; border: 2px solid #22C55E;">
+            <div style="font-size: 20px; font-weight: bold; color: #22C55E; margin: 5px 0;">
+                ✅ {totals_indicator['text']}
+            </div>
+            <div style="font-size: 14px; color: #BBF7D0;">
+                {totals_indicator['explanation']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    elif totals_indicator['type'] == 'AVOID':
+        st.markdown(f"""
+        <div style="background-color: #7F1D1D; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0; border: 2px solid #EF4444;">
+            <div style="font-size: 20px; font-weight: bold; color: #EF4444; margin: 5px 0;">
+                ❌ {totals_indicator['text']}
+            </div>
+            <div style="font-size: 14px; color: #FECACA;">
+                {totals_indicator['explanation']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div style="background-color: #374151; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0; border: 2px solid #9CA3AF;">
+            <div style="font-size: 20px; font-weight: bold; color: #D1D5DB; margin: 5px 0;">
+                ⚪ {totals_indicator['text']}
+            </div>
+            <div style="font-size: 14px; color: #E5E7EB;">
+                {totals_indicator['explanation']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+st.caption("💡 **Based on 12-match backtest analysis** | Green = Proven pattern to bet | Red = Proven pattern to avoid | Gray = No clear pattern")
+
+# ========== CONTINUE WITH REST OF DISPLAY ==========
+
 # Insights
 if prediction['insights']:
     st.subheader("🧠 Enhanced Insights")
@@ -827,7 +965,6 @@ with col2:
     finish_cat = engine.totals_predictor.categorize_finishing(away_finish)
     st.metric(f"{away_team} Finishing", f"{away_finish:+.2f}", finish_cat)
 
-# FIXED: Using .get() to handle missing keys safely
 finishing_alignment = prediction['totals'].get('finishing_alignment', 'N/A')
 total_category = prediction['totals'].get('total_category', 'N/A')
 st.info(f"**Finishing Alignment**: {finishing_alignment} | **Total xG Category**: {total_category}")
@@ -953,6 +1090,10 @@ Total: {prediction['expected_goals']['total']:.2f} xG
 ⚠️ RISK FLAGS
 {', '.join(prediction['totals']['risk_flags']) if prediction['totals']['risk_flags'] else 'None'}
 
+🎯 BACKTEST PATTERNS
+Winner Pattern: {pattern_indicators['winner']['text']}
+Totals Pattern: {pattern_indicators['totals']['text']}
+
 💰 BETTING RECOMMENDATIONS
 Winner: {winner_rec.replace('✅', 'STRONG BET:').replace('⚠️', 'MODERATE BET:').replace('❌', 'NO BET:')}
 Totals: {totals_rec.replace('✅', 'STRONG BET:').replace('⚠️', 'MODERATE BET:').replace('❌', 'NO BET:')}
@@ -981,7 +1122,8 @@ with col2:
             'home_team': home_team,
             'away_team': away_team,
             'league': selected_league,
-            'prediction': prediction
+            'prediction': prediction,
+            'pattern_indicators': pattern_indicators
         })
         st.success("Added to prediction history!")
 
@@ -996,8 +1138,12 @@ if st.session_state.prediction_history:
                     st.caption(f"{hist['timestamp'].strftime('%Y-%m-%d %H:%M')}")
                 with col2:
                     winner = hist['prediction']['winner']['team']
+                    winner_pattern = hist['pattern_indicators']['winner']['text']
                     st.write(f"🏆 {winner}")
+                    st.caption(f"{winner_pattern}")
                 with col3:
                     direction = hist['prediction']['totals']['direction']
+                    totals_pattern = hist['pattern_indicators']['totals']['text']
                     st.write(f"📈 {direction} 2.5")
+                    st.caption(f"{totals_pattern}")
                 st.divider()
