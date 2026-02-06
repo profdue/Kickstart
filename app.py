@@ -8,19 +8,29 @@ warnings.filterwarnings('ignore')
 
 # Page config
 st.set_page_config(
-    page_title="⚽ Football Intelligence Engine v2.1",
+    page_title="⚽ Football Intelligence Engine v3.0",
     page_icon="🧠",
     layout="wide"
 )
 
-st.title("⚽ Football Intelligence Engine v2.1")
+st.title("⚽ Football Intelligence Engine v3.0")
 st.markdown("""
-    **Enhanced Predictive Model: Performance-Based xG + Poisson Probabilities**
-    *Improved confidence scoring and draw suppression*
+    **Complete Logic System: Winners + Totals with Finishing Trend Analysis**
+    *Separate confidence systems for winners and totals*
 """)
 
 # ========== CONSTANTS ==========
-MAX_GOALS_CALC = 8  # Maximum goals to calculate in Poisson
+MAX_GOALS_CALC = 8
+
+# League-specific adjustments
+LEAGUE_ADJUSTMENTS = {
+    "Premier League": {"over_threshold": 2.5, "under_threshold": 2.5, "avg_goals": 2.79},
+    "Bundesliga": {"over_threshold": 3.0, "under_threshold": 2.2, "avg_goals": 3.20},
+    "Serie A": {"over_threshold": 2.7, "under_threshold": 2.3, "avg_goals": 2.40},
+    "La Liga": {"over_threshold": 2.6, "under_threshold": 2.4, "avg_goals": 2.61},
+    "Ligue 1": {"over_threshold": 2.8, "under_threshold": 2.2, "avg_goals": 2.85},
+    "Eredivisie": {"over_threshold": 2.9, "under_threshold": 2.1, "avg_goals": 3.10}
+}
 
 # Initialize session state
 if 'prediction_history' not in st.session_state:
@@ -56,15 +66,6 @@ def load_league_data(league_name):
         file_path = f"leagues/{filename}"
         
         df = pd.read_csv(file_path)
-        
-        # Check if we have the expected columns
-        expected_columns = ['team', 'venue', 'matches', 'wins', 'draws', 'losses', 'gf', 'ga', 
-                          'pts', 'xg', 'xga', 'xpts', 'goals_vs_xg', 'goals_allowed_vs_xga', 'pts_vs_xpts']
-        
-        missing = [col for col in expected_columns if col not in df.columns]
-        if missing:
-            st.warning(f"Missing columns: {missing}. Some features may be limited.")
-            
         return df
     except Exception as e:
         st.error(f"Data loading failed: {str(e)}")
@@ -75,14 +76,11 @@ def prepare_team_data(df):
     if df is None or len(df) == 0:
         return pd.DataFrame(), pd.DataFrame()
     
-    # Create copies for home and away data
     home_data = df[df['venue'] == 'home'].copy()
     away_data = df[df['venue'] == 'away'].copy()
     
-    # Calculate per-match averages for both datasets
     for df_part in [home_data, away_data]:
         if len(df_part) > 0:
-            # Calculate basic per-match stats
             df_part['goals_for_pm'] = df_part['gf'] / df_part['matches']
             df_part['goals_against_pm'] = df_part['ga'] / df_part['matches']
             df_part['goals_vs_xg_pm'] = df_part['goals_vs_xg'] / df_part['matches']
@@ -93,84 +91,54 @@ def prepare_team_data(df):
             df_part['win_rate'] = df_part['wins'] / df_part['matches']
             df_part['draw_rate'] = df_part['draws'] / df_part['matches']
             df_part['loss_rate'] = df_part['losses'] / df_part['matches']
-            df_part['goal_difference_pm'] = df_part['goals_for_pm'] - df_part['goals_against_pm']
     
     return home_data.set_index('team'), away_data.set_index('team')
 
 def calculate_league_metrics(df):
-    """Calculate league-wide metrics including average goals"""
+    """Calculate league-wide metrics"""
     if df is None or len(df) == 0:
         return {}
     
-    # Calculate total goals per match in the league using 'gf' column
-    total_matches = df['matches'].sum() / 2  # Each match counted twice (home & away)
+    total_matches = df['matches'].sum() / 2
     total_goals = df['gf'].sum()
-    
     avg_goals_per_match = total_goals / total_matches if total_matches > 0 else 2.5
     
-    # Calculate home/away points averages using 'pts' column
-    home_data = df[df['venue'] == 'home']
-    away_data = df[df['venue'] == 'away']
-    
-    home_pts_avg = home_data['pts'].sum() / home_data['matches'].sum() if len(home_data) > 0 else 1.5
-    away_pts_avg = away_data['pts'].sum() / away_data['matches'].sum() if len(away_data) > 0 else 1.0
-    
-    # Calculate home/away goal averages
-    home_gf_avg = home_data['gf'].sum() / home_data['matches'].sum() if len(home_data) > 0 else 1.5
-    away_gf_avg = away_data['gf'].sum() / away_data['matches'].sum() if len(away_data) > 0 else 1.2
-    
-    home_ga_avg = home_data['ga'].sum() / home_data['matches'].sum() if len(home_data) > 0 else 1.2
-    away_ga_avg = away_data['ga'].sum() / away_data['matches'].sum() if len(away_data) > 0 else 1.5
-    
-    return {
-        'avg_goals_per_match': avg_goals_per_match,
-        'home_pts_avg': home_pts_avg,
-        'away_pts_avg': away_pts_avg,
-        'home_gf_avg': home_gf_avg,
-        'away_gf_avg': away_gf_avg,
-        'home_ga_avg': home_ga_avg,
-        'away_ga_avg': away_ga_avg
-    }
+    return {'avg_goals_per_match': avg_goals_per_match}
+
+# ========== OUR NEW LOGIC CLASSES ==========
 
 class ExpectedGoalsPredictor:
-    """Implements the step-by-step expected goals formula using available data"""
+    """OUR LOGIC: Expected goals calculation"""
     
-    def __init__(self, league_metrics):
+    def __init__(self, league_metrics, league_name):
         self.league_metrics = league_metrics
         self.league_avg_goals = league_metrics.get('avg_goals_per_match', 2.5)
+        self.league_name = league_name
     
     def predict_expected_goals(self, home_stats, away_stats):
-        """
-        Step-by-step expected goals calculation using the refined logic
-        
-        Uses available columns: gf, ga, goals_vs_xg, goals_allowed_vs_xga, pts
-        """
-        
-        # Step 1: Adjusted Goals (Weighted xG Adjustment)
+        """OUR LOGIC: Step 1 - Adjusted Team Strength"""
         home_adjGF = home_stats['goals_for_pm'] + 0.6 * home_stats['goals_vs_xg_pm']
         home_adjGA = home_stats['goals_against_pm'] + 0.6 * home_stats['goals_allowed_vs_xga_pm']
         
         away_adjGF = away_stats['goals_for_pm'] + 0.6 * away_stats['goals_vs_xg_pm']
         away_adjGA = away_stats['goals_against_pm'] + 0.6 * away_stats['goals_allowed_vs_xga_pm']
         
-        # Step 2: Dynamic Venue Factor (using points per match)
+        # OUR LOGIC: Dynamic Venue Factor
         venue_factor_home = 1 + 0.05 * (home_stats['points_pm'] - away_stats['points_pm']) / 3
         venue_factor_away = 1 + 0.05 * (away_stats['points_pm'] - home_stats['points_pm']) / 3
         
-        # Clamp venue factors to reasonable range
         venue_factor_home = max(0.8, min(1.2, venue_factor_home))
         venue_factor_away = max(0.8, min(1.2, venue_factor_away))
         
-        # Step 3: Expected Goals Calculation
+        # OUR LOGIC: Expected Goals Calculation
         home_xg = (home_adjGF + away_adjGA) / 2 * venue_factor_home
         away_xg = (away_adjGF + home_adjGA) / 2 * venue_factor_away
         
-        # Step 4: League Average Normalization
+        # League normalization
         normalization_factor = self.league_avg_goals / 2.5
         home_xg *= normalization_factor
         away_xg *= normalization_factor
         
-        # Step 5: Apply reasonable bounds
         home_xg = max(0.2, min(5.0, home_xg))
         away_xg = max(0.2, min(5.0, away_xg))
         
@@ -180,20 +148,301 @@ class ExpectedGoalsPredictor:
             'away_adjGF': away_adjGF,
             'away_adjGA': away_adjGA,
             'venue_factor_home': venue_factor_home,
-            'venue_factor_away': venue_factor_away,
-            'normalization_factor': normalization_factor
+            'venue_factor_away': venue_factor_away
+        }
+
+class WinnerPredictor:
+    """OUR LOGIC: Winner prediction with proven confidence system"""
+    
+    def predict_winner(self, home_xg, away_xg, home_stats, away_stats):
+        """OUR LOGIC: Winner determination"""
+        delta = home_xg - away_xg
+        
+        # OUR LOGIC: Winner determination with draw suppression
+        if delta > 1.2:
+            predicted_winner = "HOME"
+            winner_strength = "STRONG"
+        elif delta > 0.5:
+            predicted_winner = "HOME"
+            winner_strength = "MODERATE"
+        elif delta > 0.2:
+            predicted_winner = "HOME"
+            winner_strength = "SLIGHT"
+        elif delta < -1.2:
+            predicted_winner = "AWAY"
+            winner_strength = "STRONG"
+        elif delta < -0.5:
+            predicted_winner = "AWAY"
+            winner_strength = "MODERATE"
+        elif delta < -0.2:
+            predicted_winner = "AWAY"
+            winner_strength = "SLIGHT"
+        else:
+            predicted_winner = "DRAW"
+            winner_strength = "CLOSE"
+        
+        # OUR LOGIC: Winner confidence calculation (PROVEN TO WORK)
+        base_confidence = min(100, abs(delta) / max(home_xg, away_xg, 0.5) * 150)
+        
+        # Add bonuses
+        venue_bonus = 0
+        if home_stats['points_pm'] > 2.0:
+            venue_bonus += 15
+        if away_stats['points_pm'] < 1.0:
+            venue_bonus += 15
+        
+        win_rate_diff = home_stats['win_rate'] - away_stats['win_rate']
+        form_bonus = min(20, max(0, win_rate_diff * 40))
+        
+        winner_confidence = min(100, max(30, base_confidence + venue_bonus + form_bonus))
+        
+        # OUR LOGIC: Confidence categorization
+        if winner_confidence >= 75:
+            confidence_category = "VERY HIGH"
+        elif winner_confidence >= 65:
+            confidence_category = "HIGH"
+        elif winner_confidence >= 55:
+            confidence_category = "MEDIUM"
+        elif winner_confidence >= 45:
+            confidence_category = "LOW"
+        else:
+            confidence_category = "VERY LOW"
+        
+        return {
+            'predicted_winner': predicted_winner,
+            'winner_strength': winner_strength,
+            'winner_confidence': winner_confidence,
+            'winner_confidence_category': confidence_category,
+            'delta': delta
+        }
+
+class TotalsPredictor:
+    """OUR NEW LOGIC: Totals prediction with finishing trend analysis"""
+    
+    def __init__(self, league_name):
+        self.league_name = league_name
+        self.league_adjustments = LEAGUE_ADJUSTMENTS.get(league_name, LEAGUE_ADJUSTMENTS["Premier League"])
+    
+    def categorize_finishing(self, value):
+        """OUR LOGIC: Categorize finishing strength"""
+        if value > 0.3:
+            return "STRONG_OVERPERFORM"
+        elif value > 0.1:
+            return "MODERATE_OVERPERFORM"
+        elif value > -0.1:
+            return "NEUTRAL"
+        elif value > -0.3:
+            return "MODERATE_UNDERPERFORM"
+        else:
+            return "STRONG_UNDERPERFORM"
+    
+    def get_finishing_alignment(self, home_finish, away_finish):
+        """OUR LOGIC: Finishing trend alignment matrix"""
+        home_cat = self.categorize_finishing(home_finish)
+        away_cat = self.categorize_finishing(away_finish)
+        
+        # OUR LOGIC: Alignment matrix
+        alignment_matrix = {
+            "STRONG_OVERPERFORM": {
+                "STRONG_OVERPERFORM": "HIGH_OVER",
+                "MODERATE_OVERPERFORM": "MED_OVER",
+                "NEUTRAL": "MED_OVER",
+                "MODERATE_UNDERPERFORM": "RISKY",
+                "STRONG_UNDERPERFORM": "RISKY"
+            },
+            "MODERATE_OVERPERFORM": {
+                "STRONG_OVERPERFORM": "MED_OVER",
+                "MODERATE_OVERPERFORM": "MED_OVER",
+                "NEUTRAL": "LOW_OVER",
+                "MODERATE_UNDERPERFORM": "RISKY",
+                "STRONG_UNDERPERFORM": "HIGH_RISK"
+            },
+            "NEUTRAL": {
+                "STRONG_OVERPERFORM": "MED_OVER",
+                "MODERATE_OVERPERFORM": "LOW_OVER",
+                "NEUTRAL": "NEUTRAL",
+                "MODERATE_UNDERPERFORM": "LOW_UNDER",
+                "STRONG_UNDERPERFORM": "MED_UNDER"
+            },
+            "MODERATE_UNDERPERFORM": {
+                "STRONG_OVERPERFORM": "RISKY",
+                "MODERATE_OVERPERFORM": "RISKY",
+                "NEUTRAL": "LOW_UNDER",
+                "MODERATE_UNDERPERFORM": "MED_UNDER",
+                "STRONG_UNDERPERFORM": "MED_UNDER"
+            },
+            "STRONG_UNDERPERFORM": {
+                "STRONG_OVERPERFORM": "HIGH_RISK",
+                "MODERATE_OVERPERFORM": "RISKY",
+                "NEUTRAL": "MED_UNDER",
+                "MODERATE_UNDERPERFORM": "MED_UNDER",
+                "STRONG_UNDERPERFORM": "HIGH_UNDER"
+            }
+        }
+        
+        return alignment_matrix[home_cat][away_cat]
+    
+    def categorize_total_xg(self, total_xg):
+        """OUR LOGIC: Total xG categories"""
+        if total_xg > 3.3:
+            return "VERY_HIGH"
+        elif total_xg > 3.0:
+            return "HIGH"
+        elif total_xg > 2.7:
+            return "MODERATE_HIGH"
+        elif total_xg > 2.3:
+            return "MODERATE_LOW"
+        elif total_xg > 2.0:
+            return "LOW"
+        else:
+            return "VERY_LOW"
+    
+    def check_risk_flags(self, home_stats, away_stats, total_xg):
+        """OUR LOGIC: Risk flag system"""
+        risk_flags = []
+        home_finish = home_stats['goals_vs_xg_pm']
+        away_finish = away_stats['goals_vs_xg_pm']
+        
+        # Flag 1: Opposite extreme finishing
+        if (home_finish > 0.5 and away_finish < -0.5) or (home_finish < -0.5 and away_finish > 0.5):
+            risk_flags.append("OPPOSITE_EXTREME_FINISHING")
+        
+        # Flag 2: High variance teams
+        if abs(home_finish) > 0.4 or abs(away_finish) > 0.4:
+            risk_flags.append("HIGH_VARIANCE_TEAM")
+        
+        # Flag 3: Attack-defense mismatch
+        if home_stats['goals_for_pm'] > 2.0 and away_stats['goals_for_pm'] < 1.0:
+            risk_flags.append("ATTACK_DEFENSE_MISMATCH")
+        
+        # Flag 4: Close to threshold
+        lower_thresh = self.league_adjustments['under_threshold'] - 0.1
+        upper_thresh = self.league_adjustments['over_threshold'] + 0.1
+        if lower_thresh < total_xg < upper_thresh:
+            risk_flags.append("CLOSE_TO_THRESHOLD")
+        
+        return risk_flags
+    
+    def predict_totals(self, home_xg, away_xg, home_stats, away_stats):
+        """OUR LOGIC: Complete totals prediction"""
+        total_xg = home_xg + away_xg
+        home_finish = home_stats['goals_vs_xg_pm']
+        away_finish = away_stats['goals_vs_xg_pm']
+        
+        # OUR LOGIC: Base prediction
+        over_threshold = self.league_adjustments['over_threshold']
+        base_direction = "OVER" if total_xg > over_threshold else "UNDER"
+        
+        # OUR LOGIC: Finishing alignment
+        finishing_alignment = self.get_finishing_alignment(home_finish, away_finish)
+        total_category = self.categorize_total_xg(total_xg)
+        
+        # OUR LOGIC: Risk flags
+        risk_flags = self.check_risk_flags(home_stats, away_stats, total_xg)
+        
+        # OUR LOGIC: Decision matrix
+        decision_matrix = {
+            "VERY_HIGH": {
+                "HIGH_OVER": ("OVER", "VERY HIGH", 85),
+                "MED_OVER": ("OVER", "HIGH", 75),
+                "LOW_OVER": ("OVER", "MEDIUM", 65),
+                "NEUTRAL": ("OVER", "MEDIUM", 60),
+                "RISKY": ("OVER", "LOW", 45),
+                "HIGH_RISK": (base_direction, "VERY LOW", 35)
+            },
+            "HIGH": {
+                "HIGH_OVER": ("OVER", "VERY HIGH", 80),
+                "MED_OVER": ("OVER", "HIGH", 70),
+                "LOW_OVER": ("OVER", "MEDIUM", 60),
+                "NEUTRAL": (base_direction, "LOW", 50),
+                "RISKY": (base_direction, "LOW", 45),
+                "HIGH_RISK": (base_direction, "VERY LOW", 35)
+            },
+            "MODERATE_HIGH": {
+                "HIGH_OVER": ("OVER", "HIGH", 75),
+                "MED_OVER": ("OVER", "MEDIUM", 65),
+                "LOW_OVER": ("OVER", "MEDIUM", 60),
+                "NEUTRAL": (base_direction, "LOW", 50),
+                "LOW_UNDER": ("UNDER", "LOW", 45),
+                "MED_UNDER": ("UNDER", "MEDIUM", 55)
+            },
+            "MODERATE_LOW": {
+                "HIGH_UNDER": ("UNDER", "VERY HIGH", 80),
+                "MED_UNDER": ("UNDER", "HIGH", 70),
+                "LOW_UNDER": ("UNDER", "MEDIUM", 60),
+                "NEUTRAL": (base_direction, "LOW", 50),
+                "LOW_OVER": ("OVER", "LOW", 45),
+                "MED_OVER": ("OVER", "MEDIUM", 55)
+            },
+            "LOW": {
+                "HIGH_UNDER": ("UNDER", "VERY HIGH", 85),
+                "MED_UNDER": ("UNDER", "HIGH", 75),
+                "LOW_UNDER": ("UNDER", "MEDIUM", 65),
+                "NEUTRAL": ("UNDER", "LOW", 50),
+                "RISKY": ("UNDER", "LOW", 45),
+                "HIGH_RISK": (base_direction, "VERY LOW", 35)
+            },
+            "VERY_LOW": {
+                "HIGH_UNDER": ("UNDER", "VERY HIGH", 90),
+                "MED_UNDER": ("UNDER", "HIGH", 80),
+                "LOW_UNDER": ("UNDER", "MEDIUM", 70),
+                "NEUTRAL": ("UNDER", "MEDIUM", 65),
+                "RISKY": ("UNDER", "LOW", 45),
+                "HIGH_RISK": (base_direction, "VERY LOW", 35)
+            }
+        }
+        
+        # Get decision from matrix
+        if finishing_alignment in decision_matrix[total_category]:
+            direction, confidence_category, base_confidence = decision_matrix[total_category][finishing_alignment]
+        else:
+            direction = base_direction
+            confidence_category = "LOW"
+            base_confidence = 40
+        
+        # OUR LOGIC: Apply risk flag penalties
+        final_confidence = base_confidence
+        for flag in risk_flags:
+            if flag == "OPPOSITE_EXTREME_FINISHING":
+                final_confidence -= 25
+            elif flag == "HIGH_VARIANCE_TEAM":
+                final_confidence -= 15
+            elif flag == "ATTACK_DEFENSE_MISMATCH":
+                final_confidence -= 10
+            elif flag == "CLOSE_TO_THRESHOLD":
+                final_confidence -= 10
+        
+        final_confidence = max(5, min(95, final_confidence))
+        
+        # Adjust confidence category based on final score
+        if final_confidence >= 75:
+            confidence_category = "VERY HIGH"
+        elif final_confidence >= 65:
+            confidence_category = "HIGH"
+        elif final_confidence >= 55:
+            confidence_category = "MEDIUM"
+        elif final_confidence >= 45:
+            confidence_category = "LOW"
+        else:
+            confidence_category = "VERY LOW"
+        
+        return {
+            'direction': direction,
+            'total_xg': total_xg,
+            'confidence': confidence_category,
+            'confidence_score': final_confidence,
+            'finishing_alignment': finishing_alignment,
+            'total_category': total_category,
+            'risk_flags': risk_flags,
+            'home_finishing': home_finish,
+            'away_finishing': away_finish
         }
 
 class PoissonProbabilityEngine:
-    """Mathematically consistent probability engine using Poisson distributions"""
+    """Calculate all probabilities from Poisson distribution"""
     
     @staticmethod
     def calculate_all_probabilities(home_xg, away_xg):
-        """
-        Calculate ALL probabilities from single Poisson distribution
-        Returns mathematically consistent probabilities
-        """
-        # Calculate all score probabilities
         score_probabilities = []
         max_goals = min(MAX_GOALS_CALC, int(home_xg + away_xg) + 4)
         
@@ -201,18 +450,16 @@ class PoissonProbabilityEngine:
             for away_goals in range(max_goals + 1):
                 prob = (poisson_pmf(home_goals, home_xg) * 
                        poisson_pmf(away_goals, away_xg))
-                if prob > 0.0001:  # Ignore very small probabilities
+                if prob > 0.0001:
                     score_probabilities.append({
                         'home_goals': home_goals,
                         'away_goals': away_goals,
                         'probability': prob
                     })
         
-        # Find most likely score
         most_likely = max(score_probabilities, key=lambda x: x['probability'])
         most_likely_score = f"{most_likely['home_goals']}-{most_likely['away_goals']}"
         
-        # Calculate win/draw/loss probabilities
         home_win_prob = sum(p['probability'] for p in score_probabilities 
                            if p['home_goals'] > p['away_goals'])
         draw_prob = sum(p['probability'] for p in score_probabilities 
@@ -220,17 +467,14 @@ class PoissonProbabilityEngine:
         away_win_prob = sum(p['probability'] for p in score_probabilities 
                            if p['home_goals'] < p['away_goals'])
         
-        # Calculate over/under probabilities
         over_2_5_prob = sum(p['probability'] for p in score_probabilities 
                            if p['home_goals'] + p['away_goals'] > 2.5)
         under_2_5_prob = sum(p['probability'] for p in score_probabilities 
                             if p['home_goals'] + p['away_goals'] < 2.5)
         
-        # Calculate both teams to score
         btts_prob = sum(p['probability'] for p in score_probabilities 
                        if p['home_goals'] > 0 and p['away_goals'] > 0)
         
-        # Get top 5 most likely scores
         top_scores = sorted(score_probabilities, key=lambda x: x['probability'], reverse=True)[:5]
         top_scores_formatted = [(f"{s['home_goals']}-{s['away_goals']}", s['probability']) 
                                for s in top_scores]
@@ -246,298 +490,136 @@ class PoissonProbabilityEngine:
             'top_scores': top_scores_formatted,
             'expected_home_goals': home_xg,
             'expected_away_goals': away_xg,
-            'total_expected_goals': home_xg + away_xg,
-            'score_probabilities': score_probabilities
+            'total_expected_goals': home_xg + away_xg
         }
 
-class EnhancedMatchAnalyzer:
-    """Enhanced match dynamics analyzer with improved confidence and draw suppression"""
+class InsightsGenerator:
+    """OUR LOGIC: Generate enhanced insights"""
     
-    def __init__(self, league_metrics):
-        self.league_metrics = league_metrics
-    
-    def analyze_match_dynamics(self, home_xg, away_xg, home_stats, away_stats):
-        """Enhanced match dynamics analysis with draw suppression"""
-        total_goals = home_xg + away_xg
-        delta = home_xg - away_xg
-        
-        # ENHANCED: More sophisticated winner prediction with draw suppression
-        home_strength = home_stats['points_pm'] * home_stats['win_rate']
-        away_strength = away_stats['points_pm'] * away_stats['win_rate']
-        strength_ratio = home_strength / max(away_strength, 0.1)
-        
-        # Only predict draw when truly balanced (more strict criteria)
-        if abs(delta) < 0.3:  # Reduced from 0.5 (DRAW SUPPRESSION)
-            if 0.85 < strength_ratio < 1.15:  # Tightened range
-                predicted_winner = "DRAW"
-                winner_strength = "CLOSE"
-            elif strength_ratio >= 1.15:
-                predicted_winner = "HOME"
-                winner_strength = "SLIGHT"
-            else:
-                predicted_winner = "AWAY"
-                winner_strength = "SLIGHT"
-        elif delta > 1.2:  # Strong home advantage
-            predicted_winner = "HOME"
-            winner_strength = "STRONG"
-        elif delta > 0.5:  # Moderate home advantage
-            predicted_winner = "HOME"
-            winner_strength = "MODERATE"
-        elif delta < -1.2:  # Strong away advantage
-            predicted_winner = "AWAY"
-            winner_strength = "STRONG"
-        elif delta < -0.5:  # Moderate away advantage
-            predicted_winner = "AWAY"
-            winner_strength = "MODERATE"
-        else:  # Slight advantage with home bias
-            if home_stats['points_pm'] > away_stats['points_pm']:
-                predicted_winner = "HOME"
-            else:
-                predicted_winner = "AWAY"
-            winner_strength = "SLIGHT"
-        
-        # ENHANCED: More aggressive total goals prediction
-        variance = abs(delta) * 0.6  # Increased from 0.4
-        
-        # Consider attacking quality more
-        home_attack_quality = home_stats['goals_for_pm'] + home_stats['xg_pm']
-        away_attack_quality = away_stats['goals_for_pm'] + away_stats['xg_pm']
-        avg_attack_quality = (home_attack_quality + away_attack_quality) / 2
-        
-        # Defensive weakness
-        home_def_weakness = home_stats['goals_against_pm'] + home_stats['xga_pm']
-        away_def_weakness = away_stats['goals_against_pm'] + away_stats['xga_pm']
-        avg_def_weakness = (home_def_weakness + away_def_weakness) / 2
-        
-        # Dynamic threshold based on league average
-        league_avg = self.league_metrics['avg_goals_per_match']
-        over_threshold = 2.5 + (league_avg - 2.5) * 0.3
-        under_threshold = 2.5 - (2.5 - league_avg) * 0.3
-        
-        if total_goals - variance > over_threshold:
-            total_prediction = "OVER"
-            total_confidence = "VERY HIGH" if total_goals > 3.5 else "HIGH"
-        elif total_goals + variance < under_threshold:
-            total_prediction = "UNDER"
-            total_confidence = "VERY HIGH" if total_goals < 1.5 else "HIGH"
-        else:
-            # Use attack/defense balance
-            if avg_attack_quality > 2.0 and avg_def_weakness > 1.8:
-                total_prediction = "OVER"
-                total_confidence = "LEAN"
-            elif avg_attack_quality < 1.3 and avg_def_weakness < 1.3:
-                total_prediction = "UNDER"
-                total_confidence = "LEAN"
-            else:
-                total_prediction = "OVER" if total_goals > 2.5 else "UNDER"
-                total_confidence = "LEAN"
-        
-        # ENHANCED: More realistic confidence calculation
-        winner_confidence = self._calculate_winner_confidence(delta, home_xg, away_xg, home_stats, away_stats)
-        total_confidence_score = self._calculate_total_confidence(total_goals, avg_attack_quality, avg_def_weakness)
-        
-        return {
-            'predicted_winner': predicted_winner,
-            'winner_strength': winner_strength,
-            'winner_confidence': winner_confidence,
-            'total_prediction': total_prediction,
-            'total_confidence': total_confidence,
-            'total_confidence_score': total_confidence_score,
-            'delta': delta,
-            'total_goals': total_goals,
-            'variance': variance
-        }
-    
-    def _calculate_winner_confidence(self, delta, home_xg, away_xg, home_stats, away_stats):
-        """Enhanced winner confidence calculation"""
-        # Base confidence from expected goals difference
-        base_confidence = min(100, abs(delta) / max(home_xg, away_xg, 0.5) * 150)
-        
-        # Add venue strength factor
-        venue_factor = 0
-        if home_stats['points_pm'] > 2.0:  # Very strong home record
-            venue_factor += 15
-        elif home_stats['points_pm'] > 1.8:
-            venue_factor += 10
-        elif home_stats['points_pm'] > 1.5:
-            venue_factor += 5
-            
-        if away_stats['points_pm'] < 0.8:  # Very poor away record
-            venue_factor += 15
-        elif away_stats['points_pm'] < 1.0:
-            venue_factor += 10
-        elif away_stats['points_pm'] < 1.2:
-            venue_factor += 5
-        
-        # Add form-like factor based on win rate difference
-        win_rate_difference = home_stats['win_rate'] - away_stats['win_rate']
-        form_factor = min(20, max(0, win_rate_difference * 40))
-        
-        # Combine all factors
-        total_confidence = min(100, base_confidence + venue_factor + form_factor)
-        
-        # Ensure minimum confidence
-        return max(30, total_confidence)
-    
-    def _calculate_total_confidence(self, total_goals, avg_attack_quality, avg_def_weakness):
-        """Enhanced total goals confidence calculation"""
-        # Base confidence from distance from 2.5
-        distance_from_2_5 = abs(total_goals - 2.5)
-        base_confidence = min(100, distance_from_2_5 / 2.5 * 150)  # More aggressive
-        
-        # Add attack/defense mismatch factor
-        attack_defense_factor = 0
-        if avg_attack_quality > 2.5 and avg_def_weakness > 2.0:
-            attack_defense_factor += 20
-        elif avg_attack_quality > 2.0 and avg_def_weakness > 1.8:
-            attack_defense_factor += 15
-        elif avg_attack_quality < 1.0 and avg_def_weakness < 1.2:
-            attack_defense_factor += 10
-        
-        total_confidence = min(100, base_confidence + attack_defense_factor)
-        
-        # Ensure minimum confidence
-        return max(20, total_confidence)
-    
-    def generate_insights(self, home_xg, away_xg, home_stats, away_stats, calc_details):
-        """Generate enhanced insights about the match"""
-        
+    @staticmethod
+    def generate_insights(prediction):
         insights = []
         
-        # 1. Venue and form analysis
-        venue_factor = calc_details['venue_factor_home']
-        if venue_factor > 1.15:
-            insights.append(f"🏠 Strong home fortress: {home_stats.name} averages {home_stats['points_pm']:.2f} pts/game at home")
-        elif venue_factor < 0.9:
-            insights.append(f"🏠 Home disadvantage: {home_stats.name} struggles at home ({home_stats['points_pm']:.2f} pts/game)")
+        # Winner insights
+        winner_pred = prediction['winner_prediction']
+        if winner_pred['confidence_category'] == "VERY HIGH":
+            insights.append(f"🎯 **High Confidence Winner**: Model strongly favors {winner_pred['predicted_winner']}")
         
-        # 2. Attack vs Defense quality
-        home_attack_power = home_stats['goals_for_pm'] + home_stats['goals_vs_xg_pm']
-        away_defense_leakiness = away_stats['goals_against_pm'] + away_stats['goals_allowed_vs_xga_pm']
+        # Totals insights
+        totals_pred = prediction['totals_prediction']
+        if totals_pred['confidence'] == "VERY HIGH":
+            insights.append(f"🎯 **High Confidence Totals**: Strong signal for {totals_pred['direction']} 2.5")
         
-        if home_attack_power > 2.0 and away_defense_leakiness > 2.0:
-            insights.append(f"⚡ {home_stats.name}'s potent attack ({home_attack_power:.1f}) meets {away_stats.name}'s leaky defense ({away_defense_leakiness:.1f})")
-        elif home_attack_power < 1.0 and away_defense_leakiness < 1.0:
-            insights.append(f"🛡️ Defensive battle: Both teams struggle to score but defend well")
+        # Finishing trend insights
+        home_finish = totals_pred['home_finishing']
+        away_finish = totals_pred['away_finishing']
         
-        # 3. Expected vs Actual performance
-        home_xg_diff = home_stats['goals_for_pm'] - home_stats['xg_pm']
-        away_xg_diff = away_stats['goals_for_pm'] - away_stats['xg_pm']
+        if home_finish > 0.3:
+            insights.append(f"⚡ Home team overperforms xG by {home_finish:.2f}/game (clinical finishing)")
+        elif home_finish < -0.3:
+            insights.append(f"⚡ Home team underperforms xG by {abs(home_finish):.2f}/game (wasteful finishing)")
         
-        if home_xg_diff > 0.3:
-            insights.append(f"🎯 {home_stats.name} overperforms xG by {home_xg_diff:.2f}/game (clinical finishing)")
-        elif home_xg_diff < -0.3:
-            insights.append(f"🎯 {home_stats.name} underperforms xG by {abs(home_xg_diff):.2f}/game (wasteful finishing)")
+        if away_finish > 0.3:
+            insights.append(f"⚡ Away team overperforms xG by {away_finish:.2f}/game (clinical finishing)")
+        elif away_finish < -0.3:
+            insights.append(f"⚡ Away team underperforms xG by {abs(away_finish):.2f}/game (wasteful finishing)")
         
-        if away_xg_diff > 0.3:
-            insights.append(f"🎯 {away_stats.name} overperforms xG by {away_xg_diff:.2f}/game (clinical finishing)")
-        elif away_xg_diff < -0.3:
-            insights.append(f"🎯 {away_stats.name} underperforms xG by {abs(away_xg_diff):.2f}/game (wasteful finishing)")
+        # Risk flag insights
+        if totals_pred['risk_flags']:
+            risk_count = len(totals_pred['risk_flags'])
+            insights.append(f"⚠️ **{risk_count} risk flag(s) detected** - Exercise caution")
         
-        # 4. Match type prediction
-        total_xg = home_xg + away_xg
-        delta_xg = home_xg - away_xg
+        # Finishing alignment insights
+        alignment = totals_pred['finishing_alignment']
+        if alignment == "HIGH_OVER":
+            insights.append("🔥 Both teams show strong overperformance - High probability of OVER")
+        elif alignment == "HIGH_UNDER":
+            insights.append("🛡️ Both teams show strong underperformance - High probability of UNDER")
+        elif "RISKY" in alignment:
+            insights.append("🎲 Mixed finishing trends - Higher variance expected")
         
-        if total_xg > 3.5:
-            if abs(delta_xg) > 1.5:
-                insights.append("🔥 Expected: High-scoring one-sided match")
-            else:
-                insights.append("🔥 Expected: Goal-fest with both teams scoring")
-        elif total_xg < 2.0:
-            if abs(delta_xg) < 0.5:
-                insights.append("🛡️ Expected: Tight defensive stalemate")
-            else:
-                insights.append("🛡️ Expected: Low-scoring with narrow margin")
-        
-        # 5. Defensive reliability
-        if home_stats['goals_against_pm'] < 1.0:
-            insights.append(f"🛡️ {home_stats.name} has solid home defense ({home_stats['goals_against_pm']:.2f} conceded/game)")
-        
-        if away_stats['goals_against_pm'] > 2.0:
-            insights.append(f"🛡️ {away_stats.name} struggles defensively away ({away_stats['goals_against_pm']:.2f} conceded/game)")
-        
-        # Limit to 5 most relevant insights
-        return insights[:5]
+        return insights[:5]  # Limit to 5 most important insights
 
-class FootballIntelligenceEngineV21:
-    """Main engine with enhanced confidence and draw suppression"""
+class FootballIntelligenceEngineV3:
+    """OUR LOGIC: Complete prediction engine"""
     
-    def __init__(self, league_metrics):
+    def __init__(self, league_metrics, league_name):
         self.league_metrics = league_metrics
-        self.xg_predictor = ExpectedGoalsPredictor(league_metrics)
+        self.league_name = league_name
+        self.xg_predictor = ExpectedGoalsPredictor(league_metrics, league_name)
+        self.winner_predictor = WinnerPredictor()
+        self.totals_predictor = TotalsPredictor(league_name)
         self.probability_engine = PoissonProbabilityEngine()
-        self.match_analyzer = EnhancedMatchAnalyzer(league_metrics)
+        self.insights_generator = InsightsGenerator()
     
     def predict_match(self, home_team, away_team, home_stats, away_stats):
-        """
-        Generate complete match prediction with enhanced features
+        """OUR LOGIC: Complete match prediction"""
         
-        Returns:
-        --------
-        dict: Complete prediction with probabilities and insights
-        """
-        
-        # Step 1: Calculate expected goals using performance-based formula
+        # Step 1: Expected goals
         home_xg, away_xg, calc_details = self.xg_predictor.predict_expected_goals(
             home_stats, away_stats
         )
         
-        # Step 2: Calculate all probabilities using Poisson distribution
+        # Step 2: Poisson probabilities
         probabilities = self.probability_engine.calculate_all_probabilities(
             home_xg, away_xg
         )
         
-        # Step 3: Analyze match dynamics with enhanced logic
-        dynamics = self.match_analyzer.analyze_match_dynamics(
+        # Step 3: OUR LOGIC - Winner prediction
+        winner_prediction = self.winner_predictor.predict_winner(
             home_xg, away_xg, home_stats, away_stats
         )
         
-        # Step 4: Generate enhanced insights
-        insights = self.match_analyzer.generate_insights(
-            home_xg, away_xg, home_stats, away_stats, calc_details
+        # Step 4: OUR LOGIC - Totals prediction
+        totals_prediction = self.totals_predictor.predict_totals(
+            home_xg, away_xg, home_stats, away_stats
         )
         
-        # Step 5: Determine final predictions
-        # Total goals prediction
-        total_prob = probabilities['over_2_5_probability']
-        direction = "OVER" if total_prob > 0.5 else "UNDER"
-        final_prob = total_prob if direction == "OVER" else probabilities['under_2_5_probability']
+        # Step 5: OUR LOGIC - Insights
+        prediction_data = {
+            'winner_prediction': winner_prediction,
+            'totals_prediction': totals_prediction
+        }
+        insights = self.insights_generator.generate_insights(prediction_data)
         
-        # Winner prediction
-        winner_pred = dynamics['predicted_winner']
-        if winner_pred == "HOME":
+        # Step 6: Determine final probabilities
+        if winner_prediction['predicted_winner'] == "HOME":
             winner_display = home_team
             winner_prob = probabilities['home_win_probability']
-        elif winner_pred == "AWAY":
+        elif winner_prediction['predicted_winner'] == "AWAY":
             winner_display = away_team
             winner_prob = probabilities['away_win_probability']
         else:
             winner_display = "DRAW"
             winner_prob = probabilities['draw_probability']
         
-        # Enhanced confidence categorization
-        total_confidence = self._categorize_confidence(dynamics['total_confidence_score'], "total")
-        winner_confidence = self._categorize_confidence(dynamics['winner_confidence'], "winner")
+        # Get total probability
+        if totals_prediction['direction'] == "OVER":
+            total_prob = probabilities['over_2_5_probability']
+        else:
+            total_prob = probabilities['under_2_5_probability']
         
         return {
-            # Total goals prediction
-            'total_goals': {
-                'direction': direction,
-                'probability': final_prob,
-                'confidence': total_confidence,
-                'confidence_score': dynamics['total_confidence_score'],
-                'expected_total': home_xg + away_xg
-            },
-            
             # Winner prediction
             'winner': {
                 'team': winner_display,
-                'type': dynamics['predicted_winner'],
+                'type': winner_prediction['predicted_winner'],
                 'probability': winner_prob,
-                'confidence': winner_confidence,
-                'confidence_score': dynamics['winner_confidence'],
-                'strength': dynamics['winner_strength'],
+                'confidence': winner_prediction['winner_confidence_category'],
+                'confidence_score': winner_prediction['winner_confidence'],
+                'strength': winner_prediction['winner_strength'],
                 'most_likely_score': probabilities['most_likely_score']
+            },
+            
+            # Totals prediction
+            'totals': {
+                'direction': totals_prediction['direction'],
+                'probability': total_prob,
+                'confidence': totals_prediction['confidence'],
+                'confidence_score': totals_prediction['confidence_score'],
+                'total_xg': totals_prediction['total_xg'],
+                'finishing_alignment': totals_prediction['finishing_alignment'],
+                'risk_flags': totals_prediction['risk_flags']
             },
             
             # All probabilities
@@ -550,49 +632,18 @@ class FootballIntelligenceEngineV21:
                 'total': home_xg + away_xg
             },
             
-            # Calculation details
-            'calculation_details': calc_details,
-            
             # Insights
             'insights': insights,
             
-            # Match dynamics
-            'dynamics': dynamics,
+            # Calculation details
+            'calculation_details': calc_details,
             
-            # Team statistics
+            # Team stats
             'team_stats': {
                 'home': home_stats.to_dict(),
                 'away': away_stats.to_dict()
             }
         }
-    
-    def _categorize_confidence(self, score, prediction_type="winner"):
-        """Enhanced confidence categorization based on backtest results"""
-        
-        if prediction_type == "winner":
-            # More aggressive winner confidence thresholds
-            if score >= 75:
-                return "VERY HIGH"
-            elif score >= 65:
-                return "HIGH"
-            elif score >= 55:
-                return "MEDIUM"
-            elif score >= 45:
-                return "LOW"
-            else:
-                return "VERY LOW"
-        else:
-            # Total goals confidence thresholds
-            if score >= 70:
-                return "VERY HIGH"
-            elif score >= 60:
-                return "HIGH"
-            elif score >= 50:
-                return "MEDIUM"
-            elif score >= 40:
-                return "LOW"
-            else:
-                return "VERY LOW"
 
 # ========== STREAMLIT UI ==========
 with st.sidebar:
@@ -622,15 +673,14 @@ with st.sidebar:
             st.divider()
             
             st.markdown("### 🎯 Prediction Settings")
-            show_calculations = st.checkbox("Show Detailed Calculations", value=True)
-            show_poisson = st.checkbox("Show Poisson Probabilities", value=False)
+            show_details = st.checkbox("Show Detailed Analysis", value=True)
             
             if st.button("🚀 Generate Prediction", type="primary", use_container_width=True):
                 calculate_btn = True
             else:
                 calculate_btn = False
         else:
-            st.error("Could not prepare team data. Check your CSV format.")
+            st.error("Could not prepare team data")
             st.stop()
 
 if df is None:
@@ -639,17 +689,6 @@ if df is None:
 
 if 'calculate_btn' not in locals() or not calculate_btn:
     st.info("👈 Select teams and click 'Generate Prediction'")
-    
-    # Show league statistics if available
-    if league_metrics:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("League Avg Goals", f"{league_metrics['avg_goals_per_match']:.2f}")
-        with col2:
-            st.metric("Avg Home Points", f"{league_metrics['home_pts_avg']:.2f}")
-        with col3:
-            st.metric("Avg Away Points", f"{league_metrics['away_pts_avg']:.2f}")
-    
     st.stop()
 
 try:
@@ -661,9 +700,9 @@ except KeyError as e:
 
 # Generate prediction
 st.header(f"🎯 {home_team} vs {away_team}")
-st.caption(f"League: {selected_league} | Avg Goals: {league_metrics['avg_goals_per_match']:.2f}")
+st.caption(f"League: {selected_league} | League Avg Goals: {league_metrics['avg_goals_per_match']:.2f}")
 
-engine = FootballIntelligenceEngineV21(league_metrics)
+engine = FootballIntelligenceEngineV3(league_metrics, selected_league)
 prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
 
 # ========== DISPLAY RESULTS ==========
@@ -672,18 +711,87 @@ prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
 col1, col2 = st.columns(2)
 
 with col1:
-    # Total goals prediction
-    total_pred = prediction['total_goals']
-    direction = total_pred['direction']
-    confidence = total_pred['confidence']
-    conf_score = total_pred['confidence_score']
+    # Winner prediction
+    winner_pred = prediction['winner']
+    winner_conf = winner_pred['confidence']
+    winner_conf_score = winner_pred['confidence_score']
+    
+    if winner_pred['type'] == "HOME":
+        winner_color = "#22C55E" if winner_conf in ["VERY HIGH", "HIGH"] else "#4ADE80" if winner_conf == "MEDIUM" else "#84CC16"
+        icon = "🏠"
+    elif winner_pred['type'] == "AWAY":
+        winner_color = "#22C55E" if winner_conf in ["VERY HIGH", "HIGH"] else "#4ADE80" if winner_conf == "MEDIUM" else "#84CC16"
+        icon = "✈️"
+    else:
+        winner_color = "#F59E0B"
+        icon = "🤝"
+    
+    # Color based on confidence
+    if winner_conf == "VERY HIGH":
+        card_color = "#14532D"
+    elif winner_conf == "HIGH":
+        card_color = "#166534"
+    elif winner_conf == "MEDIUM":
+        card_color = "#365314"
+    elif winner_conf == "LOW":
+        card_color = "#3F6212"
+    else:
+        card_color = "#1E293B"
+    
+    st.markdown(f"""
+    <div style="background-color: {card_color}; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
+        <h3 style="color: white; margin: 0;">PREDICTED WINNER</h3>
+        <div style="font-size: 36px; font-weight: bold; color: {winner_color}; margin: 10px 0;">
+            {icon} {winner_pred['team']}
+        </div>
+        <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
+            {winner_pred['probability']*100:.1f}%
+        </div>
+        <div style="font-size: 16px; color: white;">
+            Strength: {winner_pred['strength']} | Confidence: {winner_conf} ({winner_conf_score:.0f}/100)
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col2:
+    # Totals prediction
+    totals_pred = prediction['totals']
+    direction = totals_pred['direction']
+    confidence = totals_pred['confidence']
+    conf_score = totals_pred['confidence_score']
     
     if direction == "OVER":
-        card_color = "#14532D" if confidence == "VERY HIGH" else "#166534" if confidence == "HIGH" else "#365314" if confidence == "MEDIUM" else "#3F6212" if confidence == "LOW" else "#1E293B"
-        text_color = "#22C55E" if confidence == "VERY HIGH" else "#4ADE80" if confidence == "HIGH" else "#84CC16" if confidence == "MEDIUM" else "#A3E635" if confidence == "LOW" else "#94A3B8"
+        if confidence == "VERY HIGH":
+            card_color = "#14532D"
+            text_color = "#22C55E"
+        elif confidence == "HIGH":
+            card_color = "#166534"
+            text_color = "#4ADE80"
+        elif confidence == "MEDIUM":
+            card_color = "#365314"
+            text_color = "#84CC16"
+        elif confidence == "LOW":
+            card_color = "#3F6212"
+            text_color = "#A3E635"
+        else:
+            card_color = "#1E293B"
+            text_color = "#94A3B8"
     else:
-        card_color = "#7F1D1D" if confidence == "VERY HIGH" else "#991B1B" if confidence == "HIGH" else "#78350F" if confidence == "MEDIUM" else "#92400E" if confidence == "LOW" else "#1E293B"
-        text_color = "#EF4444" if confidence == "VERY HIGH" else "#F87171" if confidence == "HIGH" else "#F59E0B" if confidence == "MEDIUM" else "#FBBF24" if confidence == "LOW" else "#94A3B8"
+        if confidence == "VERY HIGH":
+            card_color = "#7F1D1D"
+            text_color = "#EF4444"
+        elif confidence == "HIGH":
+            card_color = "#991B1B"
+            text_color = "#F87171"
+        elif confidence == "MEDIUM":
+            card_color = "#78350F"
+            text_color = "#F59E0B"
+        elif confidence == "LOW":
+            card_color = "#92400E"
+            text_color = "#FBBF24"
+        else:
+            card_color = "#1E293B"
+            text_color = "#94A3B8"
     
     st.markdown(f"""
     <div style="background-color: {card_color}; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
@@ -692,41 +800,10 @@ with col1:
             {direction} 2.5
         </div>
         <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
-            {total_pred['probability']*100:.1f}%
+            {prediction['probabilities'][f'{direction.lower()}_2_5_probability']*100:.1f}%
         </div>
         <div style="font-size: 16px; color: white;">
             Confidence: {confidence} ({conf_score:.0f}/100)
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    # Winner prediction
-    winner_pred = prediction['winner']
-    winner_confidence = winner_pred['confidence']
-    winner_conf_score = winner_pred['confidence_score']
-    
-    if winner_pred['type'] == "HOME":
-        winner_color = "#22C55E" if winner_confidence in ["VERY HIGH", "HIGH"] else "#4ADE80" if winner_confidence == "MEDIUM" else "#84CC16" if winner_confidence == "LOW" else "#A3E635"
-        icon = "🏠"
-    elif winner_pred['type'] == "AWAY":
-        winner_color = "#22C55E" if winner_confidence in ["VERY HIGH", "HIGH"] else "#4ADE80" if winner_confidence == "MEDIUM" else "#84CC16" if winner_confidence == "LOW" else "#A3E635"
-        icon = "✈️"
-    else:
-        winner_color = "#F59E0B" if winner_confidence in ["VERY HIGH", "HIGH"] else "#FBBF24" if winner_confidence == "MEDIUM" else "#FDE047" if winner_confidence == "LOW" else "#FEF3C7"
-        icon = "🤝"
-    
-    st.markdown(f"""
-    <div style="background-color: #1E293B; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
-        <h3 style="color: white; margin: 0;">PREDICTED WINNER</h3>
-        <div style="font-size: 36px; font-weight: bold; color: {winner_color}; margin: 10px 0;">
-            {icon} {winner_pred['team']}
-        </div>
-        <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
-            {winner_pred['probability']*100:.1f}%
-        </div>
-        <div style="font-size: 16px; color: #94A3B8;">
-            Strength: {winner_pred['strength']} | Confidence: {winner_confidence} ({winner_conf_score:.0f}/100)
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -737,8 +814,28 @@ if prediction['insights']:
     for insight in prediction['insights']:
         st.write(f"• {insight}")
 
+# Risk Flags
+if prediction['totals']['risk_flags']:
+    st.warning(f"⚠️ **Risk Flags Detected**: {', '.join(prediction['totals']['risk_flags'])}")
+
+# Finishing Trend Analysis
+st.subheader("📊 Finishing Trend Analysis")
+col1, col2 = st.columns(2)
+
+with col1:
+    home_finish = prediction['totals']['home_finishing']
+    finish_cat = engine.totals_predictor.categorize_finishing(home_finish)
+    st.metric(f"{home_team} Finishing", f"{home_finish:+.2f}", finish_cat)
+
+with col2:
+    away_finish = prediction['totals']['away_finishing']
+    finish_cat = engine.totals_predictor.categorize_finishing(away_finish)
+    st.metric(f"{away_team} Finishing", f"{away_finish:+.2f}", finish_cat)
+
+st.info(f"**Finishing Alignment**: {prediction['totals']['finishing_alignment']}")
+
 # Detailed Probabilities
-st.subheader("📊 Detailed Probabilities")
+st.subheader("🎲 Detailed Probabilities")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
@@ -773,144 +870,95 @@ with col2:
 
 with col3:
     total_xg = prediction['expected_goals']['total']
+    league_adj = LEAGUE_ADJUSTMENTS.get(selected_league, LEAGUE_ADJUSTMENTS["Premier League"])
+    over_thresh = league_adj['over_threshold']
     st.metric("Total xG", f"{total_xg:.2f}", 
-             delta=f"{'OVER' if total_xg > 2.5 else 'UNDER'} 2.5")
+             delta=f"{'OVER' if total_xg > over_thresh else 'UNDER'} {over_thresh}")
 
-# Detailed Calculations (Expandable)
-if show_calculations:
-    with st.expander("🔧 Step-by-Step Calculation Details", expanded=False):
-        calc_details = prediction['calculation_details']
-        
-        st.write("### Step 1: Adjusted Goals (60% weight on goals vs xG)")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write(f"**{home_team} (Home):**")
-            st.write(f"- Goals/Game: {home_stats['goals_for_pm']:.2f}")
-            st.write(f"- Goals vs xG/Game: {home_stats['goals_vs_xg_pm']:.2f}")
-            st.write(f"- Adjusted GF: {calc_details['home_adjGF']:.2f}")
-            st.write(f"- Adjusted GA: {calc_details['home_adjGA']:.2f}")
-        
-        with col2:
-            st.write(f"**{away_team} (Away):**")
-            st.write(f"- Goals/Game: {away_stats['goals_for_pm']:.2f}")
-            st.write(f"- Goals vs xG/Game: {away_stats['goals_vs_xg_pm']:.2f}")
-            st.write(f"- Adjusted GF: {calc_details['away_adjGF']:.2f}")
-            st.write(f"- Adjusted GA: {calc_details['away_adjGA']:.2f}")
-        
-        st.write("### Step 2: Dynamic Venue Factor")
-        st.write(f"**Home Venue Factor:** {calc_details['venue_factor_home']:.3f}")
-        st.write(f"**Away Venue Factor:** {calc_details['venue_factor_away']:.3f}")
-        st.write(f"*Based on home points/game: {home_stats['points_pm']:.2f} vs away: {away_stats['points_pm']:.2f}*")
-        
-        st.write("### Step 3: Expected Goals Calculation")
-        st.write(f"**Home xG:** ({calc_details['home_adjGF']:.2f} + {calc_details['away_adjGA']:.2f}) / 2 × {calc_details['venue_factor_home']:.3f}")
-        st.write(f"**Away xG:** ({calc_details['away_adjGF']:.2f} + {calc_details['home_adjGA']:.2f}) / 2 × {calc_details['venue_factor_away']:.3f}")
-        
-        st.write("### Step 4: League Normalization")
-        st.write(f"**League Avg Goals:** {league_metrics['avg_goals_per_match']:.2f}")
-        st.write(f"**Normalization Factor:** {calc_details['normalization_factor']:.3f}")
-        st.write(f"*Adjusts to league scoring environment*")
-        
-        st.write("### Step 5: Match Dynamics")
-        st.write(f"**Expected Goals Difference:** {prediction['dynamics']['delta']:.2f}")
-        st.write(f"**Total Expected Goals:** {prediction['dynamics']['total_goals']:.2f}")
-        st.write(f"**Variance:** {prediction['dynamics']['variance']:.2f}")
+# Betting Recommendations
+st.subheader("💰 Betting Recommendations")
 
-# Team Statistics Comparison
-with st.expander("📋 Team Statistics Comparison", expanded=False):
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader(f"🏠 {home_team} (Home)")
-        stats_data = {
-            'Statistic': ['Matches', 'Wins', 'Draws', 'Losses', 
-                         'Goals/Game', 'Conceded/Game', 'xG/Game', 'xGA/Game',
-                         'Goals vs xG/Game', 'Conceded vs xGA/Game', 'Points/Game', 'Win Rate'],
-            'Value': [home_stats['matches'], home_stats['wins'], home_stats['draws'], home_stats['losses'],
-                     home_stats['goals_for_pm'], home_stats['goals_against_pm'],
-                     home_stats['xg_pm'], home_stats['xga_pm'],
-                     home_stats['goals_vs_xg_pm'], home_stats['goals_allowed_vs_xga_pm'],
-                     home_stats['points_pm'], home_stats['win_rate']]
-        }
-        stats_df = pd.DataFrame(stats_data)
-        stats_df['Value'] = stats_df['Value'].apply(lambda x: f"{x:.2f}" if isinstance(x, float) else str(x))
-        st.table(stats_df)
-    
-    with col2:
-        st.subheader(f"✈️ {away_team} (Away)")
-        stats_data = {
-            'Statistic': ['Matches', 'Wins', 'Draws', 'Losses', 
-                         'Goals/Game', 'Conceded/Game', 'xG/Game', 'xGA/Game',
-                         'Goals vs xG/Game', 'Conceded vs xGA/Game', 'Points/Game', 'Win Rate'],
-            'Value': [away_stats['matches'], away_stats['wins'], away_stats['draws'], away_stats['losses'],
-                     away_stats['goals_for_pm'], away_stats['goals_against_pm'],
-                     away_stats['xg_pm'], away_stats['xga_pm'],
-                     away_stats['goals_vs_xg_pm'], away_stats['goals_allowed_vs_xga_pm'],
-                     away_stats['points_pm'], away_stats['win_rate']]
-        }
-        stats_df = pd.DataFrame(stats_data)
-        stats_df['Value'] = stats_df['Value'].apply(lambda x: f"{x:.2f}" if isinstance(x, float) else str(x))
-        st.table(stats_df)
+winner_rec = ""
+if prediction['winner']['confidence'] in ["VERY HIGH", "HIGH"]:
+    winner_rec = f"✅ **STRONG BET** on {prediction['winner']['team']} to win"
+elif prediction['winner']['confidence'] == "MEDIUM":
+    winner_rec = f"⚠️ **MODERATE BET** on {prediction['winner']['team']} to win"
+elif prediction['winner']['confidence'] in ["LOW", "VERY LOW"]:
+    winner_rec = f"❌ **NO BET** on winner - Low confidence"
+
+totals_rec = ""
+if prediction['totals']['confidence'] in ["VERY HIGH", "HIGH"]:
+    totals_rec = f"✅ **STRONG BET** on {prediction['totals']['direction']} 2.5"
+elif prediction['totals']['confidence'] == "MEDIUM":
+    totals_rec = f"⚠️ **MODERATE BET** on {prediction['totals']['direction']} 2.5"
+elif prediction['totals']['confidence'] in ["LOW", "VERY LOW"]:
+    totals_rec = f"❌ **NO BET** on totals - Low confidence"
+
+col1, col2 = st.columns(2)
+with col1:
+    st.info(winner_rec)
+with col2:
+    st.info(totals_rec)
+
+# Detailed Analysis
+if show_details:
+    with st.expander("🔍 Detailed Analysis", expanded=False):
+        st.write("### Winner Prediction Analysis")
+        st.write(f"- Expected Goals Difference: {prediction['winner'].get('delta', 0):.2f}")
+        st.write(f"- Strength: {prediction['winner']['strength']}")
+        
+        st.write("### Totals Prediction Analysis")
+        st.write(f"- Total xG Category: {prediction['totals']['total_category']}")
+        st.write(f"- League-adjusted threshold: {LEAGUE_ADJUSTMENTS.get(selected_league, LEAGUE_ADJUSTMENTS['Premier League'])['over_threshold']}")
+        
+        if prediction['totals']['risk_flags']:
+            st.write("### Risk Analysis")
+            for flag in prediction['totals']['risk_flags']:
+                st.write(f"- {flag}")
 
 # Export Report
 st.divider()
 st.subheader("📤 Export Prediction Report")
 
 report = f"""
-⚽ ENHANCED FOOTBALL PREDICTION ENGINE v2.1
+⚽ FOOTBALL INTELLIGENCE ENGINE v3.0 - OUR COMPLETE LOGIC
 Match: {home_team} vs {away_team}
 League: {selected_league}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-League Avg Goals: {league_metrics['avg_goals_per_match']:.2f}
 
-🎯 TOTAL GOALS PREDICTION
-{prediction['total_goals']['direction']} 2.5 Goals: {prediction['total_goals']['probability']*100:.1f}%
-Confidence: {prediction['total_goals']['confidence']} ({prediction['total_goals']['confidence_score']:.0f}/100)
-Expected Total Goals: {prediction['expected_goals']['total']:.2f}
-
-🏆 WINNER PREDICTION
+🎯 WINNER PREDICTION
 Predicted Winner: {prediction['winner']['team']}
 Probability: {prediction['winner']['probability']*100:.1f}%
 Strength: {prediction['winner']['strength']}
 Confidence: {prediction['winner']['confidence']} ({prediction['winner']['confidence_score']:.0f}/100)
 Most Likely Score: {prediction['winner']['most_likely_score']}
 
-📊 DETAILED PROBABILITIES
-Home Win: {prediction['probabilities']['home_win_probability']*100:.1f}%
-Draw: {prediction['probabilities']['draw_probability']*100:.1f}%
-Away Win: {prediction['probabilities']['away_win_probability']*100:.1f}%
-Both Teams to Score: {prediction['probabilities']['btts_probability']*100:.1f}%
+🎯 TOTALS PREDICTION  
+Direction: {prediction['totals']['direction']} 2.5
+Probability: {prediction['probabilities'][f'{prediction["totals"]["direction"].lower()}_2_5_probability']*100:.1f}%
+Confidence: {prediction['totals']['confidence']} ({prediction['totals']['confidence_score']:.0f}/100)
+Total Expected Goals: {prediction['expected_goals']['total']:.2f}
+Finishing Alignment: {prediction['totals']['finishing_alignment']}
 
-⚽ EXPECTED GOALS
+📊 EXPECTED GOALS
 {home_team}: {prediction['expected_goals']['home']:.2f} xG
 {away_team}: {prediction['expected_goals']['away']:.2f} xG
 Total: {prediction['expected_goals']['total']:.2f} xG
 
-🎯 MOST LIKELY SCORES
-"""
-for score, prob in prediction['probabilities']['top_scores'][:5]:
-    report += f"{score}: {prob*100:.1f}%\n"
+📊 FINISHING TRENDS
+{home_team}: {prediction['totals']['home_finishing']:+.2f} goals_vs_xg/game
+{away_team}: {prediction['totals']['away_finishing']:+.2f} goals_vs_xg/game
 
-report += f"""
-🧠 ENHANCED INSIGHTS
-"""
-for insight in prediction['insights']:
-    report += f"• {insight}\n"
+⚠️ RISK FLAGS
+{', '.join(prediction['totals']['risk_flags']) if prediction['totals']['risk_flags'] else 'None'}
 
-report += f"""
-🔧 ENHANCED CALCULATION METHODOLOGY
-1. Adjusted Goals with 60% weight on goals_vs_xG
-2. Dynamic venue factor based on points performance
-3. League average normalization
-4. Poisson distribution for consistent probabilities
-5. Enhanced variance calculation (0.6 multiplier)
-6. Draw suppression with stricter criteria
-7. More aggressive confidence scoring
+💰 BETTING RECOMMENDATIONS
+Winner: {winner_rec.replace('✅', 'STRONG BET:').replace('⚠️', 'MODERATE BET:').replace('❌', 'NO BET:')}
+Totals: {totals_rec.replace('✅', 'STRONG BET:').replace('⚠️', 'MODERATE BET:').replace('❌', 'NO BET:')}
 
 ---
-Generated by Enhanced Football Intelligence Engine v2.1
-Performance-Based xG + Enhanced Confidence Scoring
+Generated by Football Intelligence Engine v3.0
+OUR COMPLETE LOGIC SYSTEM
 """
 
 st.code(report, language="text")
@@ -920,7 +968,7 @@ with col1:
     st.download_button(
         label="📥 Download Report",
         data=report,
-        file_name=f"enhanced_prediction_{home_team}_vs_{away_team}.txt",
+        file_name=f"complete_logic_{home_team}_vs_{away_team}.txt",
         mime="text/plain",
         use_container_width=True
     )
@@ -936,23 +984,21 @@ with col2:
         })
         st.success("Added to prediction history!")
 
-# Show prediction history
+# Show history
 if st.session_state.prediction_history:
-    with st.expander("📚 Prediction History (Last 5)", expanded=False):
+    with st.expander("📚 Prediction History", expanded=False):
         for i, hist in enumerate(reversed(st.session_state.prediction_history[-5:])):
             with st.container():
                 col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
                 with col1:
                     st.write(f"**{hist['home_team']} vs {hist['away_team']}**")
-                    st.caption(f"{hist['timestamp'].strftime('%Y-%m-%d %H:%M')} | {hist['league']}")
+                    st.caption(f"{hist['timestamp'].strftime('%Y-%m-%d %H:%M')}")
                 with col2:
-                    direction = hist['prediction']['total_goals']['direction']
-                    prob = hist['prediction']['total_goals']['probability']*100
-                    st.write(f"📈 {direction} 2.5 ({prob:.1f}%)")
-                with col3:
                     winner = hist['prediction']['winner']['team']
-                    winner_prob = hist['prediction']['winner']['probability']*100
-                    st.write(f"🏆 {winner} ({winner_prob:.1f}%)")
+                    st.write(f"🏆 {winner}")
+                with col3:
+                    direction = hist['prediction']['totals']['direction']
+                    st.write(f"📈 {direction} 2.5")
                 with col4:
                     if st.button("↻", key=f"reload_{i}"):
                         st.experimental_set_query_params(
@@ -962,9 +1008,3 @@ if st.session_state.prediction_history:
                         )
                         st.experimental_rerun()
                 st.divider()
-
-# Performance metrics based on backtest
-st.sidebar.divider()
-st.sidebar.markdown("### 📊 Model Performance")
-st.sidebar.metric("Backtest Accuracy", "80%", "8/10 correct")
-st.sidebar.metric("Enhanced Features", "v2.1", "Better confidence & draws")
