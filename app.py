@@ -29,7 +29,7 @@ LEAGUE_ADJUSTMENTS = {
     "Serie A": {"over_threshold": 2.7, "under_threshold": 2.3, "avg_goals": 2.40},
     "La Liga": {"over_threshold": 2.6, "under_threshold": 2.4, "avg_goals": 2.61},
     "Ligue 1": {"over_threshold": 2.8, "under_threshold": 2.2, "avg_goals": 2.85},
-    "Eredivisie": {"over_threshold": 2.9, "under_threshold": 2.1, "avg_goals": 3.10}
+    "rfpl": {"over_threshold": 2.9, "under_threshold": 2.1, "avg_goals": 3.10}
 }
 
 # Initialize session state
@@ -116,7 +116,7 @@ def load_league_data(league_name):
             "Serie A": "serie_a.csv",
             "La Liga": "laliga.csv",
             "Ligue 1": "ligue_1.csv",
-            "Eredivisie": "eredivisie.csv"
+            "rfpl": "rfpl.csv"
         }
         
         filename = file_map.get(league_name, f"{league_name.lower().replace(' ', '_')}.csv")
@@ -701,7 +701,7 @@ class FootballIntelligenceEngineV3:
 with st.sidebar:
     st.header("⚙️ Match Settings")
     
-    leagues = ["Premier League", "Bundesliga", "Serie A", "La Liga", "Ligue 1", "Eredivisie"]
+    leagues = ["Premier League", "Bundesliga", "Serie A", "La Liga", "Ligue 1", "RFPL"]
     selected_league = st.selectbox("Select League", leagues)
     
     df = load_league_data(selected_league)
