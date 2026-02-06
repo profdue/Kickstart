@@ -78,28 +78,31 @@ def generate_pattern_indicators(prediction):
             'explanation': 'Backtest: Mixed results for this confidence range'
         }
     
-    # TOTALS PATTERNS
-    alignment = prediction['totals']['finishing_alignment']
-    if alignment in ['MED_OVER', 'NEUTRAL', 'HIGH_OVER']:
+    # TOTALS PATTERNS - UPDATED WITH "AT LEAST ONE OVERPERFORMER"
+    home_finish = prediction['totals']['home_finishing']
+    away_finish = prediction['totals']['away_finishing']
+    
+    # Check for "AT LEAST ONE OVERPERFORMER" pattern
+    if home_finish > 0 or away_finish > 0:
         indicators['totals'] = {
             'type': 'MET',
             'color': 'green',
-            'text': 'TOTALS CONDITION MET',
-            'explanation': f'Backtest: {alignment} alignment totals went 8/8 correct'
+            'text': 'TOTALS CONDITION MET - OVER 2.5',
+            'explanation': f'Backtest: Matches with at least one overperformer went 8/8 OVER 2.5'
         }
-    elif alignment in ['LOW_UNDER', 'RISKY']:
+    elif home_finish <= 0 and away_finish <= 0:
         indicators['totals'] = {
             'type': 'AVOID',
             'color': 'red',
-            'text': 'AVOID TOTALS BET',
-            'explanation': f'Backtest: {alignment} alignment totals went 1/4 correct'
+            'text': 'AVOID TOTALS BET - RISKY',
+            'explanation': f'Backtest: Matches with no overperformers went 1/3 OVER 2.5'
         }
     else:
         indicators['totals'] = {
             'type': 'NO_PATTERN',
             'color': 'gray',
             'text': 'NO CLEAR PATTERN',
-            'explanation': 'Backtest: Insufficient data for this alignment'
+            'explanation': 'Backtest: Insufficient data for this scenario'
         }
     
     return indicators
