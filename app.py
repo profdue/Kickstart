@@ -438,7 +438,7 @@ class TotalsPredictor:
         return risk_flags
     
     def predict_totals(self, home_xg, away_xg, home_stats, away_stats):
-        """OUR IMPROVED LOGIC: Complete totals prediction with proven pattern fixes"""
+        """OUR IMPROVED LOGIC: Complete totals prediction with proven fixes"""
         total_xg = home_xg + away_xg
         home_finish = home_stats['goals_vs_xg_pm']
         away_finish = away_stats['goals_vs_xg_pm']
@@ -790,286 +790,155 @@ class FootballIntelligenceEngineV3:
             'calculation_details': calc_details
         }
 
-# ========== UNIFIED DECISION ENGINE ==========
-class UnifiedDecisionEngine:
-    """NEW: Unified decision engine combining base confidence + patterns"""
+# ========== INTELLIGENT UNIFIED BETTING CARD ==========
+class IntelligentUnifiedBettingCard:
+    """TRULY INTELLIGENT: Only bets when patterns and confidence agree - based on backtest evidence"""
     
     @staticmethod
-    def calculate_final_confidence(base_confidence, pattern_type, risk_flags=None):
-        """Calculate final confidence with pattern bonuses"""
-        # Pattern bonuses (based on backtest success rates)
-        pattern_bonuses = {
-            'MET': +40,      # Proven pattern (80%+ success)
-            'CAUTION': +10,   # Warning pattern
-            'NO_PATTERN': 0,  # No pattern
-            'AVOID': -20      # Proven to avoid
-        }
+    def get_intelligent_recommendation(prediction, pattern_indicators, home_team, away_team):
+        """Determine the intelligent betting recommendation based on 17-match backtest findings"""
         
-        # Risk penalties
-        risk_penalties = {
-            'VOLATILE_OVER_BOTH': -25,
-            'OPPOSITE_EXTREME_FINISHING': -25,
-            'HIGH_VARIANCE_TEAM': -15,
-            'ATTACK_DEFENSE_MISMATCH': -10,
-            'CLOSE_TO_THRESHOLD': -10,
-            'BUNDESLIGA_LOW_SCORING': -15
-        }
+        winner_pred = prediction['winner']
+        totals_pred = prediction['totals']
+        winner_pattern = pattern_indicators['winner']
+        totals_pattern = pattern_indicators['totals']
         
-        # Start with base confidence
-        final_confidence = base_confidence
+        # ========== INTELLIGENT RULE #1: Check for PROVEN WINNER PATTERNS ==========
+        winner_should_bet = False
+        winner_reason = ""
         
-        # Apply pattern bonus
-        final_confidence += pattern_bonuses.get(pattern_type, 0)
+        if winner_pattern['type'] == 'MET' and winner_pred['confidence_score'] >= 40:
+            # PROVEN: VERY HIGH confidence winners went 4/4 correct
+            winner_should_bet = True
+            winner_reason = "Proven winner pattern with sufficient confidence"
+        elif winner_pattern['type'] == 'AVOID':
+            # PROVEN: VERY LOW confidence winners went 0/3 correct
+            winner_should_bet = False
+            winner_reason = "Proven avoid pattern for winners"
+        else:
+            # NO PROVEN PATTERN = NO BET (based on backtest uncertainty)
+            winner_should_bet = False
+            winner_reason = "No proven winner pattern - uncertain"
         
-        # Apply risk penalties
-        if risk_flags:
-            for flag in risk_flags:
-                final_confidence += risk_penalties.get(flag, 0)
+        # ========== INTELLIGENT RULE #2: Check for PROVEN TOTALS PATTERNS ==========
+        totals_should_bet = False
+        totals_reason = ""
         
-        # Clamp between 5-100
-        return max(5, min(100, final_confidence))
-    
-    @staticmethod
-    def get_bet_recommendation(final_confidence, pattern_type, market_type):
-        """Get unified betting recommendation"""
+        if totals_pattern['type'] == 'MET' and totals_pred['confidence_score'] >= 40:
+            # PROVEN: These patterns went 8/8 correct in backtest
+            totals_should_bet = True
+            totals_reason = "Proven totals pattern with sufficient confidence"
+        elif totals_pattern['type'] == 'AVOID':
+            # PROVEN: These patterns should be avoided
+            totals_should_bet = False
+            totals_reason = "Proven avoid pattern for totals"
+        else:
+            # NO PROVEN PATTERN = NO BET (based on backtest - uncertain outcomes)
+            totals_should_bet = False
+            totals_reason = "No proven totals pattern - uncertain"
         
-        # OVERRIDE RULE: Proven patterns with <60 base confidence still bet
-        if pattern_type == 'MET' and final_confidence >= 40:
-            if final_confidence >= 80:
-                return "✅ STRONG BET"
-            elif final_confidence >= 60:
-                return "✅ MODERATE BET"
+        # ========== INTELLIGENT RULE #3: Check if BOTH should bet ==========
+        if winner_should_bet and totals_should_bet:
+            # Check if both are strong enough for double bet
+            if (winner_pred['confidence_score'] >= 80 and totals_pred['confidence_score'] >= 80) or \
+               (winner_pred['confidence_score'] >= 90 and totals_pred['confidence_score'] >= 60) or \
+               (totals_pred['confidence_score'] >= 90 and winner_pred['confidence_score'] >= 60):
+                return {
+                    'type': 'combo',
+                    'text': f"🏆 {winner_pred['team']} to win + 📈 {totals_pred['direction']} 2.5",
+                    'confidence': min(winner_pred['confidence_score'], totals_pred['confidence_score']),
+                    'color': '#10B981',  # Emerald green
+                    'icon': '🎯',
+                    'subtext': 'INTELLIGENT DOUBLE BET',
+                    'reason': f'Both markets show proven patterns: {winner_reason} & {totals_reason}'
+                }
+        
+        # ========== INTELLIGENT RULE #4: Choose SINGLE BEST bet ==========
+        # Only choose single bet if it has PROVEN PATTERN
+        if winner_should_bet and not totals_should_bet:
+            if winner_pred['confidence_score'] >= 80:
+                strength = "STRONG"
+                color = '#3B82F6'
+            elif winner_pred['confidence_score'] >= 60:
+                strength = "MODERATE"
+                color = '#60A5FA'
             else:
-                return "⚠️ SMALL BET"  # Proven pattern but low confidence
+                strength = "SMALL"
+                color = '#93C5FD'
             
-        # Normal betting rules
-        if final_confidence >= 80:
-            return "✅ STRONG BET"
-        elif final_confidence >= 60:
-            return "✅ MODERATE BET"
-        elif pattern_type == 'AVOID':
-            return "❌ AVOID BET"
-        else:
-            return "❌ NO BET"
-    
-    @staticmethod
-    def get_unified_prediction(base_prediction, pattern_indicators):
-        """Create unified prediction from all layers"""
+            return {
+                'type': 'single',
+                'text': f"🏆 {winner_pred['team']} to win",
+                'confidence': winner_pred['confidence_score'],
+                'color': color,
+                'icon': '🏆',
+                'subtext': f'{strength} BET',
+                'reason': winner_reason
+            }
+        
+        elif totals_should_bet and not winner_should_bet:
+            if totals_pred['confidence_score'] >= 80:
+                strength = "STRONG"
+                color = '#8B5CF6'
+            elif totals_pred['confidence_score'] >= 60:
+                strength = "MODERATE"
+                color = '#A78BFA'
+            else:
+                strength = "SMALL"
+                color = '#C4B5FD'
+            
+            return {
+                'type': 'single',
+                'text': f"📈 {totals_pred['direction']} 2.5 Goals",
+                'confidence': totals_pred['confidence_score'],
+                'color': color,
+                'icon': '📈',
+                'subtext': f'{strength} BET',
+                'reason': totals_reason
+            }
+        
+        # ========== INTELLIGENT RULE #5: NO BET ==========
+        # If no proven patterns or both should avoid
         return {
-            'winner': {
-                'base_confidence': base_prediction['winner']['confidence_score'],
-                'pattern_type': pattern_indicators['winner']['type'],
-                'final_confidence': UnifiedDecisionEngine.calculate_final_confidence(
-                    base_prediction['winner']['confidence_score'],
-                    pattern_indicators['winner']['type']
-                ),
-                'bet_recommendation': UnifiedDecisionEngine.get_bet_recommendation(
-                    UnifiedDecisionEngine.calculate_final_confidence(
-                        base_prediction['winner']['confidence_score'],
-                        pattern_indicators['winner']['type']
-                    ),
-                    pattern_indicators['winner']['type'],
-                    'winner'
-                ),
-                'pattern_text': pattern_indicators['winner']['text']
-            },
-            'totals': {
-                'base_confidence': base_prediction['totals']['confidence_score'],
-                'pattern_type': pattern_indicators['totals']['type'],
-                'final_confidence': UnifiedDecisionEngine.calculate_final_confidence(
-                    base_prediction['totals']['confidence_score'],
-                    pattern_indicators['totals']['type'],
-                    base_prediction['totals']['risk_flags']
-                ),
-                'bet_recommendation': UnifiedDecisionEngine.get_bet_recommendation(
-                    UnifiedDecisionEngine.calculate_final_confidence(
-                        base_prediction['totals']['confidence_score'],
-                        pattern_indicators['totals']['type'],
-                        base_prediction['totals']['risk_flags']
-                    ),
-                    pattern_indicators['totals']['type'],
-                    'totals'
-                ),
-                'pattern_text': pattern_indicators['totals']['text']
-            }
+            'type': 'none',
+            'text': "🚫 No Intelligent Bet",
+            'confidence': max(winner_pred['confidence_score'], totals_pred['confidence_score']),
+            'color': '#6B7280',
+            'icon': '🤔',
+            'subtext': 'NO PROVEN PATTERN',
+            'reason': f'No proven patterns detected. {winner_reason}. {totals_reason}.'
         }
-
-# ========== UNIFIED BETTING CARD ==========
-class UnifiedBettingCard:
-    """Single unified betting card that recommends the best bet(s)"""
     
     @staticmethod
-    def get_unified_recommendation(prediction, pattern_indicators, home_team, away_team):
-        """Determine the unified betting recommendation"""
-        unified_engine = UnifiedDecisionEngine()
-        unified_pred = unified_engine.get_unified_prediction(prediction, pattern_indicators)
-        
-        winner_unified = unified_pred['winner']
-        totals_unified = unified_pred['totals']
-        
-        # Determine if we should combine bets
-        winner_action = winner_unified['bet_recommendation']
-        totals_action = totals_unified['bet_recommendation']
-        
-        # Check if both are strong bets
-        both_strong = (winner_action.startswith('✅') and winner_unified['final_confidence'] >= 80 and
-                      totals_action.startswith('✅') and totals_unified['final_confidence'] >= 80)
-        
-        # Check if one is very strong and other is moderate
-        one_very_strong_other_moderate = (
-            (winner_action.startswith('✅') and winner_unified['final_confidence'] >= 90 and
-             totals_action.startswith('✅') and totals_unified['final_confidence'] >= 60) or
-            (totals_action.startswith('✅') and totals_unified['final_confidence'] >= 90 and
-             winner_action.startswith('✅') and winner_unified['final_confidence'] >= 60)
-        )
-        
-        # Determine the best single bet if not combining
-        best_single_bet = None
-        if winner_unified['final_confidence'] >= totals_unified['final_confidence']:
-            best_single_bet = {
-                'type': 'winner',
-                'team': prediction['winner']['team'],
-                'confidence': winner_unified['final_confidence'],
-                'action': winner_action
-            }
-        else:
-            best_single_bet = {
-                'type': 'totals',
-                'direction': prediction['totals']['direction'],
-                'confidence': totals_unified['final_confidence'],
-                'action': totals_action
-            }
-        
-        # Make final recommendation
-        if both_strong:
-            return {
-                'type': 'combo',
-                'text': f"🏆 {prediction['winner']['team']} to win + 📈 {prediction['totals']['direction']} 2.5",
-                'confidence': min(winner_unified['final_confidence'], totals_unified['final_confidence']),
-                'color': '#10B981',  # Emerald green
-                'icon': '🎯',
-                'subtext': 'STRONG DOUBLE BET',
-                'reason': 'Both winner and totals show high confidence with proven patterns'
-            }
-        elif one_very_strong_other_moderate:
-            return {
-                'type': 'combo',
-                'text': f"🏆 {prediction['winner']['team']} to win + 📈 {prediction['totals']['direction']} 2.5",
-                'confidence': min(winner_unified['final_confidence'], totals_unified['final_confidence']),
-                'color': '#059669',  # Slightly darker green
-                'icon': '🎯',
-                'subtext': 'MODERATE DOUBLE BET',
-                'reason': 'One very strong signal with moderate complementary bet'
-            }
-        elif best_single_bet['confidence'] >= 60:
-            if best_single_bet['type'] == 'winner':
-                return {
-                    'type': 'single',
-                    'text': f"🏆 {best_single_bet['team']} to win",
-                    'confidence': best_single_bet['confidence'],
-                    'color': '#3B82F6' if best_single_bet['confidence'] >= 80 else '#60A5FA',
-                    'icon': '🏆',
-                    'subtext': 'STRONG BET' if best_single_bet['confidence'] >= 80 else 'MODERATE BET',
-                    'reason': 'High confidence winner prediction with proven pattern'
-                }
-            else:
-                return {
-                    'type': 'single',
-                    'text': f"📈 {best_single_bet['direction']} 2.5 Goals",
-                    'confidence': best_single_bet['confidence'],
-                    'color': '#8B5CF6' if best_single_bet['confidence'] >= 80 else '#A78BFA',
-                    'icon': '📈',
-                    'subtext': 'STRONG BET' if best_single_bet['confidence'] >= 80 else 'MODERATE BET',
-                    'reason': 'High confidence totals prediction with proven pattern'
-                }
-        elif best_single_bet['confidence'] >= 40 and best_single_bet['action'].startswith('⚠️'):
-            if best_single_bet['type'] == 'winner':
-                return {
-                    'type': 'single',
-                    'text': f"🏆 {best_single_bet['team']} to win",
-                    'confidence': best_single_bet['confidence'],
-                    'color': '#F59E0B',
-                    'icon': '⚠️',
-                    'subtext': 'SMALL BET',
-                    'reason': 'Proven pattern but lower confidence - small stake only'
-                }
-            else:
-                return {
-                    'type': 'single',
-                    'text': f"📈 {best_single_bet['direction']} 2.5 Goals",
-                    'confidence': best_single_bet['confidence'],
-                    'color': '#F59E0B',
-                    'icon': '⚠️',
-                    'subtext': 'SMALL BET',
-                    'reason': 'Proven pattern but lower confidence - small stake only'
-                }
-        else:
-            return {
-                'type': 'none',
-                'text': "❌ No Recommended Bet",
-                'confidence': max(winner_unified['final_confidence'], totals_unified['final_confidence']),
-                'color': '#6B7280',
-                'icon': '🚫',
-                'subtext': 'AVOID ALL BETS',
-                'reason': 'Insufficient confidence or proven avoid patterns present'
-            }
-    
-    @staticmethod
-    def display_card(recommendation):
-        """Display the unified betting card"""
-        if recommendation['type'] == 'none':
-            st.markdown(f"""
-            <div style="
-                background: linear-gradient(135deg, {recommendation['color']}20 0%, #1F2937 100%);
-                padding: 25px;
-                border-radius: 20px;
-                border: 2px solid {recommendation['color']};
-                text-align: center;
-                margin: 20px 0;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            ">
-                <div style="font-size: 48px; margin-bottom: 15px;">
-                    {recommendation['icon']}
-                </div>
-                <div style="font-size: 32px; font-weight: bold; color: {recommendation['color']}; margin-bottom: 10px;">
-                    {recommendation['text']}
-                </div>
-                <div style="font-size: 18px; color: #9CA3AF; margin-bottom: 15px;">
-                    Confidence: {recommendation['confidence']:.0f}/100
-                </div>
-                <div style="font-size: 16px; color: #D1D5DB; padding: 10px; background: rgba(107, 114, 128, 0.2); border-radius: 10px;">
-                    {recommendation['reason']}
-                </div>
+    def display_intelligent_card(recommendation):
+        """Display the intelligent unified betting card"""
+        st.markdown(f"""
+        <div style="
+            background: linear-gradient(135deg, {recommendation['color']}20 0%, #1F2937 100%);
+            padding: 25px;
+            border-radius: 20px;
+            border: 2px solid {recommendation['color']};
+            text-align: center;
+            margin: 20px 0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        ">
+            <div style="font-size: 48px; margin-bottom: 15px;">
+                {recommendation['icon']}
             </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div style="
-                background: linear-gradient(135deg, {recommendation['color']}20 0%, #1F2937 100%);
-                padding: 25px;
-                border-radius: 20px;
-                border: 2px solid {recommendation['color']};
-                text-align: center;
-                margin: 20px 0;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            ">
-                <div style="font-size: 48px; margin-bottom: 15px;">
-                    {recommendation['icon']}
-                </div>
-                <div style="font-size: 36px; font-weight: bold; color: white; margin-bottom: 10px;">
-                    {recommendation['text']}
-                </div>
-                <div style="font-size: 24px; color: {recommendation['color']}; margin-bottom: 10px; font-weight: bold;">
-                    {recommendation['subtext']}
-                </div>
-                <div style="font-size: 18px; color: #9CA3AF; margin-bottom: 15px;">
-                    Confidence: {recommendation['confidence']:.0f}/100
-                </div>
-                <div style="font-size: 16px; color: #D1D5DB; padding: 10px; background: rgba(59, 130, 246, 0.1); border-radius: 10px;">
-                    {recommendation['reason']}
-                </div>
+            <div style="font-size: 36px; font-weight: bold; color: white; margin-bottom: 10px;">
+                {recommendation['text']}
             </div>
-            """, unsafe_allow_html=True)
+            <div style="font-size: 24px; color: {recommendation['color']}; margin-bottom: 10px; font-weight: bold;">
+                {recommendation['subtext']}
+            </div>
+            <div style="font-size: 18px; color: #9CA3AF; margin-bottom: 15px;">
+                Confidence: {recommendation['confidence']:.0f}/100
+            </div>
+            <div style="font-size: 16px; color: #D1D5DB; padding: 10px; background: rgba(59, 130, 246, 0.1); border-radius: 10px;">
+                {recommendation['reason']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ========== STREAMLIT UI ==========
 with st.sidebar:
@@ -1327,152 +1196,78 @@ with col2:
 
 st.caption("💡 **Based on 17-match extended test analysis** | Green = Proven pattern to bet | Red = Proven pattern to avoid | Yellow = Warning/Caution | Gray = No proven pattern")
 
-# ========== UNIFIED BETTING CARD ==========
+# ========== INTELLIGENT UNIFIED BETTING CARD ==========
 st.divider()
-st.subheader("🎯 UNIFIED BETTING CARD - SINGLE BEST BET")
+st.subheader("🎯 INTELLIGENT UNIFIED BETTING CARD")
 
-# Get unified prediction for comparison
-unified_engine = UnifiedDecisionEngine()
-unified_prediction = unified_engine.get_unified_prediction(prediction, pattern_indicators)
-
-# Get unified recommendation
-betting_card = UnifiedBettingCard()
-unified_recommendation = betting_card.get_unified_recommendation(
+# Get intelligent recommendation
+betting_card = IntelligentUnifiedBettingCard()
+intelligent_recommendation = betting_card.get_intelligent_recommendation(
     prediction, pattern_indicators, home_team, away_team
 )
 
-# Display the unified card
-betting_card.display_card(unified_recommendation)
+# Display the intelligent card
+betting_card.display_intelligent_card(intelligent_recommendation)
 
 # Show reasoning breakdown
-with st.expander("🧠 Why This Bet Was Selected", expanded=False):
-    col1, col2 = st.columns(2)
+with st.expander("🧠 Intelligence Breakdown", expanded=False):
+    st.write("**Based on 17-match backtest findings:**")
     
-    with col1:
-        st.write("**🏆 Winner Analysis**")
-        st.write(f"Base Confidence: {prediction['winner']['confidence_score']:.0f}/100")
-        st.write(f"Pattern: {pattern_indicators['winner']['text']}")
-        st.write(f"Final Unified: {unified_prediction['winner']['final_confidence']:.0f}/100")
+    # Winner analysis
+    winner_pattern = pattern_indicators['winner']
+    winner_conf = prediction['winner']['confidence_score']
     
-    with col2:
-        st.write("**📈 Totals Analysis**")
-        st.write(f"Base Confidence: {prediction['totals']['confidence_score']:.0f}/100")
-        st.write(f"Pattern: {pattern_indicators['totals']['text']}")
-        st.write(f"Final Unified: {unified_prediction['totals']['final_confidence']:.0f}/100")
-    
-    st.write("**📊 Decision Logic**")
-    if unified_recommendation['type'] == 'combo':
-        st.write("✓ Both winner and totals have high confidence (≥80)")
-        st.write("✓ Proven patterns support both predictions")
-        st.write("✓ Risk flags are minimal or accounted for")
-    elif unified_recommendation['type'] == 'single':
-        if 'winner' in unified_recommendation['text']:
-            st.write(f"✓ Winner confidence: {unified_prediction['winner']['final_confidence']:.0f}/100 (highest)")
-            st.write(f"✓ Totals confidence: {unified_prediction['totals']['final_confidence']:.0f}/100 (lower)")
+    st.write(f"**🏆 Winner Analysis:**")
+    if winner_pattern['type'] == 'MET':
+        st.write(f"✅ **PROVEN PATTERN**: {winner_pattern['explanation']}")
+        if winner_conf >= 40:
+            st.write(f"✓ Confidence {winner_conf}/100 ≥ 40 → CONSIDER BET")
         else:
-            st.write(f"✓ Totals confidence: {unified_prediction['totals']['final_confidence']:.0f}/100 (highest)")
-            st.write(f"✓ Winner confidence: {unified_prediction['winner']['final_confidence']:.0f}/100 (lower)")
+            st.write(f"✗ Confidence {winner_conf}/100 < 40 → NO BET")
+    elif winner_pattern['type'] == 'AVOID':
+        st.write(f"❌ **PROVEN AVOID**: {winner_pattern['explanation']}")
+        st.write(f"✗ Proven to avoid → NO BET")
     else:
-        st.write("✗ No bet meets minimum confidence threshold (≥60)")
-        st.write("✗ Multiple risk flags present")
-        st.write("✗ Pattern indicators show 'AVOID' signals")
-
-# ========== POTENTIAL BET COMBINATIONS ==========
-if unified_recommendation['type'] == 'single' and unified_recommendation['confidence'] >= 70:
-    # Check for complementary bet
-    winner_conf = unified_prediction['winner']['final_confidence']
-    totals_conf = unified_prediction['totals']['final_confidence']
+        st.write(f"⚪ **NO PROVEN PATTERN**: {winner_pattern['explanation']}")
+        st.write(f"✗ No historical evidence → NO BET")
     
-    complementary_bet = ""
-    # If winner is main bet and totals is moderately strong
-    if 'winner' in unified_recommendation['text'] and totals_conf >= 60:
-        complementary_bet = f"📈 {prediction['totals']['direction']} 2.5 Goals (Confidence: {totals_conf:.0f}/100)"
-    # If totals is main bet and winner is moderately strong
-    elif 'Goals' in unified_recommendation['text'] and winner_conf >= 60:
-        complementary_bet = f"🏆 {prediction['winner']['team']} to win (Confidence: {winner_conf:.0f}/100)"
+    # Totals analysis
+    totals_pattern = pattern_indicators['totals']
+    totals_conf = prediction['totals']['confidence_score']
     
-    if complementary_bet:
-        st.info(f"💡 **Consider adding**: {complementary_bet}")
-
-# ========== OLD vs NEW COMPARISON ==========
-st.divider()
-st.subheader("🔄 Comparison: Old vs Unified System")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown("#### 🏆 Winner Comparison")
-    
-    # Old system logic
-    old_winner_conf = prediction['winner']['confidence_score']
-    old_winner_action = ""
-    if old_winner_conf >= 75:
-        old_winner_action = f"✅ STRONG BET on {prediction['winner']['team']}"
-    elif old_winner_conf >= 65:
-        old_winner_action = f"✅ MODERATE BET on {prediction['winner']['team']}"
-    elif old_winner_conf >= 55:
-        old_winner_action = f"⚠️ CAUTION on {prediction['winner']['team']}"
+    st.write(f"**📈 Totals Analysis:**")
+    if totals_pattern['type'] == 'MET':
+        st.write(f"✅ **PROVEN PATTERN**: {totals_pattern['explanation']}")
+        if totals_conf >= 40:
+            st.write(f"✓ Confidence {totals_conf}/100 ≥ 40 → CONSIDER BET")
+        else:
+            st.write(f"✗ Confidence {totals_conf}/100 < 40 → NO BET")
+    elif totals_pattern['type'] == 'AVOID':
+        st.write(f"❌ **PROVEN AVOID**: {totals_pattern['explanation']}")
+        st.write(f"✗ Proven to avoid → NO BET")
     else:
-        old_winner_action = f"❌ NO BET on winner"
+        st.write(f"⚪ **NO PROVEN PATTERN**: {totals_pattern['explanation']}")
+        st.write(f"✗ No historical evidence → NO BET")
     
-    # New unified winner recommendation
-    winner_uni = unified_prediction['winner']
-    new_winner_action = f"{winner_uni['bet_recommendation']} on {prediction['winner']['team']}"
-    
-    st.info(f"**OLD**: {old_winner_action}")
-    st.info(f"**NEW**: {new_winner_action}")
-    
-    if old_winner_action != new_winner_action:
-        st.warning("⚠️ **Recommendation changed by unified engine!**")
-
-with col2:
-    st.markdown("#### 📈 Totals Comparison")
-    
-    # Old system logic
-    old_totals_conf = prediction['totals']['confidence_score']
-    old_totals_action = ""
-    if old_totals_conf >= 75:
-        old_totals_action = f"✅ STRONG BET on {prediction['totals']['direction']} 2.5"
-    elif old_totals_conf >= 65:
-        old_totals_action = f"✅ MODERATE BET on {prediction['totals']['direction']} 2.5"
-    elif old_totals_conf >= 55:
-        old_totals_action = f"⚠️ CAUTION on {prediction['totals']['direction']} 2.5"
+    # Final decision logic
+    st.write("**🎯 Final Decision Logic:**")
+    if intelligent_recommendation['type'] == 'combo':
+        st.write("✓ BOTH winner and totals have PROVEN PATTERNS")
+        st.write("✓ Both have sufficient confidence (≥40)")
+        st.write("✓ Combined strength warrants DOUBLE BET")
+    elif intelligent_recommendation['type'] == 'single':
+        if 'winner' in intelligent_recommendation['text']:
+            st.write("✓ Winner has PROVEN PATTERN")
+            st.write("✓ Totals has NO PROVEN PATTERN or should be avoided")
+            st.write("✓ SINGLE WINNER BET recommended")
+        else:
+            st.write("✓ Totals has PROVEN PATTERN")
+            st.write("✓ Winner has NO PROVEN PATTERN or should be avoided")
+            st.write("✓ SINGLE TOTALS BET recommended")
     else:
-        old_totals_action = f"❌ NO BET on totals"
-    
-    # New unified totals recommendation
-    totals_uni = unified_prediction['totals']
-    new_totals_action = f"{totals_uni['bet_recommendation']} on {prediction['totals']['direction']} 2.5"
-    
-    st.info(f"**OLD**: {old_totals_action}")
-    st.info(f"**NEW**: {new_totals_action}")
-    
-    if old_totals_action != new_totals_action:
-        st.warning("⚠️ **Recommendation changed by unified engine!**")
-
-# ========== EXPLANATION OF CHANGES ==========
-if old_winner_action != new_winner_action or old_totals_action != new_totals_action:
-    with st.expander("🤔 Why did the recommendation change?"):
-        st.write("""
-        The **Unified Engine** combines:
-        1. **Base Model Confidence** - Your original prediction confidence
-        2. **Pattern Bonuses** - +40 for proven patterns, -20 for avoid patterns
-        3. **Risk Penalties** - Reductions for high variance, volatility, etc.
-        
-        **Key improvements:**
-        - Proven patterns can override low base confidence
-        - Clear mathematical formula for decisions
-        - No more conflicting signals between patterns and base model
-        - Based on 17-match backtest performance
-        """)
-        
-        # Show specific calculations
-        if old_totals_action != new_totals_action:
-            st.write("### Totals Calculation Example:")
-            st.write(f"Base Confidence: {prediction['totals']['confidence_score']:.0f}")
-            st.write(f"Pattern Bonus: +40 (PROVEN PATTERN)")
-            st.write(f"Risk Penalties: -{max(0, 100 - unified_prediction['totals']['final_confidence'])}")
-            st.write(f"**Final Confidence**: {unified_prediction['totals']['final_confidence']:.0f}/100")
+        st.write("✗ Neither winner nor totals has PROVEN PATTERN")
+        st.write("✗ Or one/both have AVOID patterns")
+        st.write("✗ NO BET recommended (based on backtest uncertainty)")
 
 # ========== INSIGHTS ==========
 if prediction['insights']:
@@ -1596,16 +1391,16 @@ st.divider()
 st.subheader("📤 Export Prediction Report")
 
 report = f"""
-⚽ FOOTBALL INTELLIGENCE ENGINE v3.1 - WITH UNIFIED BETTING CARD
+⚽ FOOTBALL INTELLIGENCE ENGINE v3.1 - WITH INTELLIGENT UNIFIED CARD
 Match: {home_team} vs {away_team}
 League: {selected_league}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 
-🎯 UNIFIED BETTING CARD RECOMMENDATION
-{unified_recommendation['icon']} {unified_recommendation['text']}
-Confidence: {unified_recommendation['confidence']:.0f}/100
-Type: {unified_recommendation['subtext']}
-Reason: {unified_recommendation['reason']}
+🎯 INTELLIGENT UNIFIED CARD RECOMMENDATION
+{intelligent_recommendation['icon']} {intelligent_recommendation['text']}
+Type: {intelligent_recommendation['subtext']}
+Confidence: {intelligent_recommendation['confidence']:.0f}/100
+Reason: {intelligent_recommendation['reason']}
 
 🎯 WINNER PREDICTION
 Predicted Winner: {prediction['winner']['team']}
@@ -1636,19 +1431,21 @@ Total: {prediction['expected_goals']['total']:.2f} xG
 ⚠️ RISK FLAGS
 {', '.join(prediction['totals']['risk_flags']) if prediction['totals']['risk_flags'] else 'None'}
 
-💰 BETTING RECOMMENDATIONS - UNIFIED ENGINE
-Winner: {unified_prediction['winner']['bet_recommendation']} on {prediction['winner']['team']}
-Totals: {unified_prediction['totals']['bet_recommendation']} on {prediction['totals']['direction']} 2.5
+💰 INTELLIGENT UNIFIED CARD
+{intelligent_recommendation['icon']} {intelligent_recommendation['text']}
+{intelligent_recommendation['subtext']} | Confidence: {intelligent_recommendation['confidence']:.0f}/100
 
 💰 LEGACY RECOMMENDATIONS (Original)
 Winner: {winner_rec_old}
 Totals: {totals_rec_old}
 
 ---
-IMPROVED WITH PROVEN 17-MATCH PATTERNS:
-1. NEUTRAL + xG>3.0 = UNDER (3/3 proven)
-2. MED_UNDER + xG>3.0 = OVER (3/3 proven)  
-3. VERY HIGH winner confidence = WIN (4/4 proven)
+INTELLIGENT RULES BASED ON 17-MATCH BACKTEST:
+1. ONLY bet on PROVEN PATTERNS (MET type)
+2. AVOID bets on NO PROVEN PATTERN (uncertain outcomes)
+3. MINIMUM confidence: 40/100 for proven patterns
+4. PROVEN PATTERNS: 8/8 correct in backtest
+5. NO PROVEN PATTERN: Uncertain - avoid betting
 """
 
 st.code(report, language="text")
@@ -1658,7 +1455,7 @@ with col1:
     st.download_button(
         label="📥 Download Report",
         data=report,
-        file_name=f"improved_logic_{home_team}_vs_{away_team}.txt",
+        file_name=f"intelligent_{home_team}_vs_{away_team}.txt",
         mime="text/plain",
         use_container_width=True
     )
@@ -1672,7 +1469,7 @@ with col2:
             'league': selected_league,
             'prediction': prediction,
             'pattern_indicators': pattern_indicators,
-            'unified_recommendation': unified_recommendation
+            'intelligent_recommendation': intelligent_recommendation
         })
         st.success("Added to prediction history!")
 
@@ -1691,10 +1488,10 @@ if st.session_state.prediction_history:
                     st.write(f"🏆 {winner}")
                     st.caption(f"{winner_pattern}")
                 with col3:
-                    if 'unified_recommendation' in hist:
-                        unified = hist['unified_recommendation']
-                        st.write(f"🎯 {unified['subtext']}")
-                        st.caption(f"{unified['icon']} {unified['text'][:20]}...")
+                    if 'intelligent_recommendation' in hist:
+                        intelligent = hist['intelligent_recommendation']
+                        st.write(f"🎯 {intelligent['subtext']}")
+                        st.caption(f"{intelligent['icon']} {intelligent['text'][:20]}...")
                     else:
                         direction = hist['prediction']['totals']['direction']
                         totals_pattern = hist['pattern_indicators']['totals']['text']
