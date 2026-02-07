@@ -8,15 +8,15 @@ warnings.filterwarnings('ignore')
 
 # Page config
 st.set_page_config(
-    page_title="⚽ Football Intelligence Engine v3.0",
+    page_title="⚽ Football Intelligence Engine v3.1",
     page_icon="🧠",
     layout="wide"
 )
 
-st.title("⚽ Football Intelligence Engine v3.0")
+st.title("⚽ Football Intelligence Engine v3.1")
 st.markdown("""
     **Complete Logic System: Winners + Totals with Finishing Trend Analysis**
-    *Separate confidence systems for winners and totals*
+    *Separate confidence systems for winners and totals - IMPROVED WITH 17-MATCH TEST DATA*
 """)
 
 # ========== CONSTANTS ==========
@@ -52,10 +52,10 @@ def poisson_pmf(k, lam):
     return (math.exp(-lam) * (lam ** k)) / factorial_cache(k)
 
 def generate_pattern_indicators(prediction):
-    """Generate pattern indicators based on backtest findings"""
+    """Generate pattern indicators based on backtest findings - IMPROVED WITH 17-MATCH TEST"""
     indicators = {'winner': None, 'totals': None}
     
-    # WINNER PATTERNS
+    # WINNER PATTERNS (working well - 4/4 perfect)
     winner_conf_score = prediction['winner']['confidence_score']
     if winner_conf_score >= 90:
         indicators['winner'] = {
@@ -79,37 +79,66 @@ def generate_pattern_indicators(prediction):
             'explanation': 'Backtest: Mixed results for this confidence range'
         }
     
-    # TOTALS PATTERNS - CORRECTED: Only show GREEN for PROVEN patterns
+    # TOTALS PATTERNS - IMPROVED WITH 17-MATCH TEST DATA
     finishing_alignment = prediction['totals']['finishing_alignment']
     total_category = prediction['totals']['total_category']
+    risk_flags = prediction['totals']['risk_flags']
     
-    # ONLY PROVEN PATTERNS (from 12-match backtest):
-    if finishing_alignment == "MED_OVER":
-        # 5/5 matches with MED_OVER went OVER 2.5 (PROVEN)
+    # NEW PROVEN PATTERN: NEUTRAL + HIGH_xG = UNDER (3/3 in 17-match test)
+    if finishing_alignment == "NEUTRAL" and total_category in ["HIGH", "VERY_HIGH"]:
+        indicators['totals'] = {
+            'type': 'MET',
+            'color': 'green',
+            'text': 'PROVEN PATTERN - UNDER 2.5',
+            'explanation': '17-match test: NEUTRAL + HIGH_xG went 3/3 UNDER'
+        }
+    
+    # UPDATED: HIGH_OVER now cautionary (1/3 in extended test)
+    elif finishing_alignment == "HIGH_OVER":
+        if "VOLATILE_OVER_BOTH" in risk_flags:
+            indicators['totals'] = {
+                'type': 'AVOID',
+                'color': 'red',
+                'text': 'AVOID OVER BET',
+                'explanation': 'Extended test: HIGH_OVER with both overperforming went 1/3 OVER'
+            }
+        else:
+            indicators['totals'] = {
+                'type': 'WARNING',
+                'color': 'yellow',
+                'text': 'CAUTION - HIGH_OVER PATTERN',
+                'explanation': 'Extended test: HIGH_OVER went 1/3 OVER (high variance)'
+            }
+    
+    # PROVEN PATTERN: MED_OVER (5/5) - KEEP AS IS
+    elif finishing_alignment == "MED_OVER":
         indicators['totals'] = {
             'type': 'MET',
             'color': 'green',
             'text': 'PROVEN PATTERN - OVER 2.5',
             'explanation': 'Backtest: MED_OVER alignment went 5/5 OVER 2.5'
         }
-    elif finishing_alignment == "HIGH_OVER":
-        # 1/1 match with HIGH_OVER went OVER 2.5 (PROVEN)
-        indicators['totals'] = {
-            'type': 'MET',
-            'color': 'green',
-            'text': 'PROVEN PATTERN - OVER 2.5',
-            'explanation': 'Backtest: HIGH_OVER alignment went 1/1 OVER 2.5'
-        }
+    
+    # PROVEN RISK: LOW_UNDER + VERY_HIGH
     elif finishing_alignment == "LOW_UNDER" and total_category == "VERY_HIGH":
-        # 0/2 matches with LOW_UNDER + VERY_HIGH went OVER 2.5 (PROVEN RISK)
         indicators['totals'] = {
             'type': 'AVOID',
             'color': 'red',
             'text': 'PROVEN RISK - BET UNDER 2.5',
             'explanation': 'Backtest: LOW_UNDER + VERY_HIGH went 0/2 OVER 2.5 (both UNDER)'
         }
+    
+    # NEW: BUNDESLIGA specific pattern (3/4 went UNDER in test)
+    elif "BUNDESLIGA_LOW_SCORING" in risk_flags:
+        indicators['totals'] = {
+            'type': 'WARNING',
+            'color': 'yellow',
+            'text': 'BUNDESLIGA LOW SCORING',
+            'explanation': 'Bundesliga 3.0 line: 3/4 matches went UNDER in 17-match test'
+        }
+    
     else:
-        # All other combinations: NOT ENOUGH DATA
+        # All other combinations
         indicators['totals'] = {
             'type': 'NO_PATTERN',
             'color': 'gray',
@@ -173,7 +202,7 @@ def calculate_league_metrics(df):
     
     return {'avg_goals_per_match': avg_goals_per_match}
 
-# ========== OUR NEW LOGIC CLASSES ==========
+# ========== OUR IMPROVED LOGIC CLASSES ==========
 
 class ExpectedGoalsPredictor:
     """OUR LOGIC: Expected goals calculation"""
@@ -249,7 +278,7 @@ class WinnerPredictor:
             predicted_winner = "DRAW"
             winner_strength = "CLOSE"
         
-        # OUR LOGIC: Winner confidence calculation (PROVEN TO WORK)
+        # OUR LOGIC: Winner confidence calculation (PROVEN TO WORK - 4/4 perfect)
         base_confidence = min(100, abs(delta) / max(home_xg, away_xg, 0.5) * 150)
         
         # Add bonuses
@@ -285,7 +314,7 @@ class WinnerPredictor:
         }
 
 class TotalsPredictor:
-    """OUR NEW LOGIC: Totals prediction with finishing trend analysis"""
+    """OUR IMPROVED LOGIC: Totals prediction with finishing trend analysis - UPDATED WITH 17-MATCH TEST"""
     
     def __init__(self, league_name):
         self.league_name = league_name
@@ -366,10 +395,14 @@ class TotalsPredictor:
             return "VERY_LOW"
     
     def check_risk_flags(self, home_stats, away_stats, total_xg):
-        """OUR LOGIC: Risk flag system"""
+        """OUR IMPROVED LOGIC: Risk flag system with 17-match test insights"""
         risk_flags = []
         home_finish = home_stats['goals_vs_xg_pm']
         away_finish = away_stats['goals_vs_xg_pm']
+        
+        # NEW RISK FLAG: Volatile overperformers (1/3 success in test)
+        if home_finish > 0.35 and away_finish > 0.35:
+            risk_flags.append("VOLATILE_OVER_BOTH")
         
         # Flag 1: Opposite extreme finishing
         if (home_finish > 0.5 and away_finish < -0.5) or (home_finish < -0.5 and away_finish > 0.5):
@@ -389,10 +422,14 @@ class TotalsPredictor:
         if lower_thresh < total_xg < upper_thresh:
             risk_flags.append("CLOSE_TO_THRESHOLD")
         
+        # NEW: Bundesliga specific adjustment (3/4 went UNDER in test)
+        if self.league_name == "Bundesliga" and total_xg < 3.3:
+            risk_flags.append("BUNDESLIGA_LOW_SCORING")
+        
         return risk_flags
     
     def predict_totals(self, home_xg, away_xg, home_stats, away_stats):
-        """OUR LOGIC: Complete totals prediction"""
+        """OUR IMPROVED LOGIC: Complete totals prediction - UPDATED WITH TEST DATA"""
         total_xg = home_xg + away_xg
         home_finish = home_stats['goals_vs_xg_pm']
         away_finish = away_stats['goals_vs_xg_pm']
@@ -408,26 +445,30 @@ class TotalsPredictor:
         # OUR LOGIC: Risk flags
         risk_flags = self.check_risk_flags(home_stats, away_stats, total_xg)
         
-        # OUR LOGIC: Decision matrix
+        # OUR IMPROVED LOGIC: Decision matrix based on 17-match test
         decision_matrix = {
             "VERY_HIGH": {
-                "HIGH_OVER": ("OVER", "VERY HIGH", 85),
-                "MED_OVER": ("OVER", "HIGH", 75),
+                "HIGH_OVER": ("OVER", "MEDIUM", 60),  # DOWNGRADED: Was 85 (1/3 success)
+                "MED_OVER": ("OVER", "HIGH", 75),     # KEEP: 5/5 success
                 "LOW_OVER": ("OVER", "MEDIUM", 65),
                 "NEUTRAL": ("OVER", "MEDIUM", 60),
                 "RISKY": ("OVER", "LOW", 45),
-                "HIGH_RISK": (base_direction, "VERY LOW", 35)
+                "HIGH_RISK": (base_direction, "VERY LOW", 35),
+                "MED_UNDER": (base_direction, "LOW", 50),
+                "LOW_UNDER": (base_direction, "LOW", 45)
             },
             "HIGH": {
-                "HIGH_OVER": ("OVER", "VERY HIGH", 80),
-                "MED_OVER": ("OVER", "HIGH", 70),
+                "HIGH_OVER": ("OVER", "LOW", 50),     # DOWNGRADED: Was 70
+                "MED_OVER": ("OVER", "HIGH", 70),     # KEEP
                 "LOW_OVER": ("OVER", "MEDIUM", 60),
                 "NEUTRAL": (base_direction, "LOW", 50),
                 "RISKY": (base_direction, "LOW", 45),
-                "HIGH_RISK": (base_direction, "VERY LOW", 35)
+                "HIGH_RISK": (base_direction, "VERY LOW", 35),
+                "MED_UNDER": ("UNDER", "MEDIUM", 55),
+                "LOW_UNDER": ("UNDER", "LOW", 45)
             },
             "MODERATE_HIGH": {
-                "HIGH_OVER": ("OVER", "HIGH", 75),
+                "HIGH_OVER": ("OVER", "MEDIUM", 55),
                 "MED_OVER": ("OVER", "MEDIUM", 65),
                 "LOW_OVER": ("OVER", "MEDIUM", 60),
                 "NEUTRAL": (base_direction, "LOW", 50),
@@ -468,10 +509,12 @@ class TotalsPredictor:
         if total_category in decision_matrix and finishing_alignment in decision_matrix[total_category]:
             direction, confidence_category, base_confidence = decision_matrix[total_category][finishing_alignment]
         
-        # OUR LOGIC: Apply risk flag penalties
+        # OUR IMPROVED LOGIC: Apply risk flag penalties based on test data
         final_confidence = base_confidence
         for flag in risk_flags:
-            if flag == "OPPOSITE_EXTREME_FINISHING":
+            if flag == "VOLATILE_OVER_BOTH":
+                final_confidence -= 25  # Significant penalty (1/3 success)
+            elif flag == "OPPOSITE_EXTREME_FINISHING":
                 final_confidence -= 25
             elif flag == "HIGH_VARIANCE_TEAM":
                 final_confidence -= 15
@@ -479,6 +522,8 @@ class TotalsPredictor:
                 final_confidence -= 10
             elif flag == "CLOSE_TO_THRESHOLD":
                 final_confidence -= 10
+            elif flag == "BUNDESLIGA_LOW_SCORING":
+                final_confidence -= 15  # Bundesliga 3.0 line penalty
         
         final_confidence = max(5, min(95, final_confidence))
         
@@ -562,17 +607,24 @@ class PoissonProbabilityEngine:
         }
 
 class InsightsGenerator:
-    """OUR LOGIC: Generate enhanced insights"""
+    """OUR IMPROVED LOGIC: Generate enhanced insights with 17-match test data"""
     
     @staticmethod
     def generate_insights(winner_prediction, totals_prediction):
         insights = []
         
-        # Winner insights
+        # Winner insights (working well - 4/4 perfect)
         if winner_prediction.get('winner_confidence_category') == "VERY HIGH":
-            insights.append(f"🎯 **High Confidence Winner**: Model strongly favors {winner_prediction.get('predicted_winner', 'N/A')}")
+            insights.append(f"🎯 **High Confidence Winner**: Model strongly favors {winner_prediction.get('predicted_winner', 'N/A')} (4/4 perfect in tests)")
         elif winner_prediction.get('winner_confidence_category') == "LOW":
-            insights.append(f"⚠️ **Low Confidence Winner**: Exercise caution on {winner_prediction.get('predicted_winner', 'N/A')} prediction")
+            insights.append(f"⚠️ **Low Confidence Winner**: Exercise caution on {winner_prediction.get('predicted_winner', 'N/A')} prediction (0/3 in backtests)")
+        
+        # NEW: Finishing volatility insight from 17-match test
+        home_finish = totals_prediction.get('home_finishing', 0)
+        away_finish = totals_prediction.get('away_finishing', 0)
+        
+        if home_finish > 0.35 and away_finish > 0.35:
+            insights.append("⚠️ **Both teams strong overperformers** - High volatility expected (1/3 OVER in 17-match test)")
         
         # Totals insights
         if totals_prediction.get('confidence') == "VERY HIGH":
@@ -581,9 +633,6 @@ class InsightsGenerator:
             insights.append(f"⚠️ **Low Confidence Totals**: High risk on {totals_prediction.get('direction', 'N/A')} 2.5 prediction")
         
         # Finishing trend insights
-        home_finish = totals_prediction.get('home_finishing', 0)
-        away_finish = totals_prediction.get('away_finishing', 0)
-        
         if home_finish > 0.3:
             insights.append(f"⚡ **Home team overperforms xG** by {home_finish:.2f}/game (clinical finishing)")
         elif home_finish < -0.3:
@@ -594,14 +643,16 @@ class InsightsGenerator:
         elif away_finish < -0.3:
             insights.append(f"⚡ **Away team underperforms xG** by {abs(away_finish):.2f}/game (wasteful finishing)")
         
-        # Finishing alignment insights
+        # Finishing alignment insights with test data
         alignment = totals_prediction.get('finishing_alignment', 'NEUTRAL')
+        total_category = totals_prediction.get('total_category', 'N/A')
+        
         if alignment == "HIGH_OVER":
-            insights.append("🔥 **Both teams show strong overperformance** - High probability of OVER")
-        elif alignment == "HIGH_UNDER":
-            insights.append("🛡️ **Both teams show strong underperformance** - High probability of UNDER")
-        elif "RISKY" in alignment:
-            insights.append("🎲 **Mixed finishing trends** - Higher variance expected")
+            insights.append("⚠️ **HIGH_OVER pattern**: 17-match test shows 1/3 success rate (caution advised)")
+        elif alignment == "MED_OVER":
+            insights.append("✅ **MED_OVER pattern**: Proven 5/5 OVER in backtests")
+        elif alignment == "NEUTRAL" and total_category in ["HIGH", "VERY_HIGH"]:
+            insights.append("✅ **NEUTRAL + HIGH_xG pattern**: 3/3 UNDER in 17-match test")
         
         # Risk flag insights
         risk_flags = totals_prediction.get('risk_flags', [])
@@ -610,10 +661,10 @@ class InsightsGenerator:
             flag_list = ", ".join(risk_flags)
             insights.append(f"⚠️ **{risk_count} risk flag(s) detected**: {flag_list}")
         
-        return insights[:5]
+        return insights[:6]
 
 class FootballIntelligenceEngineV3:
-    """OUR LOGIC: Complete prediction engine"""
+    """OUR IMPROVED LOGIC: Complete prediction engine with 17-match test updates"""
     
     def __init__(self, league_metrics, league_name):
         self.league_metrics = league_metrics
@@ -642,12 +693,12 @@ class FootballIntelligenceEngineV3:
             home_xg, away_xg, home_stats, away_stats
         )
         
-        # Step 4: OUR LOGIC - Totals prediction
+        # Step 4: OUR IMPROVED LOGIC - Totals prediction
         totals_prediction = self.totals_predictor.predict_totals(
             home_xg, away_xg, home_stats, away_stats
         )
         
-        # Step 5: OUR LOGIC - Insights
+        # Step 5: OUR IMPROVED LOGIC - Insights
         insights = self.insights_generator.generate_insights(winner_prediction, totals_prediction)
         
         # Step 6: Determine final probabilities
@@ -941,6 +992,17 @@ with col2:
             </div>
         </div>
         """, unsafe_allow_html=True)
+    elif totals_indicator['type'] == 'WARNING':
+        st.markdown(f"""
+        <div style="background-color: #78350F; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0; border: 2px solid #F59E0B;">
+            <div style="font-size: 20px; font-weight: bold; color: #F59E0B; margin: 5px 0;">
+                ⚠️ {totals_indicator['text']}
+            </div>
+            <div style="font-size: 14px; color: #FDE68A;">
+                {totals_indicator['explanation']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
         st.markdown(f"""
         <div style="background-color: #374151; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0; border: 2px solid #9CA3AF;">
@@ -953,7 +1015,7 @@ with col2:
         </div>
         """, unsafe_allow_html=True)
 
-st.caption("💡 **Based on 12-match backtest analysis** | Green = Proven pattern to bet | Red = Proven pattern to avoid | Gray = No proven pattern")
+st.caption("💡 **Based on 17-match extended test analysis** | Green = Proven pattern to bet | Red = Proven pattern to avoid | Yellow = Warning/Caution | Gray = No proven pattern")
 
 # ========== CONTINUE WITH REST OF DISPLAY ==========
 
@@ -1074,7 +1136,7 @@ st.divider()
 st.subheader("📤 Export Prediction Report")
 
 report = f"""
-⚽ FOOTBALL INTELLIGENCE ENGINE v3.0 - OUR COMPLETE LOGIC
+⚽ FOOTBALL INTELLIGENCE ENGINE v3.1 - OUR IMPROVED LOGIC
 Match: {home_team} vs {away_team}
 League: {selected_league}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
@@ -1115,8 +1177,8 @@ Winner: {winner_rec.replace('✅', 'STRONG BET:').replace('⚠️', 'MODERATE BE
 Totals: {totals_rec.replace('✅', 'STRONG BET:').replace('⚠️', 'MODERATE BET:').replace('❌', 'NO BET:')}
 
 ---
-Generated by Football Intelligence Engine v3.0
-OUR COMPLETE LOGIC SYSTEM
+Generated by Football Intelligence Engine v3.1
+OUR IMPROVED LOGIC SYSTEM WITH 17-MATCH TEST DATA
 """
 
 st.code(report, language="text")
@@ -1151,7 +1213,7 @@ if st.session_state.prediction_history:
                 col1, col2, col3 = st.columns([3, 2, 2])
                 with col1:
                     st.write(f"**{hist['home_team']} vs {hist['away_team']}**")
-                    st.caption(f"{hist['timestamp'].strftime('%Y-%m-d %H:%M')}")
+                    st.caption(f"{hist['timestamp'].strftime('%Y-%m-%d %H:%M')}")
                 with col2:
                     winner = hist['prediction']['winner']['team']
                     winner_pattern = hist['pattern_indicators']['winner']['text']
