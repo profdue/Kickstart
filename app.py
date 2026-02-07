@@ -51,7 +51,7 @@ def poisson_pmf(k, lam):
         return 0
     return (math.exp(-lam) * (lam ** k)) / factorial_cache(k)
 
-def generate_pattern_indicators(prediction, engine):
+def generate_pattern_indicators(prediction):
     """Generate pattern indicators based on backtest findings"""
     indicators = {'winner': None, 'totals': None}
     
@@ -79,31 +79,25 @@ def generate_pattern_indicators(prediction, engine):
             'explanation': 'Backtest: Mixed results for this confidence range'
         }
     
-    # TOTALS PATTERNS - FIXED: Check Finishing Trend Analysis categories
-    home_finish = prediction['totals']['home_finishing']
-    away_finish = prediction['totals']['away_finishing']
+    # TOTALS PATTERNS - UPDATED: Check Finishing Alignment + Total xG Category combination
+    finishing_alignment = prediction['totals']['finishing_alignment']
+    total_category = prediction['totals']['total_category']
     
-    # Get the actual categories from Finishing Trend Analysis
-    home_category = engine.totals_predictor.categorize_finishing(home_finish)
-    away_category = engine.totals_predictor.categorize_finishing(away_finish)
-    
-    # Check if EITHER team is OVERPERFORMER (STRONG_OVERPERFORM or MODERATE_OVERPERFORM)
-    is_home_overperformer = "OVERPERFORM" in home_category
-    is_away_overperformer = "OVERPERFORM" in away_category
-    
-    if is_home_overperformer or is_away_overperformer:
+    # Check for the "AVOID" pattern: LOW_UNDER + VERY_HIGH
+    if finishing_alignment == "LOW_UNDER" and total_category == "VERY_HIGH":
+        indicators['totals'] = {
+            'type': 'AVOID',
+            'color': 'red',
+            'text': 'AVOID TOTALS BET - BET UNDER 2.5',
+            'explanation': 'Backtest: LOW_UNDER + VERY_HIGH combination went 0/2 OVER 2.5 (both went UNDER)'
+        }
+    else:
+        # All other combinations went OVER 2.5 in backtest
         indicators['totals'] = {
             'type': 'MET',
             'color': 'green',
             'text': 'TOTALS CONDITION MET - OVER 2.5',
-            'explanation': f'Backtest: Matches with overperformers went 8/8 OVER 2.5 (Home: {home_category}, Away: {away_category})'
-        }
-    else:
-        indicators['totals'] = {
-            'type': 'NO_PATTERN',
-            'color': 'gray',
-            'text': 'NO CLEAR PATTERN',
-            'explanation': f'No overperformer detected (Home: {home_category}, Away: {away_category})'
+            'explanation': f'Backtest: {finishing_alignment} + {total_category} combinations went OVER 2.5'
         }
     
     return indicators
@@ -492,9 +486,7 @@ class TotalsPredictor:
             'total_category': total_category,
             'risk_flags': risk_flags,
             'home_finishing': home_finish,
-            'away_finishing': away_finish,
-            'home_category': self.categorize_finishing(home_finish),
-            'away_category': self.categorize_finishing(away_finish)
+            'away_finishing': away_finish
         }
 
 class PoissonProbabilityEngine:
@@ -681,9 +673,7 @@ class FootballIntelligenceEngineV3:
                 'total_category': totals_prediction['total_category'],
                 'risk_flags': totals_prediction['risk_flags'],
                 'home_finishing': totals_prediction['home_finishing'],
-                'away_finishing': totals_prediction['away_finishing'],
-                'home_category': totals_prediction['home_category'],
-                'away_category': totals_prediction['away_category']
+                'away_finishing': totals_prediction['away_finishing']
             },
             
             # All probabilities
@@ -870,7 +860,7 @@ with col2:
 st.divider()
 st.subheader("🎯 Backtest-Proven Patterns")
 
-pattern_indicators = generate_pattern_indicators(prediction, engine)
+pattern_indicators = generate_pattern_indicators(prediction)
 
 col1, col2 = st.columns(2)
 
@@ -923,6 +913,17 @@ with col2:
             </div>
         </div>
         """, unsafe_allow_html=True)
+    elif totals_indicator['type'] == 'AVOID':
+        st.markdown(f"""
+        <div style="background-color: #7F1D1D; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0; border: 2px solid #EF4444;">
+            <div style="font-size: 20px; font-weight: bold; color: #EF4444; margin: 5px 0;">
+                ❌ {totals_indicator['text']}
+            </div>
+            <div style="font-size: 14px; color: #FECACA;">
+                {totals_indicator['explanation']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
         st.markdown(f"""
         <div style="background-color: #374151; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0; border: 2px solid #9CA3AF;">
@@ -935,7 +936,7 @@ with col2:
         </div>
         """, unsafe_allow_html=True)
 
-st.caption("💡 **Based on 12-match backtest analysis** | Green = Proven pattern to bet | Gray = No clear pattern")
+st.caption("💡 **Based on 12-match backtest analysis** | Green = Proven pattern to bet | Red = Proven pattern to avoid | Gray = No clear pattern")
 
 # ========== CONTINUE WITH REST OF DISPLAY ==========
 
@@ -955,13 +956,13 @@ col1, col2 = st.columns(2)
 
 with col1:
     home_finish = prediction['totals']['home_finishing']
-    home_category = prediction['totals']['home_category']
-    st.metric(f"{home_team} Finishing", f"{home_finish:+.2f}", home_category)
+    finish_cat = engine.totals_predictor.categorize_finishing(home_finish)
+    st.metric(f"{home_team} Finishing", f"{home_finish:+.2f}", finish_cat)
 
 with col2:
     away_finish = prediction['totals']['away_finishing']
-    away_category = prediction['totals']['away_category']
-    st.metric(f"{away_team} Finishing", f"{away_finish:+.2f}", away_category)
+    finish_cat = engine.totals_predictor.categorize_finishing(away_finish)
+    st.metric(f"{away_team} Finishing", f"{away_finish:+.2f}", finish_cat)
 
 finishing_alignment = prediction['totals'].get('finishing_alignment', 'N/A')
 total_category = prediction['totals'].get('total_category', 'N/A')
@@ -1082,8 +1083,8 @@ Total xG Category: {prediction['totals'].get('total_category', 'N/A')}
 Total: {prediction['expected_goals']['total']:.2f} xG
 
 📊 FINISHING TRENDS
-{home_team}: {prediction['totals']['home_finishing']:+.2f} goals_vs_xg/game ({prediction['totals']['home_category']})
-{away_team}: {prediction['totals']['away_finishing']:+.2f} goals_vs_xg/game ({prediction['totals']['away_category']})
+{home_team}: {prediction['totals']['home_finishing']:+.2f} goals_vs_xg/game
+{away_team}: {prediction['totals']['away_finishing']:+.2f} goals_vs_xg/game
 
 ⚠️ RISK FLAGS
 {', '.join(prediction['totals']['risk_flags']) if prediction['totals']['risk_flags'] else 'None'}
