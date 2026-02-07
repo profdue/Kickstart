@@ -75,29 +75,46 @@ def generate_pattern_indicators(prediction):
         indicators['winner'] = {
             'type': 'NO_PATTERN',
             'color': 'gray',
-            'text': 'NO CLEAR PATTERN',
+            'text': 'NO PROVEN PATTERN',
             'explanation': 'Backtest: Mixed results for this confidence range'
         }
     
-    # TOTALS PATTERNS - UPDATED: Check Finishing Alignment + Total xG Category combination
+    # TOTALS PATTERNS - CORRECTED: Only show GREEN for PROVEN patterns
     finishing_alignment = prediction['totals']['finishing_alignment']
     total_category = prediction['totals']['total_category']
     
-    # Check for the "AVOID" pattern: LOW_UNDER + VERY_HIGH
-    if finishing_alignment == "LOW_UNDER" and total_category == "VERY_HIGH":
-        indicators['totals'] = {
-            'type': 'AVOID',
-            'color': 'red',
-            'text': 'AVOID TOTALS BET - BET UNDER 2.5',
-            'explanation': 'Backtest: LOW_UNDER + VERY_HIGH combination went 0/2 OVER 2.5 (both went UNDER)'
-        }
-    else:
-        # All other combinations went OVER 2.5 in backtest
+    # ONLY PROVEN PATTERNS (from 12-match backtest):
+    if finishing_alignment == "MED_OVER":
+        # 5/5 matches with MED_OVER went OVER 2.5 (PROVEN)
         indicators['totals'] = {
             'type': 'MET',
             'color': 'green',
-            'text': 'TOTALS CONDITION MET - OVER 2.5',
-            'explanation': f'Backtest: {finishing_alignment} + {total_category} combinations went OVER 2.5'
+            'text': 'PROVEN PATTERN - OVER 2.5',
+            'explanation': 'Backtest: MED_OVER alignment went 5/5 OVER 2.5'
+        }
+    elif finishing_alignment == "HIGH_OVER":
+        # 1/1 match with HIGH_OVER went OVER 2.5 (PROVEN)
+        indicators['totals'] = {
+            'type': 'MET',
+            'color': 'green',
+            'text': 'PROVEN PATTERN - OVER 2.5',
+            'explanation': 'Backtest: HIGH_OVER alignment went 1/1 OVER 2.5'
+        }
+    elif finishing_alignment == "LOW_UNDER" and total_category == "VERY_HIGH":
+        # 0/2 matches with LOW_UNDER + VERY_HIGH went OVER 2.5 (PROVEN RISK)
+        indicators['totals'] = {
+            'type': 'AVOID',
+            'color': 'red',
+            'text': 'PROVEN RISK - BET UNDER 2.5',
+            'explanation': 'Backtest: LOW_UNDER + VERY_HIGH went 0/2 OVER 2.5 (both UNDER)'
+        }
+    else:
+        # All other combinations: NOT ENOUGH DATA
+        indicators['totals'] = {
+            'type': 'NO_PATTERN',
+            'color': 'gray',
+            'text': 'NO PROVEN PATTERN',
+            'explanation': f'Insufficient backtest data for {finishing_alignment} alignment'
         }
     
     return indicators
@@ -936,7 +953,7 @@ with col2:
         </div>
         """, unsafe_allow_html=True)
 
-st.caption("💡 **Based on 12-match backtest analysis** | Green = Proven pattern to bet | Red = Proven pattern to avoid | Gray = No clear pattern")
+st.caption("💡 **Based on 12-match backtest analysis** | Green = Proven pattern to bet | Red = Proven pattern to avoid | Gray = No proven pattern")
 
 # ========== CONTINUE WITH REST OF DISPLAY ==========
 
@@ -1134,7 +1151,7 @@ if st.session_state.prediction_history:
                 col1, col2, col3 = st.columns([3, 2, 2])
                 with col1:
                     st.write(f"**{hist['home_team']} vs {hist['away_team']}**")
-                    st.caption(f"{hist['timestamp'].strftime('%Y-%m-%d %H:%M')}")
+                    st.caption(f"{hist['timestamp'].strftime('%Y-%m-d %H:%M')}")
                 with col2:
                     winner = hist['prediction']['winner']['team']
                     winner_pattern = hist['pattern_indicators']['winner']['text']
