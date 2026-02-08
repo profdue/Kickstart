@@ -56,7 +56,7 @@ def generate_pattern_indicators(prediction):
     indicators = {'winner': None, 'totals': None}
     
     winner_pred = prediction['winner']
-    winner_conf_score = winner_pred['winner_confidence']
+    winner_conf_score = winner_pred['confidence_score']  # FIXED: Changed from 'winner_confidence' to 'confidence_score'
     volatility_high = winner_pred.get('volatility_high', False)
     home_finishing = winner_pred.get('home_finishing', 0)
     away_finishing = winner_pred.get('away_finishing', 0)
