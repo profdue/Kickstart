@@ -22,7 +22,7 @@ st.set_page_config(
 st.title("⚽ Football Intelligence Engine v4.0")
 st.markdown("""
     **ADAPTIVE LEARNING SYSTEM** - Learns from historical outcomes to improve predictions
-    *Now with Supabase Persistent Storage*
+    *Pure Learning from Your Recorded Outcomes*
 """)
 
 # ========== SUPABASE INITIALIZATION ==========
@@ -58,7 +58,7 @@ LEAGUE_ADJUSTMENTS = {
 # ========== LEARNING SYSTEM ==========
 
 class AdaptiveLearningSystem:
-    """Machine Learning system that adapts based on historical results"""
+    """Machine Learning system that adapts based on YOUR historical results"""
     
     def __init__(self):
         self.pattern_memory = defaultdict(lambda: {'total': 0, 'success': 0})
@@ -74,6 +74,9 @@ class AdaptiveLearningSystem:
         self.outcomes = []
         self.supabase = init_supabase()
         
+        # Load ONLY from Supabase (NO pre-loaded test data)
+        self.load_learning()
+    
     def save_learning(self):
         """Save learning data to Supabase"""
         try:
@@ -154,10 +157,12 @@ class AdaptiveLearningSystem:
             response = self.supabase.table("football_learning").select("*").execute()
             
             if not response.data:
-                st.info("No learning data found in Supabase. Starting fresh.")
+                st.info("✅ Starting with fresh learning system - no previous data found.")
                 return
             
             patterns_loaded = 0
+            outcomes_loaded = 0
+            
             for row in response.data:
                 pattern_key = row['pattern_key']
                 
@@ -167,6 +172,7 @@ class AdaptiveLearningSystem:
                         metadata = row['metadata']
                         if 'outcomes' in metadata:
                             self.outcomes = metadata['outcomes']
+                            outcomes_loaded = len(self.outcomes)
                         if 'feature_weights' in metadata:
                             self.feature_weights.update(metadata['feature_weights'])
                 else:
@@ -177,7 +183,8 @@ class AdaptiveLearningSystem:
                     }
                     patterns_loaded += 1
             
-            st.success(f"✅ Loaded {patterns_loaded} patterns from Supabase")
+            if patterns_loaded > 0:
+                st.success(f"✅ Loaded {patterns_loaded} patterns and {outcomes_loaded} outcomes from YOUR previous sessions")
             
         except Exception as e:
             st.error(f"Error loading from Supabase: {e}")
@@ -219,6 +226,8 @@ class AdaptiveLearningSystem:
         # Store outcome
         outcome = {
             'timestamp': datetime.now(),
+            'home_team': prediction.get('home_team', 'Unknown'),
+            'away_team': prediction.get('away_team', 'Unknown'),
             'winner_pattern': pattern_indicators['winner']['type'],
             'totals_pattern': pattern_indicators['totals']['type'],
             'winner_confidence': winner_pred['confidence_score'],
@@ -237,10 +246,17 @@ class AdaptiveLearningSystem:
         
         self.outcomes.append(outcome)
         
-        # Update pattern memory
-        winner_key = f"WINNER_{pattern_indicators['winner']['type']}_{winner_pred['confidence_score']//10*10}"
-        totals_key = f"TOTALS_{pattern_indicators['totals']['type']}_{totals_pred.get('finishing_alignment', 'N/A')}_{totals_pred.get('total_category', 'N/A')}"
+        # Create pattern keys based on YOUR match
+        winner_key = f"WINNER_{winner_pred['confidence']}_{winner_pred['confidence_score']//10*10}"
+        totals_key = f"TOTALS_{totals_pred.get('finishing_alignment', 'N/A')}_{totals_pred.get('total_category', 'N/A')}"
         
+        # Initialize if not exists
+        if winner_key not in self.pattern_memory:
+            self.pattern_memory[winner_key] = {'total': 0, 'success': 0}
+        if totals_key not in self.pattern_memory:
+            self.pattern_memory[totals_key] = {'total': 0, 'success': 0}
+        
+        # Update pattern memory
         self.pattern_memory[winner_key]['total'] += 1
         self.pattern_memory[winner_key]['success'] += 1 if outcome['winner_correct'] else 0
         
@@ -315,17 +331,17 @@ class AdaptiveLearningSystem:
         """Generate insights based on learned patterns"""
         insights = []
         
+        if not self.outcomes:
+            return ["🔄 **Learning System**: No historical data yet - record outcomes to start learning"]
+        
         # Analyze last 20 outcomes
         recent = self.outcomes[-20:] if len(self.outcomes) > 20 else self.outcomes
-        
-        if not recent:
-            return ["🔄 **Learning System**: No historical data yet - collecting patterns"]
         
         # Calculate success rates
         winner_success = sum(1 for o in recent if o['winner_correct']) / len(recent)
         totals_success = sum(1 for o in recent if o['totals_correct']) / len(recent)
         
-        insights.append(f"📊 **Recent Accuracy**: Winners: {winner_success:.0%} | Totals: {totals_success:.0%}")
+        insights.append(f"📊 **Your Recent Accuracy**: Winners: {winner_success:.0%} | Totals: {totals_success:.0%}")
         
         # Identify strong patterns
         pattern_performance = defaultdict(lambda: {'total': 0, 'success': 0})
@@ -339,15 +355,15 @@ class AdaptiveLearningSystem:
             if stats['total'] >= 3:
                 success_rate = stats['success'] / stats['total']
                 if success_rate >= 0.8:
-                    insights.append(f"✅ **STRONG PATTERN**: {pattern} - {stats['success']}/{stats['total']} correct")
+                    insights.append(f"✅ **YOUR STRONG PATTERN**: {pattern} - {stats['success']}/{stats['total']} correct")
                 elif success_rate <= 0.3:
-                    insights.append(f"❌ **WEAK PATTERN**: {pattern} - {stats['success']}/{stats['total']} correct")
+                    insights.append(f"❌ **YOUR WEAK PATTERN**: {pattern} - {stats['success']}/{stats['total']} correct")
         
         # Confidence level analysis
         high_conf = [o for o in recent if o['totals_confidence'] >= 70]
         if high_conf:
             high_conf_success = sum(1 for o in high_conf if o['totals_correct']) / len(high_conf)
-            insights.append(f"🎯 **High Confidence (70+)**: {high_conf_success:.0%} success rate")
+            insights.append(f"🎯 **Your High Confidence (70+)**: {high_conf_success:.0%} success rate")
         
         return insights[:5]
 
@@ -362,7 +378,6 @@ if 'factorial_cache' not in st.session_state:
 
 if 'learning_system' not in st.session_state:
     st.session_state.learning_system = AdaptiveLearningSystem()
-    st.session_state.learning_system.load_learning()
 
 if 'match_history' not in st.session_state:
     st.session_state.match_history = []
@@ -1099,6 +1114,8 @@ class AdaptiveFootballIntelligenceEngineV4:
             total_prob = probabilities['under_2_5_probability']
         
         return {
+            'home_team': home_team,
+            'away_team': away_team,
             'winner': {
                 'team': winner_display,
                 'type': winner_prediction['predicted_winner'],
@@ -1214,15 +1231,15 @@ class AdaptivePatternIndicators:
             indicators['winner'] = {
                 'type': 'MET',
                 'color': 'green',
-                'text': 'PROVEN WINNER PATTERN',
-                'explanation': f'Historical success: {winner_success_rate:.0%} for this confidence level'
+                'text': 'YOUR PROVEN WINNER PATTERN',
+                'explanation': f'Your historical success: {winner_success_rate:.0%} for this confidence level'
             }
         elif winner_pred['confidence_score'] < 45 and winner_success_rate < 0.4:
             indicators['winner'] = {
                 'type': 'AVOID',
                 'color': 'red',
-                'text': 'AVOID WINNER BET',
-                'explanation': f'Historical failure: {winner_success_rate:.0%} success rate'
+                'text': 'YOUR WEAK WINNER PATTERN',
+                'explanation': f'Your historical failure: {winner_success_rate:.0%} success rate'
             }
         elif winner_pred.get('volatility_high', False):
             vol_success = self.learning_system.get_pattern_success_rate("VOLATILE", "HIGH_VOLATILITY")
@@ -1230,14 +1247,14 @@ class AdaptivePatternIndicators:
                 'type': 'WARNING',
                 'color': 'yellow',
                 'text': 'HIGH VOLATILITY MATCH',
-                'explanation': f'Volatile matches: {vol_success:.0%} success rate historically'
+                'explanation': f'Your volatile matches: {vol_success:.0%} success rate historically'
             }
         else:
             indicators['winner'] = {
                 'type': 'NO_PATTERN',
                 'color': 'gray',
-                'text': 'NO PROVEN PATTERN',
-                'explanation': f'Historical success: {winner_success_rate:.0%}'
+                'text': 'NO PATTERN YET',
+                'explanation': f'Your historical success: {winner_success_rate:.0%}'
             }
         
         # TOTALS INDICATORS with learning
@@ -1247,58 +1264,34 @@ class AdaptivePatternIndicators:
         pattern_key = f"{finishing_alignment}_{total_category}"
         pattern_success = self.learning_system.get_pattern_success_rate("TOTALS", pattern_key)
         
-        # Strong patterns from historical data
-        strong_patterns = {
-            "MED_OVER_VERY_HIGH": 1.0,  # 5/5 success
-            "MED_OVER_HIGH": 1.0,
-            "MED_UNDER_VERY_HIGH": 1.0,  # 3/3 success
-            "MED_UNDER_HIGH": 1.0,
-            "NEUTRAL_VERY_HIGH": 0.5,  # From your data
-            "MED_OVER_MODERATE_HIGH": 1.0,
-        }
-        
-        weak_patterns = {
-            "HIGH_OVER_VERY_HIGH": 0.2,  # 1/5 success
-            "HIGH_OVER_HIGH": 0.2,
-            "HIGH_OVER_MODERATE_LOW": 0.0,
-            "RISKY_MODERATE_LOW": 0.0,
-            "HIGH_RISK_MODERATE_LOW": 0.0,
-        }
-        
-        if pattern_key in strong_patterns:
+        # Determine based on YOUR success rates
+        if pattern_success > 0.7 and self.learning_system.pattern_memory.get(pattern_key, {}).get('total', 0) >= 3:
             indicators['totals'] = {
                 'type': 'MET',
                 'color': 'green',
-                'text': f'PROVEN PATTERN - {totals_pred["direction"]} 2.5',
-                'explanation': f'Historical success: {strong_patterns[pattern_key]:.0%} for this pattern'
+                'text': f'YOUR STRONG PATTERN - {totals_pred["direction"]} 2.5',
+                'explanation': f'Your historical success: {pattern_success:.0%} for this pattern'
             }
-        elif pattern_key in weak_patterns:
+        elif pattern_success < 0.4 and self.learning_system.pattern_memory.get(pattern_key, {}).get('total', 0) >= 3:
             indicators['totals'] = {
                 'type': 'AVOID',
                 'color': 'red',
-                'text': f'AVOID {totals_pred["direction"]} BET',
-                'explanation': f'Historical failure: {weak_patterns[pattern_key]:.0%} success rate'
+                'text': f'YOUR WEAK PATTERN - {totals_pred["direction"]} 2.5',
+                'explanation': f'Your historical failure: {pattern_success:.0%} success rate'
             }
-        elif pattern_success > 0.7:
+        elif pattern_success > 0.6:
             indicators['totals'] = {
-                'type': 'MET',
-                'color': 'green',
-                'text': f'LEARNED PATTERN - {totals_pred["direction"]} 2.5',
-                'explanation': f'Historical success: {pattern_success:.0%}'
-            }
-        elif pattern_success < 0.4:
-            indicators['totals'] = {
-                'type': 'AVOID',
-                'color': 'red',
-                'text': f'LEARNED WEAKNESS - {totals_pred["direction"]} 2.5',
-                'explanation': f'Historical failure: {pattern_success:.0%}'
+                'type': 'PROMISING',
+                'color': 'blue',
+                'text': f'PROMISING PATTERN - {totals_pred["direction"]} 2.5',
+                'explanation': f'Your historical success: {pattern_success:.0%}'
             }
         else:
             indicators['totals'] = {
                 'type': 'NO_PATTERN',
                 'color': 'gray',
-                'text': 'NO LEARNED PATTERN',
-                'explanation': f'Historical success: {pattern_success:.0%}'
+                'text': 'NO PATTERN YET',
+                'explanation': f'Your historical success: {pattern_success:.0%}'
             }
         
         return indicators
@@ -1530,20 +1523,8 @@ def add_feedback_section(prediction, pattern_indicators, home_team, away_team):
                     })
                     
                     st.success("✅ Outcome recorded! Learning system updated.")
+                    st.rerun()
                     
-                    # Show immediate learning
-                    with st.expander("📈 What was learned?", expanded=True):
-                        winner_success = st.session_state.learning_system.get_pattern_success_rate(
-                            "WINNER", f"{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
-                        )
-                        totals_success = st.session_state.learning_system.get_pattern_success_rate(
-                            "TOTALS", f"{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
-                        )
-                        
-                        st.write(f"**Winner Pattern Success**: {winner_success:.0%}")
-                        st.write(f"**Totals Pattern Success**: {totals_success:.0%}")
-                        st.write(f"**Total Patterns Learned**: {len(st.session_state.learning_system.pattern_memory)}")
-                        
                 except ValueError:
                     st.error("❌ Please enter score in format '2-1'")
             else:
@@ -1552,28 +1533,6 @@ def add_feedback_section(prediction, pattern_indicators, home_team, away_team):
     with col3:
         if st.button("📊 View Learning History", use_container_width=True, key="view_history_btn"):
             st.session_state.show_history = not st.session_state.show_history
-
-def learn_from_historical_data():
-    """Load historical test data into the learning system"""
-    
-    # Pre-load some successful patterns from your test data
-    historical_patterns = [
-        # Strong patterns from your data
-        ("WINNER_MET_90", {'total': 6, 'success': 6}),  # Very high confidence winners 6/6
-        ("TOTALS_MET_MED_OVER_VERY_HIGH", {'total': 5, 'success': 5}),  # MED_OVER + VERY_HIGH 5/5
-        ("TOTALS_MET_MED_UNDER_VERY_HIGH", {'total': 3, 'success': 3}),  # MED_UNDER + VERY_HIGH 3/3
-        ("TOTALS_MET_MED_OVER_HIGH", {'total': 2, 'success': 2}),
-        
-        # Weak patterns from your data
-        ("TOTALS_AVOID_HIGH_OVER_VERY_HIGH", {'total': 5, 'success': 1}),  # HIGH_OVER + VERY_HIGH 1/5
-        ("TOTALS_AVOID_HIGH_OVER_HIGH", {'total': 3, 'success': 0}),
-        ("WINNER_AVOID_30", {'total': 10, 'success': 4}),  # Very low confidence winners
-    ]
-    
-    # Load these patterns into the learning system
-    for pattern_key, stats in historical_patterns:
-        st.session_state.learning_system.pattern_memory[pattern_key] = stats
-    st.session_state.learning_system.save_learning()
 
 # ========== STREAMLIT UI ==========
 
@@ -1621,8 +1580,8 @@ with st.sidebar:
     
     # Supabase Status
     st.write("🔄 **Storage**: Supabase")
-    st.write(f"📊 **Patterns in DB**: {len(st.session_state.learning_system.pattern_memory)}")
-    st.write(f"📈 **Outcomes Recorded**: {len(st.session_state.learning_system.outcomes)}")
+    st.write(f"📊 **Your Patterns**: {len(st.session_state.learning_system.pattern_memory)}")
+    st.write(f"📈 **Your Outcomes**: {len(st.session_state.learning_system.outcomes)}")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -1635,15 +1594,16 @@ with st.sidebar:
             st.session_state.learning_system.load_learning()
             st.rerun()
     
-    # Pre-load historical patterns
-    if st.button("📚 Load Test Patterns", use_container_width=True):
-        learn_from_historical_data()
-        st.success("Loaded historical test patterns!")
+    # Clear data button
+    if st.button("🗑️ Clear All Data", type="secondary", use_container_width=True):
+        st.session_state.learning_system = AdaptiveLearningSystem()
+        st.success("All learning data cleared! Starting fresh.")
+        st.rerun()
     
     st.divider()
     
     # Show learning statistics
-    st.subheader("Learning Statistics")
+    st.subheader("Your Learning Statistics")
     total_outcomes = len(st.session_state.learning_system.outcomes)
     if total_outcomes > 0:
         recent = st.session_state.learning_system.outcomes[-10:] if len(st.session_state.learning_system.outcomes) >= 10 else st.session_state.learning_system.outcomes
@@ -1651,12 +1611,12 @@ with st.sidebar:
             winner_acc = sum(1 for o in recent if o['winner_correct']) / len(recent)
             totals_acc = sum(1 for o in recent if o['totals_correct']) / len(recent)
             
-            st.metric("Total Matches", total_outcomes)
-            st.metric("Recent Winner Acc", f"{winner_acc:.0%}")
-            st.metric("Recent Totals Acc", f"{totals_acc:.0%}")
+            st.metric("Your Total Matches", total_outcomes)
+            st.metric("Your Recent Winner Acc", f"{winner_acc:.0%}")
+            st.metric("Your Recent Totals Acc", f"{totals_acc:.0%}")
             
             # Show top patterns
-            st.subheader("Top Learned Patterns")
+            st.subheader("Your Top Patterns")
             patterns = dict(st.session_state.learning_system.pattern_memory)
             sorted_patterns = sorted(
                 [(k, v['success']/v['total']) for k, v in patterns.items() if v['total'] >= 3],
@@ -1666,6 +1626,8 @@ with st.sidebar:
             
             for pattern, success in sorted_patterns:
                 st.caption(f"`{pattern[:30]}...`: {success:.0%}")
+    else:
+        st.info("No outcomes recorded yet. Record your first match outcome!")
 
 if df is None:
     st.error("Please add CSV files to the 'leagues' folder")
@@ -1682,7 +1644,7 @@ if 'calculate_btn' not in locals() or not calculate_btn:
     
     # Show history if requested
     if st.session_state.show_history and st.session_state.match_history:
-        st.subheader("📊 Learning History")
+        st.subheader("📊 Your Learning History")
         for hist in reversed(st.session_state.match_history[-10:]):
             with st.container():
                 col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
@@ -1829,7 +1791,7 @@ with col2:
 
 # ========== PATTERN INDICATORS ==========
 st.divider()
-st.subheader("🎯 Adaptive Pattern Indicators")
+st.subheader("🎯 Your Pattern Indicators")
 
 col1, col2 = st.columns(2)
 
@@ -1915,6 +1877,17 @@ with col2:
             </div>
         </div>
         """, unsafe_allow_html=True)
+    elif totals_indicator['type'] == 'PROMISING':
+        st.markdown(f"""
+        <div style="background-color: #1E3A8A; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0; border: 2px solid #3B82F6;">
+            <div style="font-size: 20px; font-weight: bold; color: #3B82F6; margin: 5px 0;">
+                🔵 {totals_indicator['text']}
+            </div>
+            <div style="font-size: 14px; color: #BFDBFE;">
+                {totals_indicator['explanation']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
         st.markdown(f"""
         <div style="background-color: #374151; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0; border: 2px solid #9CA3AF;">
@@ -1927,11 +1900,11 @@ with col2:
         </div>
         """, unsafe_allow_html=True)
 
-st.caption("💡 **Adaptive Learning System**: Green = Proven pattern | Red = Historical weakness | Yellow = Warning | Gray = No learned pattern")
+st.caption("💡 **Your Learning System**: Green = Your strong pattern | Red = Your weak pattern | Blue = Promising | Gray = No pattern yet")
 
 # ========== ADAPTIVE BETTING CARD ==========
 st.divider()
-st.subheader("🎯 ADAPTIVE BETTING CARD (Expected Value Based)")
+st.subheader("🎯 ADAPTIVE BETTING CARD (Based on YOUR Data)")
 
 # Generate adaptive betting recommendation
 betting_card = AdaptiveBettingCard(st.session_state.learning_system)
@@ -1941,12 +1914,12 @@ recommendation = betting_card.get_recommendation(prediction, pattern_indicators)
 betting_card.display_card(recommendation)
 
 # Show reasoning
-with st.expander("🧠 Adaptive Decision Logic", expanded=False):
-    st.write("**ADAPTIVE RULES (Learned from historical data):**")
-    st.write("1. 🟢 **STRONG PATTERNS**: MED_OVER, MED_UNDER with high xG → BET (5/5, 3/3 success)")
-    st.write("2. 🔴 **WEAK PATTERNS**: HIGH_OVER, VOLATILE_OVER_BOTH → AVOID (1/5, 2/6 success)")
-    st.write("3. 🎯 **VERY HIGH CONFIDENCE WINNERS**: >90 confidence → BET (6/6 success)")
-    st.write("4. 🤔 **NO PATTERN**: Check expected value (EV)")
+with st.expander("🧠 Decision Logic (Based on YOUR Data)", expanded=False):
+    st.write("**ADAPTIVE RULES (Learned from YOUR outcomes):**")
+    st.write("1. 🟢 **YOUR STRONG PATTERNS**: >70% success with ≥3 matches → BET")
+    st.write("2. 🔴 **YOUR WEAK PATTERNS**: <40% success with ≥3 matches → AVOID")
+    st.write("3. 🔵 **PROMISING PATTERNS**: 60-70% success → Consider")
+    st.write("4. 🤔 **NO PATTERN YET**: Check expected value (EV)")
     st.write("5. 📈 **DECISION RULE**: BET if EV > 0.15, DOUBLE BET if both markets EV > 0.10")
     
     # Show pattern details
@@ -1957,14 +1930,14 @@ with st.expander("🧠 Adaptive Decision Logic", expanded=False):
     st.write(f"**Totals Explanation**: {pattern_indicators['totals']['explanation']}")
     
     if recommendation['type'] == 'combo':
-        st.success("🎯 **DOUBLE BET** - Both markets show positive expected value")
+        st.success("🎯 **DOUBLE BET** - Both markets show positive expected value based on YOUR data")
     elif recommendation['type'] == 'single':
         if 'winner' in recommendation['text']:
-            st.success("🏆 **SINGLE WINNER BET** - Positive expected value")
+            st.success("🏆 **SINGLE WINNER BET** - Positive expected value based on YOUR data")
         else:
-            st.success("📈 **SINGLE TOTALS BET** - Positive expected value")
+            st.success("📈 **SINGLE TOTALS BET** - Positive expected value based on YOUR data")
     else:
-        st.warning("🚫 **NO BET** - Insufficient expected value")
+        st.warning("🚫 **NO BET** - Insufficient expected value based on YOUR data")
 
 # ========== INSIGHTS ==========
 if prediction['insights']:
@@ -2062,13 +2035,13 @@ if show_details:
                 st.write(f"- {flag}")
 
 # ========== LEARNING INSIGHTS PANEL ==========
-with st.expander("🧠 Learning System Insights", expanded=True):
+with st.expander("🧠 Your Learning System Insights", expanded=True):
     insights = st.session_state.learning_system.generate_learned_insights()
     for insight in insights:
         st.write(f"• {insight}")
     
     # Show strongest learned patterns
-    st.subheader("📊 Strongest Learned Patterns")
+    st.subheader("📊 Your Strongest Patterns")
     patterns = dict(st.session_state.learning_system.pattern_memory)
     strong_patterns = [(k, v) for k, v in patterns.items() if v['total'] >= 3 and v['success']/v['total'] >= 0.75]
     
@@ -2077,12 +2050,12 @@ with st.expander("🧠 Learning System Insights", expanded=True):
             success_rate = stats['success'] / stats['total']
             st.info(f"**{pattern[:40]}...**: {stats['success']}/{stats['total']} ({success_rate:.0%})")
     else:
-        st.caption("Collect more outcomes to identify strong patterns")
+        st.caption("Record more outcomes to identify your strong patterns")
 
 # Show history if requested
 if st.session_state.show_history and st.session_state.match_history:
     st.divider()
-    st.subheader("📊 Learning History")
+    st.subheader("📊 Your Learning History")
     for hist in reversed(st.session_state.match_history[-10:]):
         with st.container():
             col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
@@ -2104,20 +2077,20 @@ st.subheader("📤 Export Prediction Report")
 
 # Get original recommendations for report
 report = f"""
-⚽ FOOTBALL INTELLIGENCE ENGINE v4.0 - ADAPTIVE LEARNING SYSTEM
+⚽ FOOTBALL INTELLIGENCE ENGINE v4.0 - YOUR PERSONAL LEARNING SYSTEM
 Match: {home_team} vs {away_team}
 League: {selected_league}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 Storage: Supabase Persistent
 
-🎯 ADAPTIVE BETTING CARD
+🎯 ADAPTIVE BETTING CARD (Based on YOUR Data)
 {recommendation['icon']} {recommendation['text']}
 Type: {recommendation['subtext']}
 Confidence: {recommendation['confidence']:.0f}/100
 Expected Value: {recommendation.get('expected_value', 0):.3f}
 Reason: {recommendation['reason']}
 
-📊 PATTERN ANALYSIS:
+📊 YOUR PATTERN ANALYSIS:
 Winner Pattern: {pattern_indicators['winner']['text']}
 Winner Explanation: {pattern_indicators['winner']['explanation']}
 Winner Confidence: {prediction['winner']['confidence_score']:.0f}/100 ({prediction['winner']['confidence']})
@@ -2154,17 +2127,16 @@ Total: {prediction['expected_goals']['total']:.2f} xG
 ⚠️ RISK FLAGS
 {', '.join(prediction['totals']['risk_flags']) if prediction['totals']['risk_flags'] else 'None'}
 
-🧠 LEARNING SYSTEM STATS
-Total Outcomes Recorded: {len(st.session_state.learning_system.outcomes)}
-Patterns Learned: {len(st.session_state.learning_system.pattern_memory)}
+🧠 YOUR LEARNING SYSTEM STATS
+Your Outcomes Recorded: {len(st.session_state.learning_system.outcomes)}
+Your Patterns Learned: {len(st.session_state.learning_system.pattern_memory)}
 Storage: Supabase
 
 ---
-ADAPTIVE LEARNING RULES:
-1. Strong Patterns (MED_OVER, MED_UNDER with high xG) → BET
-2. Weak Patterns (HIGH_OVER, VOLATILE_OVER_BOTH) → AVOID
-3. Very High Confidence (>90) Winners → BET
-4. Decision based on Expected Value (EV > 0.15 for single, > 0.10 for double)
+YOUR ADAPTIVE LEARNING RULES:
+1. Strong Patterns (>70% success with ≥3 matches) → BET
+2. Weak Patterns (<40% success with ≥3 matches) → AVOID
+3. Decision based on Expected Value (EV > 0.15 for single, > 0.10 for double)
 """
 
 st.code(report, language="text")
