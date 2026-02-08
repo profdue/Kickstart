@@ -790,126 +790,144 @@ class FootballIntelligenceEngineV3:
             'calculation_details': calc_details
         }
 
-# ========== CORRECTED INTELLIGENT UNIFIED BETTING CARD ==========
-class CorrectedIntelligentBettingCard:
-    """CORRECTED: Only bets when patterns are PROVEN (MET type)"""
+# ========== SIMPLE & CORRECT UNIFIED BETTING CARD ==========
+class SimpleCorrectBettingCard:
+    """SIMPLE RULES: Pattern first, original recommendation second"""
+    
+    @staticmethod
+    def get_original_recommendation(prediction):
+        """Get original system recommendation (same logic as Legacy section)"""
+        winner_rec = ""
+        totals_rec = ""
+        
+        # Winner recommendation (based on confidence category)
+        winner_confidence = prediction['winner']['confidence']
+        if winner_confidence in ["VERY HIGH", "HIGH"]:
+            winner_rec = "STRONG BET"
+        elif winner_confidence == "MEDIUM":
+            winner_rec = "MODERATE BET"
+        elif winner_confidence in ["LOW", "VERY LOW"]:
+            winner_rec = "NO BET"
+        
+        # Totals recommendation (based on confidence category)
+        totals_confidence = prediction['totals']['confidence']
+        if totals_confidence in ["VERY HIGH", "HIGH"]:
+            totals_rec = "STRONG BET"
+        elif totals_confidence == "MEDIUM":
+            totals_rec = "MODERATE BET"
+        elif totals_confidence in ["LOW", "VERY LOW"]:
+            totals_rec = "NO BET"
+        
+        return winner_rec, totals_rec
     
     @staticmethod
     def get_recommendation(prediction, pattern_indicators):
-        """Get intelligent betting recommendation - SIMPLE AND CORRECT"""
+        """Apply the simple rules you defined"""
         
         winner_pred = prediction['winner']
         totals_pred = prediction['totals']
         winner_pattern = pattern_indicators['winner']
         totals_pattern = pattern_indicators['totals']
         
-        # Check winner pattern
-        winner_has_proven_pattern = winner_pattern['type'] == 'MET' and winner_pred['confidence_score'] >= 40
-        winner_has_avoid_pattern = winner_pattern['type'] == 'AVOID'
+        # Get original system recommendations
+        winner_original, totals_original = SimpleCorrectBettingCard.get_original_recommendation(prediction)
         
-        # Check totals pattern
-        totals_has_proven_pattern = totals_pattern['type'] == 'MET' and totals_pred['confidence_score'] >= 40
-        totals_has_avoid_pattern = totals_pattern['type'] == 'AVOID'
+        # Helper: Evaluate a single market
+        def evaluate_market(pattern_type, pattern_exp, original_rec, confidence, market_name, prediction_value):
+            # RULE A: Pattern MET → BET (if confidence ≥ 40)
+            if pattern_type == 'MET' and confidence >= 40:
+                return True, f"✅ PROVEN PATTERN: {pattern_exp}"
+            
+            # RULE B: Pattern AVOID → NO BET
+            elif pattern_type == 'AVOID':
+                return False, f"🚫 AVOID: {pattern_exp}"
+            
+            # RULE C: Pattern NO_PATTERN → Check original
+            elif pattern_type == 'NO_PATTERN':
+                if original_rec in ["STRONG BET", "MODERATE BET"]:
+                    return True, f"✅ NO pattern but ORIGINAL says {original_rec}"
+                else:
+                    return False, f"🚫 NO pattern and ORIGINAL says {original_rec}"
+            
+            # RULE D: Pattern WARNING → Check original + confidence
+            elif pattern_type == 'WARNING':
+                if original_rec in ["STRONG BET", "MODERATE BET"] and confidence >= 60:
+                    return True, f"⚠️ WARNING but ORIGINAL says {original_rec} with good confidence"
+                else:
+                    return False, f"⚠️ WARNING: {pattern_exp}"
+            
+            return False, "No decision"
         
-        # ========== DOUBLE BET ==========
-        if winner_has_proven_pattern and totals_has_proven_pattern:
-            # Both have proven patterns
-            min_confidence = min(winner_pred['confidence_score'], totals_pred['confidence_score'])
-            
-            if min_confidence >= 80:
-                strength = "STRONG DOUBLE BET"
-                color = '#10B981'
-            elif min_confidence >= 60:
-                strength = "MODERATE DOUBLE BET"
-                color = '#059669'
-            else:
-                strength = "SMALL DOUBLE BET"
-                color = '#34D399'
-            
+        # Evaluate winner
+        winner_bet, winner_reason = evaluate_market(
+            winner_pattern['type'],
+            winner_pattern['explanation'],
+            winner_original,
+            winner_pred['confidence_score'],
+            'winner',
+            winner_pred['team']
+        )
+        
+        # Evaluate totals
+        totals_bet, totals_reason = evaluate_market(
+            totals_pattern['type'],
+            totals_pattern['explanation'],
+            totals_original,
+            totals_pred['confidence_score'],
+            'totals',
+            totals_pred['direction']
+        )
+        
+        # Make final decision
+        if winner_bet and totals_bet:
+            min_conf = min(winner_pred['confidence_score'], totals_pred['confidence_score'])
             return {
                 'type': 'combo',
                 'text': f"🏆 {winner_pred['team']} to win + 📈 {totals_pred['direction']} 2.5",
-                'confidence': min_confidence,
-                'color': color,
+                'confidence': min_conf,
+                'color': '#10B981',
                 'icon': '🎯',
-                'subtext': strength,
-                'reason': f'Both markets have proven patterns: {winner_pattern["explanation"]} & {totals_pattern["explanation"]}'
+                'subtext': 'DOUBLE BET',
+                'reason': f'{winner_reason} | {totals_reason}'
             }
         
-        # ========== SINGLE WINNER BET ==========
-        elif winner_has_proven_pattern and not totals_has_avoid_pattern:
-            if winner_pred['confidence_score'] >= 80:
-                strength = "STRONG BET"
-                color = '#3B82F6'
-            elif winner_pred['confidence_score'] >= 60:
-                strength = "MODERATE BET"
-                color = '#60A5FA'
-            else:
-                strength = "SMALL BET"
-                color = '#93C5FD'
-            
+        elif winner_bet:
             return {
                 'type': 'single',
                 'text': f"🏆 {winner_pred['team']} to win",
                 'confidence': winner_pred['confidence_score'],
-                'color': color,
+                'color': '#3B82F6',
                 'icon': '🏆',
-                'subtext': strength,
-                'reason': f'Proven winner pattern: {winner_pattern["explanation"]}'
+                'subtext': 'WINNER BET',
+                'reason': winner_reason
             }
         
-        # ========== SINGLE TOTALS BET ==========
-        elif totals_has_proven_pattern and not winner_has_avoid_pattern:
-            if totals_pred['confidence_score'] >= 80:
-                strength = "STRONG BET"
-                color = '#8B5CF6'
-            elif totals_pred['confidence_score'] >= 60:
-                strength = "MODERATE BET"
-                color = '#A78BFA'
-            else:
-                strength = "SMALL BET"
-                color = '#C4B5FD'
-            
+        elif totals_bet:
             return {
                 'type': 'single',
                 'text': f"📈 {totals_pred['direction']} 2.5 Goals",
                 'confidence': totals_pred['confidence_score'],
-                'color': color,
+                'color': '#8B5CF6',
                 'icon': '📈',
-                'subtext': strength,
-                'reason': f'Proven totals pattern: {totals_pattern["explanation"]}'
+                'subtext': 'TOTALS BET',
+                'reason': totals_reason
             }
         
-        # ========== NO BET ==========
         else:
-            max_confidence = max(winner_pred['confidence_score'], totals_pred['confidence_score'])
-            
-            reason_parts = []
-            if winner_has_avoid_pattern:
-                reason_parts.append(f"Winner: {winner_pattern['explanation']}")
-            elif winner_pattern['type'] == 'NO_PATTERN':
-                reason_parts.append(f"Winner: {winner_pattern['explanation']}")
-            
-            if totals_has_avoid_pattern:
-                reason_parts.append(f"Totals: {totals_pattern['explanation']}")
-            elif totals_pattern['type'] == 'NO_PATTERN':
-                reason_parts.append(f"Totals: {totals_pattern['explanation']}")
-            
-            reason = " | ".join(reason_parts) if reason_parts else "No proven patterns detected"
-            
+            max_conf = max(winner_pred['confidence_score'], totals_pred['confidence_score'])
             return {
                 'type': 'none',
                 'text': "🚫 No Recommended Bet",
-                'confidence': max_confidence,
+                'confidence': max_conf,
                 'color': '#6B7280',
                 'icon': '🤔',
-                'subtext': 'NO PROVEN PATTERN',
-                'reason': reason
+                'subtext': 'NO BET',
+                'reason': f'{winner_reason} | {totals_reason}'
             }
     
     @staticmethod
     def display_card(recommendation):
-        """Display the corrected betting card"""
+        """Display the simple betting card"""
         st.markdown(f"""
         <div style="
             background: linear-gradient(135deg, {recommendation['color']}20 0%, #1F2937 100%);
@@ -1194,53 +1212,43 @@ with col2:
 
 st.caption("💡 **Based on 17-match extended test analysis** | Green = Proven pattern to bet | Red = Proven pattern to avoid | Yellow = Warning/Caution | Gray = No proven pattern")
 
-# ========== CORRECTED UNIFIED BETTING CARD ==========
+# ========== SIMPLE & CORRECT UNIFIED BETTING CARD ==========
 st.divider()
-st.subheader("🎯 UNIFIED BETTING CARD")
+st.subheader("🎯 SIMPLE & CORRECT UNIFIED BETTING CARD")
 
-# Get corrected recommendation
-betting_card = CorrectedIntelligentBettingCard()
+# Get simple recommendation
+betting_card = SimpleCorrectBettingCard()
 recommendation = betting_card.get_recommendation(prediction, pattern_indicators)
 
-# Display the corrected card
+# Display the card
 betting_card.display_card(recommendation)
 
 # Show reasoning
-with st.expander("🧠 Decision Logic", expanded=False):
-    st.write("**Rules based on 17-match backtest:**")
-    st.write("1. ✅ BET if pattern is 'MET' (proven) AND confidence ≥ 40")
-    st.write("2. ❌ NO BET if pattern is 'AVOID' (proven to avoid)")
-    st.write("3. 🤔 NO BET if pattern is 'NO_PATTERN' (uncertain outcomes)")
-    st.write("4. 🎯 DOUBLE BET if BOTH patterns are 'MET' with sufficient confidence")
+with st.expander("🧠 Simple Decision Logic", expanded=False):
+    st.write("**SIMPLE RULES:**")
+    st.write("1. 🟢 **PATTERN = MET** → BET (if confidence ≥ 40)")
+    st.write("2. 🔴 **PATTERN = AVOID** → NO BET")
+    st.write("3. ⚪ **PATTERN = NO_PATTERN** → Check original system:")
+    st.write("   - Original says STRONG/MODERATE BET → ✅ BET")
+    st.write("   - Original says NO BET → ❌ NO BET")
+    st.write("4. 🟡 **PATTERN = WARNING** → Check original + confidence")
+    
+    # Get original recommendations
+    winner_original, totals_original = SimpleCorrectBettingCard.get_original_recommendation(prediction)
     
     st.write("**For this match:**")
-    
-    winner_pattern = pattern_indicators['winner']
-    totals_pattern = pattern_indicators['totals']
-    
-    if winner_pattern['type'] == 'MET':
-        st.write(f"✅ **Winner**: Proven pattern ({winner_pattern['text']}) with {prediction['winner']['confidence_score']}/100 confidence")
-    elif winner_pattern['type'] == 'AVOID':
-        st.write(f"❌ **Winner**: Avoid pattern ({winner_pattern['text']})")
-    else:
-        st.write(f"🤔 **Winner**: No proven pattern ({winner_pattern['text']})")
-    
-    if totals_pattern['type'] == 'MET':
-        st.write(f"✅ **Totals**: Proven pattern ({totals_pattern['text']}) with {prediction['totals']['confidence_score']}/100 confidence")
-    elif totals_pattern['type'] == 'AVOID':
-        st.write(f"❌ **Totals**: Avoid pattern ({totals_pattern['text']})")
-    else:
-        st.write(f"🤔 **Totals**: No proven pattern ({totals_pattern['text']})")
+    st.write(f"**Winner:** Pattern = {pattern_indicators['winner']['type']}, Original = {winner_original}")
+    st.write(f"**Totals:** Pattern = {pattern_indicators['totals']['type']}, Original = {totals_original}")
     
     if recommendation['type'] == 'combo':
-        st.write(f"🎯 **Result**: DOUBLE BET recommended (both have proven patterns)")
+        st.success("🎯 **DOUBLE BET** - Both markets have good signals")
     elif recommendation['type'] == 'single':
         if 'winner' in recommendation['text']:
-            st.write(f"🏆 **Result**: SINGLE WINNER BET recommended (winner has proven pattern)")
+            st.success("🏆 **SINGLE WINNER BET**")
         else:
-            st.write(f"📈 **Result**: SINGLE TOTALS BET recommended (totals has proven pattern)")
+            st.success("📈 **SINGLE TOTALS BET**")
     else:
-        st.write(f"🚫 **Result**: NO BET recommended (no proven patterns or avoid patterns)")
+        st.warning("🚫 **NO BET** - No good signals")
 
 # ========== INSIGHTS ==========
 if prediction['insights']:
@@ -1363,17 +1371,41 @@ if show_details:
 st.divider()
 st.subheader("📤 Export Prediction Report")
 
+# Get original recommendations for report
+winner_original, totals_original = SimpleCorrectBettingCard.get_original_recommendation(prediction)
+
 report = f"""
-⚽ FOOTBALL INTELLIGENCE ENGINE v3.1 - WITH CORRECTED UNIFIED CARD
+⚽ FOOTBALL INTELLIGENCE ENGINE v3.1 - SIMPLE UNIFIED CARD
 Match: {home_team} vs {away_team}
 League: {selected_league}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 
-🎯 UNIFIED BETTING CARD RECOMMENDATION
+🎯 SIMPLE UNIFIED BETTING CARD
 {recommendation['icon']} {recommendation['text']}
 Type: {recommendation['subtext']}
 Confidence: {recommendation['confidence']:.0f}/100
 Reason: {recommendation['reason']}
+
+📊 PATTERN ANALYSIS:
+Winner Pattern: {pattern_indicators['winner']['text']}
+Winner Explanation: {pattern_indicators['winner']['explanation']}
+Winner Confidence: {prediction['winner']['confidence_score']}/100 ({prediction['winner']['confidence']})
+
+Totals Pattern: {pattern_indicators['totals']['text']}
+Totals Explanation: {pattern_indicators['totals']['explanation']}
+Totals Confidence: {prediction['totals']['confidence_score']}/100 ({prediction['totals']['confidence']})
+
+📊 ORIGINAL SYSTEM RECOMMENDATIONS:
+Winner: {winner_original}
+Totals: {totals_original}
+
+---SIMPLE DECISION LOGIC---
+1. BET when: Pattern = 'MET' AND confidence ≥ 40
+2. NO BET when: Pattern = 'AVOID' (proven to avoid)
+3. CHECK ORIGINAL when: Pattern = 'NO_PATTERN'
+   - Original says STRONG/MODERATE BET → BET
+   - Original says NO BET → NO BET
+4. WARNING: Pattern = 'WARNING' needs original + high confidence
 
 🎯 WINNER PREDICTION
 Predicted Winner: {prediction['winner']['team']}
@@ -1381,7 +1413,6 @@ Probability: {prediction['winner']['probability']*100:.1f}%
 Strength: {prediction['winner']['strength']}
 Confidence: {prediction['winner']['confidence']} ({prediction['winner']['confidence_score']:.0f}/100)
 Most Likely Score: {prediction['winner']['most_likely_score']}
-Pattern: {pattern_indicators['winner']['text']}
 
 🎯 TOTALS PREDICTION  
 Direction: {prediction['totals']['direction']} 2.5
@@ -1390,7 +1421,6 @@ Confidence: {prediction['totals']['confidence']} ({prediction['totals']['confide
 Total Expected Goals: {prediction['expected_goals']['total']:.2f}
 Finishing Alignment: {prediction['totals'].get('finishing_alignment', 'N/A')}
 Total xG Category: {prediction['totals'].get('total_category', 'N/A')}
-Pattern: {pattern_indicators['totals']['text']}
 
 📊 EXPECTED GOALS
 {home_team}: {prediction['expected_goals']['home']:.2f} xG
@@ -1413,11 +1443,11 @@ Winner: {winner_rec_old}
 Totals: {totals_rec_old}
 
 ---
-CORRECTED RULES BASED ON 17-MATCH BACKTEST:
-1. BET if pattern = 'MET' AND confidence ≥ 40
-2. NO BET if pattern = 'AVOID' (proven to avoid)
-3. NO BET if pattern = 'NO_PATTERN' (uncertain outcomes)
-4. DOUBLE BET if BOTH patterns = 'MET' with sufficient confidence
+SIMPLE RULES APPLIED:
+1. Pattern MET → BET (if confidence ≥ 40)
+2. Pattern AVOID → NO BET
+3. Pattern NO_PATTERN → Check original system
+4. Pattern WARNING → Check original + confidence
 """
 
 st.code(report, language="text")
@@ -1427,7 +1457,7 @@ with col1:
     st.download_button(
         label="📥 Download Report",
         data=report,
-        file_name=f"corrected_{home_team}_vs_{away_team}.txt",
+        file_name=f"simple_{home_team}_vs_{away_team}.txt",
         mime="text/plain",
         use_container_width=True
     )
