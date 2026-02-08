@@ -56,7 +56,7 @@ def generate_pattern_indicators(prediction):
     indicators = {'winner': None, 'totals': None}
     
     winner_pred = prediction['winner']
-    winner_conf_score = winner_pred['confidence_score']  # FIXED: Changed from 'winner_confidence' to 'confidence_score'
+    winner_conf_score = winner_pred['confidence_score']
     volatility_high = winner_pred.get('volatility_high', False)
     home_finishing = winner_pred.get('home_finishing', 0)
     away_finishing = winner_pred.get('away_finishing', 0)
@@ -102,12 +102,33 @@ def generate_pattern_indicators(prediction):
             'text': 'PROVEN PATTERN - OVER 2.5',
             'explanation': totals_pred.get('defense_rule_reason', 'Double bad defense = High scoring')
         }
-    elif defense_rule == 'GOOD_DEFENSE_PRESENT':
+    elif defense_rule == 'DOUBLE_GOOD_DEFENSE':
         indicators['totals'] = {
             'type': 'MET',
             'color': 'green',
             'text': 'PROVEN PATTERN - UNDER 2.5',
-            'explanation': totals_pred.get('defense_rule_reason', 'Good defense present = Low scoring')
+            'explanation': totals_pred.get('defense_rule_reason', 'Double good defense = Low scoring')
+        }
+    elif defense_rule == 'ELITE_GOOD_DEFENSE':
+        indicators['totals'] = {
+            'type': 'MET',
+            'color': 'green',
+            'text': 'PROVEN PATTERN - UNDER 2.5',
+            'explanation': totals_pred.get('defense_rule_reason', 'Elite + Good defense = Low scoring likely')
+        }
+    elif defense_rule == 'DOUBLE_ELITE_DEFENSE':
+        indicators['totals'] = {
+            'type': 'MET',
+            'color': 'green',
+            'text': 'PROVEN PATTERN - UNDER 2.5',
+            'explanation': totals_pred.get('defense_rule_reason', 'Double elite defense = Very low scoring')
+        }
+    elif defense_rule == 'ELITE_DEFENSE_PRESENT':
+        indicators['totals'] = {
+            'type': 'WARNING',
+            'color': 'yellow',
+            'text': 'ELITE DEFENSE PRESENT',
+            'explanation': totals_pred.get('defense_rule_reason', 'Elite defense present - leans UNDER')
         }
     elif defense_rule == 'NEUTRAL_HIGH_XG_UNDER':
         indicators['totals'] = {
@@ -393,7 +414,7 @@ class WinnerPredictor:
         
         # Penalize high volatility matches
         if volatility_high:
-            winner_confidence = max(30, winner_confidence - 20)
+            winner_confidence = max(30, winner_confidence - 25)  # Increased penalty from 20 to 25
         
         # Confidence categorization
         if winner_confidence >= 75:
@@ -505,18 +526,59 @@ class TotalsPredictor:
             return "VERY_LOW"
     
     def check_defense_quality_rules(self, home_stats, away_stats):
-        """NEW: Defense quality rules based on proven patterns"""
+        """FIXED: Defense quality rules with consistent criteria"""
         home_def = home_stats['goals_allowed_vs_xga_pm']
         away_def = away_stats['goals_allowed_vs_xga_pm']
         
-        # RULE 1: Double bad defense = OVER 2.5
+        # DEFENSE TIERS:
+        # Elite: ≤ -0.8 (Top 10% - allows 0.8+ fewer goals than expected per game)
+        # Good: ≤ -0.5 (Top 25% - allows 0.5+ fewer goals than expected per game)
+        # Bad: ≥ +0.5 (Bottom 25% - allows 0.5+ more goals than expected per game)
+        
+        # RULE 1: Double elite defense = STRONG UNDER
+        if home_def <= -0.8 and away_def <= -0.8:
+            return {
+                'direction': "UNDER",
+                'confidence': 85,
+                'reason': f"DOUBLE ELITE DEFENSE: Home({home_def:.2f}) + Away({away_def:.2f}) = Very low scoring",
+                'rule_triggered': 'DOUBLE_ELITE_DEFENSE'
+            }
+        
+        # RULE 2: Elite + Good defense = STRONG UNDER
+        if (home_def <= -0.8 and away_def <= -0.5) or (away_def <= -0.8 and home_def <= -0.5):
+            return {
+                'direction': "UNDER",
+                'confidence': 80,
+                'reason': f"ELITE + GOOD DEFENSE: Home({home_def:.2f}) + Away({away_def:.2f}) = Low scoring likely",
+                'rule_triggered': 'ELITE_GOOD_DEFENSE'
+            }
+        
+        # RULE 3: Double good defense = MODERATE UNDER
+        if home_def <= -0.5 and away_def <= -0.5:
+            return {
+                'direction': "UNDER",
+                'confidence': 75,
+                'reason': f"DOUBLE GOOD DEFENSE: Home({home_def:.2f}) + Away({away_def:.2f}) = Low scoring",
+                'rule_triggered': 'DOUBLE_GOOD_DEFENSE'
+            }
+        
+        # RULE 4: Elite defense alone = CAUTION UNDER (not auto-rule)
+        if home_def <= -0.8 or away_def <= -0.8:
+            return {
+                'direction': "UNDER",
+                'confidence': 65,
+                'reason': f"ELITE DEFENSE PRESENT: Home({home_def:.2f}) Away({away_def:.2f}) - Leans UNDER but check other factors",
+                'rule_triggered': 'ELITE_DEFENSE_PRESENT'
+            }
+        
+        # RULE 5: Double bad defense = STRONG OVER
         if home_def >= 0.5 and away_def >= 0.5:
             min_def = min(home_def, away_def)
             if min_def >= 2.0:
-                confidence = 80  # VERY HIGH confidence for double VERY bad defense
+                confidence = 85
                 reason = f"DOUBLE VERY BAD DEFENSE: Home({home_def:.2f}) + Away({away_def:.2f}) = High scoring guaranteed"
             else:
-                confidence = 70  # HIGH confidence for double bad defense
+                confidence = 80
                 reason = f"DOUBLE BAD DEFENSE: Home({home_def:.2f}) + Away({away_def:.2f}) = High scoring likely"
             
             return {
@@ -524,26 +586,6 @@ class TotalsPredictor:
                 'confidence': confidence,
                 'reason': reason,
                 'rule_triggered': 'DOUBLE_BAD_DEFENSE'
-            }
-        
-        # RULE 2: Good defense present = UNDER 2.5
-        if home_def <= -0.5 or away_def <= -0.5:
-            # Check if both have good defense
-            if home_def <= -0.5 and away_def <= -0.5:
-                confidence = 85  # VERY HIGH confidence for double good defense
-                reason = f"DOUBLE GOOD DEFENSE: Home({home_def:.2f}) + Away({away_def:.2f}) = Low scoring guaranteed"
-            elif home_def <= -2.0 or away_def <= -2.0:
-                confidence = 80  # VERY HIGH confidence for very good defense
-                reason = f"VERY GOOD DEFENSE PRESENT: Home({home_def:.2f}) Away({away_def:.2f}) = Low scoring likely"
-            else:
-                confidence = 70  # HIGH confidence for good defense present
-                reason = f"GOOD DEFENSE PRESENT: Home({home_def:.2f}) Away({away_def:.2f}) = Low scoring likely"
-            
-            return {
-                'direction': "UNDER",
-                'confidence': confidence,
-                'reason': reason,
-                'rule_triggered': 'GOOD_DEFENSE_PRESENT'
             }
         
         return None
@@ -588,14 +630,22 @@ class TotalsPredictor:
         home_finish = home_stats['goals_vs_xg_pm']
         away_finish = away_stats['goals_vs_xg_pm']
         
-        # ========== NEW: CHECK DEFENSE QUALITY RULES FIRST ==========
+        # ========== FIXED: CHECK DEFENSE QUALITY RULES ==========
         defense_rule = self.check_defense_quality_rules(home_stats, away_stats)
         if defense_rule:
-            # Apply defense rule, then adjust with existing logic
-            direction = defense_rule['direction']
-            base_confidence = defense_rule['confidence']
-            rule_reason = defense_rule['reason']
             rule_triggered = defense_rule['rule_triggered']
+            
+            # For ELITE_DEFENSE_PRESENT (single elite defense), apply with caution
+            if rule_triggered == 'ELITE_DEFENSE_PRESENT':
+                # Check other factors before applying
+                finishing_alignment = self.get_finishing_alignment(home_finish, away_finish)
+                total_category = self.categorize_total_xg(total_xg)
+                
+                # If high offensive finishing, reduce defense rule impact
+                if finishing_alignment in ["HIGH_OVER", "MED_OVER"] and total_xg > 2.8:
+                    # High offense vs good defense - might still score
+                    defense_rule['confidence'] = max(40, defense_rule['confidence'] - 20)
+                    defense_rule['reason'] += " (but high offense present)"
             
             # Still calculate finishing alignment for insights
             finishing_alignment = self.get_finishing_alignment(home_finish, away_finish)
@@ -603,15 +653,17 @@ class TotalsPredictor:
             risk_flags = self.check_risk_flags(home_stats, away_stats, total_xg)
             
             # Adjust confidence based on risk flags
-            final_confidence = base_confidence
+            final_confidence = defense_rule['confidence']
             for flag in risk_flags:
                 if flag == "VOLATILE_OVER_BOTH":
-                    if direction == "OVER":
-                        final_confidence -= 10  # Reduce confidence for OVER with volatile teams
+                    if defense_rule['direction'] == "OVER":
+                        final_confidence -= 15  # Reduce confidence for OVER with volatile teams
                     else:
                         final_confidence += 5   # Increase confidence for UNDER with volatile teams
                 elif flag == "CLOSE_TO_THRESHOLD":
                     final_confidence -= 10
+                elif flag == "HIGH_VARIANCE_TEAM":
+                    final_confidence -= 5
             
             final_confidence = max(5, min(95, final_confidence))
             
@@ -628,7 +680,7 @@ class TotalsPredictor:
                 confidence_category = "VERY LOW"
             
             return {
-                'direction': direction,
+                'direction': defense_rule['direction'],
                 'total_xg': total_xg,
                 'confidence': confidence_category,
                 'confidence_score': final_confidence,
@@ -638,7 +690,7 @@ class TotalsPredictor:
                 'home_finishing': home_finish,
                 'away_finishing': away_finish,
                 'defense_rule_triggered': rule_triggered,
-                'defense_rule_reason': rule_reason
+                'defense_rule_reason': defense_rule['reason']
             }
         
         # ========== ORIGINAL LOGIC (if no defense rule triggered) ==========
@@ -847,8 +899,14 @@ class InsightsGenerator:
         defense_rule = totals_prediction.get('defense_rule_triggered')
         if defense_rule == 'DOUBLE_BAD_DEFENSE':
             insights.append(f"⚡ **DOUBLE BAD DEFENSE**: Both teams allow more goals than expected → HIGH SCORING likely")
-        elif defense_rule == 'GOOD_DEFENSE_PRESENT':
-            insights.append(f"🛡️ **GOOD DEFENSE PRESENT**: At least one team limits goals well → LOW SCORING likely")
+        elif defense_rule == 'DOUBLE_GOOD_DEFENSE':
+            insights.append(f"🛡️ **DOUBLE GOOD DEFENSE**: Both teams limit goals well → LOW SCORING likely")
+        elif defense_rule == 'DOUBLE_ELITE_DEFENSE':
+            insights.append(f"🛡️ **DOUBLE ELITE DEFENSE**: Both teams have elite defense → VERY LOW SCORING")
+        elif defense_rule == 'ELITE_GOOD_DEFENSE':
+            insights.append(f"🛡️ **ELITE + GOOD DEFENSE**: Strong defensive matchup → LOW SCORING")
+        elif defense_rule == 'ELITE_DEFENSE_PRESENT':
+            insights.append(f"🛡️ **ELITE DEFENSE PRESENT**: Elite defense detected → Leans UNDER (but check other factors)")
         elif defense_rule == 'NEUTRAL_HIGH_XG_UNDER':
             insights.append(f"📉 **PROVEN PATTERN**: NEUTRAL finishing + HIGH xG = UNDER (3/3 in tests)")
         
@@ -897,10 +955,14 @@ class InsightsGenerator:
         home_def = winner_prediction.get('home_defense_quality', 0)
         away_def = winner_prediction.get('away_defense_quality', 0)
         
-        if home_def >= 0.5 and away_def >= 0.5:
+        if home_def <= -0.8 and away_def <= -0.8:
+            insights.append(f"🛡️ **Both teams have elite defense**: Very low scoring expected")
+        elif home_def <= -0.5 and away_def <= -0.5:
+            insights.append(f"🛡️ **Both teams have good defense**: Low scoring expected")
+        elif home_def >= 0.5 and away_def >= 0.5:
             insights.append(f"🚨 **Both teams have poor defense**: High scoring expected")
-        elif home_def <= -0.5 or away_def <= -0.5:
-            insights.append(f"✅ **Strong defense detected**: Could limit scoring")
+        elif home_def <= -0.8 or away_def <= -0.8:
+            insights.append(f"🛡️ **Elite defense detected**: Could significantly limit scoring")
         
         return insights[:8]
 
@@ -1702,8 +1764,11 @@ SIMPLE RULES APPLIED:
 4. Pattern WARNING → Check original + confidence
 
 DEFENSE RULES APPLIED:
-1. Double bad defense (both ≥ +0.5) → OVER 2.5
-2. Good defense present (either ≤ -0.5) → UNDER 2.5
+1. Double elite defense (both ≤ -0.8) → STRONG UNDER
+2. Elite + Good defense → STRONG UNDER  
+3. Double good defense (both ≤ -0.5) → MODERATE UNDER
+4. Elite defense alone → CAUTION UNDER (with checks)
+5. Double bad defense (both ≥ +0.5) → STRONG OVER
 """
 
 st.code(report, language="text")
