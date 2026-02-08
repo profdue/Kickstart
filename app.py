@@ -12,6 +12,16 @@ import os
 from supabase import create_client, Client
 warnings.filterwarnings('ignore')
 
+# ========== STATE MANAGEMENT ==========
+if 'current_prediction' not in st.session_state:
+    st.session_state.current_prediction = None
+
+if 'current_teams' not in st.session_state:
+    st.session_state.current_teams = None
+
+if 'prediction_made' not in st.session_state:
+    st.session_state.prediction_made = False
+
 # Page config
 st.set_page_config(
     page_title="⚽ Football Intelligence Engine v4.0",
@@ -1691,7 +1701,21 @@ if df is None:
     st.error("Please add CSV files to the 'leagues' folder")
     st.stop()
 
-if 'calculate_btn' not in locals() or not calculate_btn:
+if 'calculate_btn' in locals() and calculate_btn:
+    show_prediction = True
+    # Store the prediction in session state
+    st.session_state.prediction_made = True 
+
+# Check 2: Do we have a stored prediction from before?
+elif st.session_state.prediction_made and st.session_state.current_prediction:
+    show_prediction = True
+    # Use stored prediction
+    prediction = st.session_state.current_prediction
+    home_team, away_team = st.session_state.current_teams
+    # Skip generating new prediction, use stored one
+
+# If no prediction to show, display start screen
+if not show_prediction:
     st.info("👈 Select teams and click 'Generate Prediction'")
     
     # Show learning insights even when no prediction
