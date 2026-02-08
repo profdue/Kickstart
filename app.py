@@ -8,6 +8,8 @@ from collections import defaultdict
 import json
 import pickle
 import hashlib
+import os
+from supabase import create_client, Client
 warnings.filterwarnings('ignore')
 
 # Page config
@@ -20,8 +22,24 @@ st.set_page_config(
 st.title("⚽ Football Intelligence Engine v4.0")
 st.markdown("""
     **ADAPTIVE LEARNING SYSTEM** - Learns from historical outcomes to improve predictions
-    *Now with Pattern Memory and Adaptive Confidence Adjustment*
+    *Now with Supabase Persistent Storage*
 """)
+
+# ========== SUPABASE INITIALIZATION ==========
+def init_supabase():
+    """Initialize Supabase client"""
+    try:
+        supabase_url = st.secrets.get("SUPABASE_URL")
+        supabase_key = st.secrets.get("SUPABASE_KEY")
+        
+        if not supabase_url or not supabase_key:
+            st.warning("Supabase credentials not found in secrets. Using local storage only.")
+            return None
+            
+        return create_client(supabase_url, supabase_key)
+    except Exception as e:
+        st.error(f"Error initializing Supabase: {e}")
+        return None
 
 # ========== CONSTANTS ==========
 MAX_GOALS_CALC = 8
@@ -54,7 +72,130 @@ class AdaptiveLearningSystem:
             'volatility': 1.2
         }
         self.outcomes = []
+        self.supabase = init_supabase()
         
+    def save_learning(self):
+        """Save learning data to Supabase"""
+        try:
+            if not self.supabase:
+                # Fallback to local storage
+                self._save_learning_local()
+                return
+            
+            # Save each pattern to Supabase
+            for pattern_key, stats in self.pattern_memory.items():
+                # Skip if no data
+                if stats['total'] == 0:
+                    continue
+                    
+                data = {
+                    "pattern_key": pattern_key,
+                    "total_matches": stats['total'],
+                    "successful_matches": stats['success'],
+                    "metadata": {
+                        "feature_weights": self.feature_weights,
+                        "last_updated": datetime.now().isoformat(),
+                        "success_rate": stats['success'] / stats['total'] if stats['total'] > 0 else 0
+                    }
+                }
+                
+                # Upsert (insert or update) the pattern
+                try:
+                    response = self.supabase.table("football_learning").upsert(data, on_conflict="pattern_key").execute()
+                except Exception as e:
+                    st.error(f"Supabase upsert error: {e}")
+                    self._save_learning_local()
+                    return
+            
+            # Save outcomes as metadata
+            if self.outcomes:
+                outcomes_data = {
+                    "pattern_key": "ALL_OUTCOMES",
+                    "total_matches": len(self.outcomes),
+                    "successful_matches": sum(1 for o in self.outcomes if o['winner_correct'] and o['totals_correct']),
+                    "metadata": {
+                        "outcomes": self.outcomes[-1000:],  # Keep last 1000 outcomes
+                        "outcome_count": len(self.outcomes),
+                        "feature_weights": self.feature_weights,
+                        "saved_at": datetime.now().isoformat()
+                    }
+                }
+                try:
+                    self.supabase.table("football_learning").upsert(outcomes_data, on_conflict="pattern_key").execute()
+                except Exception as e:
+                    st.error(f"Supabase outcomes save error: {e}")
+            
+        except Exception as e:
+            st.error(f"Error saving to Supabase: {e}")
+            # Fallback to local storage
+            self._save_learning_local()
+    
+    def _save_learning_local(self):
+        """Fallback local storage"""
+        try:
+            with open("learning_data.pkl", "wb") as f:
+                pickle.dump({
+                    'pattern_memory': dict(self.pattern_memory),
+                    'feature_weights': self.feature_weights,
+                    'outcomes': self.outcomes
+                }, f)
+        except Exception as e:
+            st.error(f"Local save failed: {e}")
+    
+    def load_learning(self):
+        """Load learning data from Supabase"""
+        try:
+            if not self.supabase:
+                # Fallback to local storage
+                self._load_learning_local()
+                return
+            
+            # Load patterns from Supabase
+            response = self.supabase.table("football_learning").select("*").execute()
+            
+            if not response.data:
+                st.info("No learning data found in Supabase. Starting fresh.")
+                return
+            
+            patterns_loaded = 0
+            for row in response.data:
+                pattern_key = row['pattern_key']
+                
+                if pattern_key == "ALL_OUTCOMES":
+                    # Load outcomes
+                    if 'metadata' in row and row['metadata']:
+                        metadata = row['metadata']
+                        if 'outcomes' in metadata:
+                            self.outcomes = metadata['outcomes']
+                        if 'feature_weights' in metadata:
+                            self.feature_weights.update(metadata['feature_weights'])
+                else:
+                    # Load pattern stats
+                    self.pattern_memory[pattern_key] = {
+                        'total': row['total_matches'],
+                        'success': row['successful_matches']
+                    }
+                    patterns_loaded += 1
+            
+            st.success(f"✅ Loaded {patterns_loaded} patterns from Supabase")
+            
+        except Exception as e:
+            st.error(f"Error loading from Supabase: {e}")
+            # Fallback to local storage
+            self._load_learning_local()
+    
+    def _load_learning_local(self):
+        """Fallback local storage"""
+        try:
+            if os.path.exists("learning_data.pkl"):
+                with open("learning_data.pkl", "rb") as f:
+                    data = pickle.load(f)
+                    self.pattern_memory = defaultdict(lambda: {'total': 0, 'success': 0}, data['pattern_memory'])
+                    self.feature_weights = data['feature_weights']
+                    self.outcomes = data['outcomes']
+        except:
+            pass
+    
     def record_outcome(self, prediction, pattern_indicators, actual_result, actual_score):
         """Record a match outcome for learning"""
         winner_pred = prediction['winner']
@@ -108,6 +249,9 @@ class AdaptiveLearningSystem:
         
         # Adjust feature weights based on outcomes
         self._adjust_weights(outcome)
+        
+        # AUTO-SAVE TO SUPABASE
+        self.save_learning()
         
         return outcome
     
@@ -206,26 +350,6 @@ class AdaptiveLearningSystem:
             insights.append(f"🎯 **High Confidence (70+)**: {high_conf_success:.0%} success rate")
         
         return insights[:5]
-    
-    def save_learning(self, filename="learning_data.pkl"):
-        """Save learning data"""
-        with open(filename, 'wb') as f:
-            pickle.dump({
-                'pattern_memory': dict(self.pattern_memory),
-                'feature_weights': self.feature_weights,
-                'outcomes': self.outcomes
-            }, f)
-    
-    def load_learning(self, filename="learning_data.pkl"):
-        """Load learning data"""
-        try:
-            with open(filename, 'rb') as f:
-                data = pickle.load(f)
-                self.pattern_memory = defaultdict(lambda: {'total': 0, 'success': 0}, data['pattern_memory'])
-                self.feature_weights = data['feature_weights']
-                self.outcomes = data['outcomes']
-        except:
-            pass
 
 # ========== ORIGINAL CORE FUNCTIONS ==========
 
@@ -1405,7 +1529,6 @@ def add_feedback_section(prediction, pattern_indicators, home_team, away_team):
                         'totals_correct': outcome['totals_correct']
                     })
                     
-                    st.session_state.learning_system.save_learning()
                     st.success("✅ Outcome recorded! Learning system updated.")
                     
                     # Show immediate learning
@@ -1450,6 +1573,7 @@ def learn_from_historical_data():
     # Load these patterns into the learning system
     for pattern_key, stats in historical_patterns:
         st.session_state.learning_system.pattern_memory[pattern_key] = stats
+    st.session_state.learning_system.save_learning()
 
 # ========== STREAMLIT UI ==========
 
@@ -1495,16 +1619,21 @@ with st.sidebar:
     st.divider()
     st.header("📚 Learning System")
     
+    # Supabase Status
+    st.write("🔄 **Storage**: Supabase")
+    st.write(f"📊 **Patterns in DB**: {len(st.session_state.learning_system.pattern_memory)}")
+    st.write(f"📈 **Outcomes Recorded**: {len(st.session_state.learning_system.outcomes)}")
+    
     col1, col2 = st.columns(2)
     with col1:
         if st.button("💾 Save Learning", use_container_width=True):
             st.session_state.learning_system.save_learning()
-            st.success("Learning data saved!")
+            st.success("Learning data saved to Supabase!")
     
     with col2:
-        if st.button("🔄 Reset Learning", use_container_width=True):
-            st.session_state.learning_system = AdaptiveLearningSystem()
-            st.success("Learning system reset!")
+        if st.button("🔄 Reload from DB", use_container_width=True):
+            st.session_state.learning_system.load_learning()
+            st.rerun()
     
     # Pre-load historical patterns
     if st.button("📚 Load Test Patterns", use_container_width=True):
@@ -1979,6 +2108,7 @@ report = f"""
 Match: {home_team} vs {away_team}
 League: {selected_league}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+Storage: Supabase Persistent
 
 🎯 ADAPTIVE BETTING CARD
 {recommendation['icon']} {recommendation['text']}
@@ -2027,6 +2157,7 @@ Total: {prediction['expected_goals']['total']:.2f} xG
 🧠 LEARNING SYSTEM STATS
 Total Outcomes Recorded: {len(st.session_state.learning_system.outcomes)}
 Patterns Learned: {len(st.session_state.learning_system.pattern_memory)}
+Storage: Supabase
 
 ---
 ADAPTIVE LEARNING RULES:
