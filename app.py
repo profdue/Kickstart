@@ -1496,24 +1496,29 @@ def calculate_league_metrics(df):
 # ========== FEEDBACK SYSTEM ==========
 
 def add_feedback_section(prediction, pattern_indicators, home_team, away_team):
-    """Add section for recording actual outcomes WITHOUT auto-refresh"""
+    """Add section for recording actual outcomes WITHOUT page refresh"""
     st.divider()
     st.subheader("📝 Record Outcome for Learning")
     
-    # Create a unique key for the text input to avoid conflicts
-    input_key = f"score_input_{home_team}_{away_team}"
+    # Create a unique container for feedback
+    feedback_container = st.container()
     
-    # Use a form to prevent immediate refresh
-    with st.form(key="outcome_form"):
+    # Use columns for layout
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
         actual_score = st.text_input("Actual Score (e.g., 2-1)", "", 
                                    help="Enter the actual match result",
-                                   key=input_key)
-        
-        submitted = st.form_submit_button("✅ Record Outcome & Learn", 
-                                         use_container_width=True)
+                                   key=f"score_{home_team}_{away_team}")
     
-    # Handle the submission WITHOUT st.rerun()
-    if submitted:
+    with col2:
+        record_button = st.button("✅ Record Outcome & Learn", 
+                                type="primary", 
+                                use_container_width=True,
+                                key=f"record_{home_team}_{away_team}")
+    
+    # Handle button click WITHOUT using forms
+    if record_button:
         if actual_score and '-' in actual_score:
             try:
                 home_goals, away_goals = map(int, actual_score.split('-'))
@@ -1523,7 +1528,7 @@ def add_feedback_section(prediction, pattern_indicators, home_team, away_team):
                     prediction, pattern_indicators, "", actual_score
                 )
                 
-                # Store in session state for display
+                # Store in session state
                 st.session_state.last_outcome = outcome
                 st.session_state.show_feedback_message = True
                 
@@ -1538,45 +1543,50 @@ def add_feedback_section(prediction, pattern_indicators, home_team, away_team):
                     'totals_correct': outcome['totals_correct']
                 })
                 
-                # Show success message WITHOUT refreshing page
-                st.success(f"""
-                ✅ **Outcome Recorded!**  
-                **Match**: {home_team} vs {away_team}  
-                **Actual Score**: {actual_score}  
-                **Winner**: {'✅ Correct' if outcome['winner_correct'] else '❌ Wrong'}  
-                **Totals**: {'✅ Correct' if outcome['totals_correct'] else '❌ Wrong'}
-                """)
-                
-                # Show learning stats update
-                with st.expander("📈 Learning Update", expanded=True):
-                    winner_success = st.session_state.learning_system.get_pattern_success_rate(
-                        "WINNER", f"{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
-                    )
-                    totals_success = st.session_state.learning_system.get_pattern_success_rate(
-                        "TOTALS", f"{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
-                    )
+                # Show success in the feedback container
+                with feedback_container:
+                    st.success(f"""
+                    ✅ **Outcome Recorded!**  
+                    **Match**: {home_team} vs {away_team}  
+                    **Actual Score**: {actual_score}  
+                    **Winner**: {'✅ Correct' if outcome['winner_correct'] else '❌ Wrong'}  
+                    **Totals**: {'✅ Correct' if outcome['totals_correct'] else '❌ Wrong'}
+                    """)
                     
-                    st.write(f"**Winner Pattern Success**: {winner_success:.0%}")
-                    st.write(f"**Totals Pattern Success**: {totals_success:.0%}")
-                    st.write(f"**Total Patterns in Database**: {len(st.session_state.learning_system.pattern_memory)}")
+                    # Show learning update
+                    with st.expander("📈 What was learned?", expanded=True):
+                        winner_success = st.session_state.learning_system.get_pattern_success_rate(
+                            "WINNER", f"{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
+                        )
+                        totals_success = st.session_state.learning_system.get_pattern_success_rate(
+                            "TOTALS", f"{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
+                        )
+                        
+                        st.write(f"**Winner Pattern**: {prediction['winner']['confidence']} confidence")
+                        st.write(f"**Winner Success Rate**: {winner_success:.0%}")
+                        st.write(f"**Totals Pattern**: {prediction['totals'].get('finishing_alignment', 'N/A')} + {prediction['totals'].get('total_category', 'N/A')}")
+                        st.write(f"**Totals Success Rate**: {totals_success:.0%}")
+                        st.write(f"**Patterns in Database**: {len(st.session_state.learning_system.pattern_memory)}")
+                        st.write(f"**Total Outcomes**: {len(st.session_state.learning_system.outcomes)}")
                 
-                # Update sidebar stats without refresh
-                st.session_state.learning_system.load_learning()
+                # Force Streamlit to stop and show results
+                st.stop()  # This prevents the page from going back to start
                 
             except ValueError:
                 st.error("❌ Please enter score in format '2-1' (numbers only)")
         else:
             st.error("❌ Please enter a valid score format '2-1'")
     
-    # Show previous feedback message if exists
+    # Show previous feedback if exists
     elif st.session_state.show_feedback_message and st.session_state.last_outcome:
         last_outcome = st.session_state.last_outcome
-        st.info(f"""
-        📝 **Last Recorded Outcome**:  
-        {last_outcome['home_team']} {last_outcome['actual_score']} {last_outcome['away_team']}  
-        Winner: {'✅' if last_outcome['winner_correct'] else '❌'}  
-        Totals: {'✅' if last_outcome['totals_correct'] else '❌'}
-        """)
+        with feedback_container:
+            st.info(f"""
+            📝 **Last Recorded Outcome**:  
+            {last_outcome['home_team']} {last_outcome['actual_score']} {last_outcome['away_team']}  
+            Winner: {'✅' if last_outcome['winner_correct'] else '❌'}  
+            Totals: {'✅' if last_outcome['totals_correct'] else '❌'}
+            """)
     
     st.caption("💡 **Tip**: Enter the actual match result to help the system learn.")
 
