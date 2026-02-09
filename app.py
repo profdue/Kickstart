@@ -81,10 +81,8 @@ class AdaptiveLearningSystem:
         """Save ALL learning data to Supabase"""
         try:
             if not self.supabase:
-                st.warning("No Supabase connection - using local storage")
+                # Fallback to local storage
                 return self._save_learning_local()
-            
-            st.info(f"Starting Supabase save... Patterns: {len(self.pattern_memory)}, Outcomes: {len(self.outcomes)}")
             
             # Prepare all data for Supabase
             supabase_data = []
@@ -133,16 +131,13 @@ class AdaptiveLearningSystem:
                     return True
                 except Exception as e:
                     st.error(f"Supabase operation error: {e}")
-                    self._save_learning_local()
-                    return False
+                    return self._save_learning_local()
             
             return True
             
         except Exception as e:
             st.error(f"Error saving to Supabase: {e}")
-            # Fallback to local storage
-            self._save_learning_local()
-            return False
+            return self._save_learning_local()
     
     def _save_learning_local(self):
         """Fallback local storage"""
@@ -172,9 +167,6 @@ class AdaptiveLearningSystem:
                 # Fresh start - no previous data
                 return True
             
-            patterns_loaded = 0
-            outcomes_loaded = 0
-            
             for row in response.data:
                 pattern_key = row['pattern_key']
                 
@@ -185,7 +177,6 @@ class AdaptiveLearningSystem:
                             metadata = json.loads(row['metadata'])
                             if 'outcomes' in metadata:
                                 self.outcomes = metadata['outcomes']
-                                outcomes_loaded = len(self.outcomes)
                             if 'feature_weights' in metadata:
                                 self.feature_weights.update(metadata['feature_weights'])
                         except:
@@ -196,7 +187,6 @@ class AdaptiveLearningSystem:
                         'total': row['total_matches'] or 0,
                         'success': row['successful_matches'] or 0
                     }
-                    patterns_loaded += 1
             
             return True
             
@@ -294,18 +284,18 @@ class AdaptiveLearningSystem:
         # If prediction was wrong, reduce weight of relevant features
         if not outcome['totals_correct']:
             if 'HIGH_OVER' in str(outcome.get('finishing_alignment', '')):
-                self.feature_weights['finishing_alignment'] *= 0.9  # Reduce weight
+                self.feature_weights['finishing_alignment'] *= 0.9
             if 'HIGH_VARIANCE_TEAM' in outcome.get('risk_flags', []):
                 self.feature_weights['risk_flags'] *= 0.95
             if outcome['totals_confidence'] < 50:
-                self.feature_weights['confidence_score'] *= 1.1  # Increase weight for low confidence
+                self.feature_weights['confidence_score'] *= 1.1
         
         # If prediction was correct, increase weight of relevant features
         if outcome['totals_correct']:
             if 'MED_OVER' in str(outcome.get('finishing_alignment', '')):
                 self.feature_weights['finishing_alignment'] *= 1.05
             if 'MED_UNDER' in str(outcome.get('finishing_alignment', '')):
-                self.feature_weights['finishing_alignment'] *= 1.1  # Strong pattern
+                self.feature_weights['finishing_alignment'] *= 1.1
             if outcome['totals_confidence'] > 80:
                 self.feature_weights['confidence_score'] *= 1.05
     
@@ -330,16 +320,16 @@ class AdaptiveLearningSystem:
             if total > 0:
                 return success / total
         
-        return 0.5  # Default if no data
+        return 0.5
     
     def adjust_confidence(self, original_confidence, pattern_type, context):
         """Adjust confidence based on historical performance"""
         base_success = self.get_pattern_success_rate(pattern_type, context.get('subtype'))
         
-        if base_success > 0.7:  # Strong pattern
+        if base_success > 0.7:
             adjustment = min(20, (base_success - 0.7) * 100)
             return min(100, original_confidence + adjustment)
-        elif base_success < 0.4:  # Weak pattern
+        elif base_success < 0.4:
             adjustment = min(30, (0.4 - base_success) * 100)
             return max(10, original_confidence - adjustment)
         else:
@@ -385,9 +375,7 @@ class AdaptiveLearningSystem:
         
         return insights[:5]
 
-# ========== ORIGINAL CORE FUNCTIONS ==========
-
-# Initialize session states
+# ========== INITIALIZE SESSION STATES ==========
 if 'prediction_history' not in st.session_state:
     st.session_state.prediction_history = []
 
@@ -403,17 +391,31 @@ if 'match_history' not in st.session_state:
 if 'show_history' not in st.session_state:
     st.session_state.show_history = False
 
-if 'last_outcome' not in st.session_state:
-    st.session_state.last_outcome = None
+# Prediction persistence states
+if 'last_prediction' not in st.session_state:
+    st.session_state.last_prediction = None
 
+if 'last_pattern_indicators' not in st.session_state:
+    st.session_state.last_pattern_indicators = None
+
+if 'last_teams' not in st.session_state:
+    st.session_state.last_teams = None
+
+if 'last_league' not in st.session_state:
+    st.session_state.last_league = None
+
+if 'last_engine' not in st.session_state:
+    st.session_state.last_engine = None
+
+# Feedback states
 if 'show_feedback_message' not in st.session_state:
     st.session_state.show_feedback_message = False
 
-if 'score_input' not in st.session_state:
-    st.session_state.score_input = ""
-
 if 'save_status' not in st.session_state:
     st.session_state.save_status = None
+
+if 'score_input' not in st.session_state:
+    st.session_state.score_input = ""
 
 def factorial_cache(n):
     if n not in st.session_state.factorial_cache:
@@ -426,7 +428,7 @@ def poisson_pmf(k, lam):
         return 0
     return (math.exp(-lam) * (lam ** k)) / factorial_cache(k)
 
-# ========== ORIGINAL CORE CLASSES ==========
+# ========== CORE CLASSES ==========
 
 class ExpectedGoalsPredictor:
     """OUR LOGIC: Expected goals calculation"""
@@ -478,18 +480,15 @@ class WinnerPredictor:
     def predict_winner(self, home_xg, away_xg, home_stats, away_stats):
         """OUR IMPROVED LOGIC: Winner determination with finishing adjustment"""
         
-        # Get finishing trends (goals_vs_xg per match)
-        home_finishing = home_stats['goals_vs_xg_pm']  # e.g., +0.42, -0.10
+        # Get finishing trends
+        home_finishing = home_stats['goals_vs_xg_pm']
         away_finishing = away_stats['goals_vs_xg_pm']
         
-        # Get defensive performance (goals_allowed_vs_xga per match)
-        home_defense = home_stats['goals_allowed_vs_xga_pm']  # negative = good defense
+        # Get defensive performance
+        home_defense = home_stats['goals_allowed_vs_xga_pm']
         away_defense = away_stats['goals_allowed_vs_xga_pm']
         
         # ========== KEY FIX: ADJUST xG FOR FINISHING ABILITY ==========
-        # Teams that finish well get boosted xG
-        # Teams that waste chances get reduced xG
-        
         home_adjusted_xg = home_xg + home_finishing - away_defense
         away_adjusted_xg = away_xg + away_finishing - home_defense
         
@@ -497,18 +496,15 @@ class WinnerPredictor:
         delta = home_adjusted_xg - away_adjusted_xg
         
         # ========== DETERMINE VOLATILITY FLAG ==========
-        # Check for high-variance matchups
         volatility_high = False
         if abs(home_finishing) > 0.3 and abs(away_finishing) > 0.3:
-            volatility_high = True  # Both extreme finishers
+            volatility_high = True
         elif home_finishing > 0.3 and away_finishing > 0.3:
-            volatility_high = True  # Both clinical
+            volatility_high = True
         elif home_finishing < -0.3 and away_finishing < -0.3:
-            volatility_high = True  # Both wasteful
+            volatility_high = True
         
-        # ========== WINNER DETERMINATION WITH FINISHING AWARENESS ==========
-        # Use adjusted delta, not raw delta
-        
+        # ========== WINNER DETERMINATION ==========
         if delta > 1.2:
             predicted_winner = "HOME"
             winner_strength = "STRONG"
@@ -525,7 +521,6 @@ class WinnerPredictor:
             predicted_winner = "HOME"
             winner_strength = "SLIGHT"
             if volatility_high:
-                # Close game with high volatility = very uncertain
                 winner_strength = "SLIGHT_HIGH_VOL"
                 
         elif delta < -1.2:
@@ -552,8 +547,7 @@ class WinnerPredictor:
             if volatility_high:
                 winner_strength = "CLOSE_HIGH_VOL"
         
-        # ========== CONFIDENCE CALCULATION (ADJUSTED) ==========
-        # Use adjusted values for confidence too
+        # ========== CONFIDENCE CALCULATION ==========
         base_confidence = min(100, abs(delta) / max(home_adjusted_xg, away_adjusted_xg, 0.5) * 150)
         
         # Add bonuses
@@ -625,7 +619,6 @@ class TotalsPredictor:
         home_cat = self.categorize_finishing(home_finish)
         away_cat = self.categorize_finishing(away_finish)
         
-        # OUR LOGIC: Alignment matrix
         alignment_matrix = {
             "STRONG_OVERPERFORM": {
                 "STRONG_OVERPERFORM": "HIGH_OVER",
@@ -659,7 +652,7 @@ class TotalsPredictor:
                 "STRONG_OVERPERFORM": "HIGH_RISK",
                 "MODERATE_OVERPERFORM": "RISKY",
                 "NEUTRAL": "MED_UNDER",
-                "MODERATE_UNDERPERFORM": "MED_UNDER",
+                "MODERATE_UNDERFORM": "MED_UNDER",
                 "STRONG_UNDERPERFORM": "HIGH_UNDER"
             }
         }
@@ -690,10 +683,10 @@ class TotalsPredictor:
         if home_def >= 0.5 and away_def >= 0.5:
             min_def = min(home_def, away_def)
             if min_def >= 2.0:
-                confidence = 80  # VERY HIGH confidence for double VERY bad defense
+                confidence = 80
                 reason = f"DOUBLE VERY BAD DEFENSE: Home({home_def:.2f}) + Away({away_def:.2f}) = High scoring guaranteed"
             else:
-                confidence = 70  # HIGH confidence for double bad defense
+                confidence = 70
                 reason = f"DOUBLE BAD DEFENSE: Home({home_def:.2f}) + Away({away_def:.2f}) = High scoring likely"
             
             return {
@@ -707,13 +700,13 @@ class TotalsPredictor:
         if home_def <= -0.5 or away_def <= -0.5:
             # Check if both have good defense
             if home_def <= -0.5 and away_def <= -0.5:
-                confidence = 85  # VERY HIGH confidence for double good defense
+                confidence = 85
                 reason = f"DOUBLE GOOD DEFENSE: Home({home_def:.2f}) + Away({away_def:.2f}) = Low scoring guaranteed"
             elif home_def <= -2.0 or away_def <= -2.0:
-                confidence = 80  # VERY HIGH confidence for very good defense
+                confidence = 80
                 reason = f"VERY GOOD DEFENSE PRESENT: Home({home_def:.2f}) Away({away_def:.2f}) = Low scoring likely"
             else:
-                confidence = 70  # HIGH confidence for good defense present
+                confidence = 70
                 reason = f"GOOD DEFENSE PRESENT: Home({home_def:.2f}) Away({away_def:.2f}) = Low scoring likely"
             
             return {
@@ -731,7 +724,7 @@ class TotalsPredictor:
         home_finish = home_stats['goals_vs_xg_pm']
         away_finish = away_stats['goals_vs_xg_pm']
         
-        # NEW RISK FLAG: Volatile overperformers (1/3 success in test)
+        # NEW RISK FLAG: Volatile overperformers
         if home_finish > 0.35 and away_finish > 0.35:
             risk_flags.append("VOLATILE_OVER_BOTH")
         
@@ -753,7 +746,7 @@ class TotalsPredictor:
         if lower_thresh < total_xg < upper_thresh:
             risk_flags.append("CLOSE_TO_THRESHOLD")
         
-        # NEW: Bundesliga specific adjustment (3/4 went UNDER in test)
+        # NEW: Bundesliga specific adjustment
         if self.league_name == "Bundesliga" and total_xg < 3.3:
             risk_flags.append("BUNDESLIGA_LOW_SCORING")
         
@@ -768,7 +761,6 @@ class TotalsPredictor:
         # ========== NEW: CHECK DEFENSE QUALITY RULES FIRST ==========
         defense_rule = self.check_defense_quality_rules(home_stats, away_stats)
         if defense_rule:
-            # Apply defense rule, then adjust with existing logic
             direction = defense_rule['direction']
             base_confidence = defense_rule['confidence']
             rule_reason = defense_rule['reason']
@@ -784,9 +776,9 @@ class TotalsPredictor:
             for flag in risk_flags:
                 if flag == "VOLATILE_OVER_BOTH":
                     if direction == "OVER":
-                        final_confidence -= 10  # Reduce confidence for OVER with volatile teams
+                        final_confidence -= 10
                     else:
-                        final_confidence += 5   # Increase confidence for UNDER with volatile teams
+                        final_confidence += 5
                 elif flag == "CLOSE_TO_THRESHOLD":
                     final_confidence -= 10
             
@@ -818,7 +810,7 @@ class TotalsPredictor:
                 'defense_rule_reason': rule_reason
             }
         
-        # ========== ORIGINAL LOGIC (if no defense rule triggered) ==========
+        # ========== ORIGINAL LOGIC ==========
         over_threshold = self.league_adjustments['over_threshold']
         base_direction = "OVER" if total_xg > over_threshold else "UNDER"
         
@@ -829,8 +821,7 @@ class TotalsPredictor:
         # OUR LOGIC: Risk flags
         risk_flags = self.check_risk_flags(home_stats, away_stats, total_xg)
         
-        # ========== NEW: PROVEN PATTERN 1 ==========
-        # AUTO-UNDER RULE: NEUTRAL + HIGH_xG = UNDER (3/3 proven)
+        # ========== PROVEN PATTERN 1 ==========
         if finishing_alignment == "NEUTRAL" and total_xg > 3.0:
             return {
                 'direction': "UNDER",
@@ -845,7 +836,7 @@ class TotalsPredictor:
                 'defense_rule_triggered': 'NEUTRAL_HIGH_XG_UNDER'
             }
         
-        # OUR IMPROVED LOGIC: Decision matrix with MED_UNDER fix
+        # Decision matrix
         decision_matrix = {
             "VERY_HIGH": {
                 "HIGH_OVER": ("OVER", "MEDIUM", 60),
@@ -909,7 +900,7 @@ class TotalsPredictor:
         if total_category in decision_matrix and finishing_alignment in decision_matrix[total_category]:
             direction, confidence_category, base_confidence = decision_matrix[total_category][finishing_alignment]
         
-        # OUR LOGIC: Apply risk flag penalties
+        # Apply risk flag penalties
         final_confidence = base_confidence
         for flag in risk_flags:
             if flag == "VOLATILE_OVER_BOTH":
@@ -927,7 +918,7 @@ class TotalsPredictor:
         
         final_confidence = max(5, min(95, final_confidence))
         
-        # Adjust confidence category based on final score
+        # Adjust confidence category
         if final_confidence >= 75:
             confidence_category = "VERY HIGH"
         elif final_confidence >= 65:
@@ -1020,7 +1011,7 @@ class InsightsGenerator:
         elif winner_prediction.get('winner_confidence_category') == "LOW":
             insights.append(f"⚠️ **Low Confidence Winner**: Exercise caution on {winner_prediction.get('predicted_winner', 'N/A')} prediction (0/3 in backtests)")
         
-        # NEW: Defense rule insights
+        # Defense rule insights
         defense_rule = totals_prediction.get('defense_rule_triggered')
         if defense_rule == 'DOUBLE_BAD_DEFENSE':
             insights.append(f"⚡ **DOUBLE BAD DEFENSE**: Both teams allow more goals than expected → HIGH SCORING likely")
@@ -1036,7 +1027,7 @@ class InsightsGenerator:
         if home_finish > 0.35 and away_finish > 0.35:
             insights.append("⚠️ **Both teams strong overperformers** - High volatility expected (1/3 OVER in 17-match test)")
         
-        # NEW PROVEN PATTERN INSIGHTS
+        # PROVEN PATTERN INSIGHTS
         alignment = totals_prediction.get('finishing_alignment', 'NEUTRAL')
         total_category = totals_prediction.get('total_category', 'N/A')
         total_xg = totals_prediction.get('total_xg', 0)
@@ -1070,7 +1061,7 @@ class InsightsGenerator:
             flag_list = ", ".join(risk_flags)
             insights.append(f"⚠️ **{risk_count} risk flag(s) detected**: {flag_list}")
         
-        # Defense quality insight (from winner prediction)
+        # Defense quality insight
         home_def = winner_prediction.get('home_defense_quality', 0)
         away_def = winner_prediction.get('away_defense_quality', 0)
         
@@ -1186,14 +1177,12 @@ class AdaptiveFootballIntelligenceEngineV4:
             return prediction
         
         if pred_type == 'totals':
-            # Adjust confidence based on historical performance of similar patterns
             context = {
                 'finishing_alignment': prediction.get('finishing_alignment'),
                 'total_category': prediction.get('total_category'),
                 'subtype': f"{prediction.get('finishing_alignment', 'N/A')}_{prediction.get('total_category', 'N/A')}"
             }
             
-            # Apply confidence adjustment
             original_conf = prediction.get('confidence_score', 50)
             adjusted_conf = self.learning_system.adjust_confidence(
                 original_conf, 
@@ -1201,10 +1190,8 @@ class AdaptiveFootballIntelligenceEngineV4:
                 context
             )
             
-            # Update prediction with adjusted confidence
             prediction['confidence_score'] = adjusted_conf
             
-            # Update confidence category
             if adjusted_conf >= 75:
                 prediction['confidence'] = "VERY HIGH"
             elif adjusted_conf >= 65:
@@ -1217,9 +1204,7 @@ class AdaptiveFootballIntelligenceEngineV4:
                 prediction['confidence'] = "VERY LOW"
         
         elif pred_type == 'winner':
-            # Adjust winner confidence based on volatility patterns
             if prediction.get('volatility_high', False):
-                # Historical data shows volatile matches are less predictable
                 original_conf = prediction.get('confidence_score', 50)
                 prediction['confidence_score'] = max(30, original_conf - 15)
                 
@@ -1394,7 +1379,7 @@ class AdaptiveBettingCard:
     def _calculate_expected_value(self, prediction, pattern_indicator, market_type):
         """Calculate expected value based on learned probabilities"""
         if pattern_indicator['type'] == 'AVOID':
-            return -0.5  # Strong avoid
+            return -0.5
         
         # Get historical success rate
         if market_type == 'winner':
@@ -1402,7 +1387,6 @@ class AdaptiveBettingCard:
                 "WINNER", 
                 f"{prediction['confidence']}_{prediction['confidence_score']//10*10}"
             )
-            # Typical odds for winner bets
             implied_odds = 1 / prediction['probability'] if prediction['probability'] > 0 else 3.0
         else:
             finishing_alignment = prediction.get('finishing_alignment', 'NEUTRAL')
@@ -1411,8 +1395,7 @@ class AdaptiveBettingCard:
                 "TOTALS", 
                 f"{finishing_alignment}_{total_category}"
             )
-            # Typical odds for totals bets
-            implied_odds = 1.9  # Average odds of ~1.9 for Over/Under
+            implied_odds = 1.9
         
         # Calculate expected value
         ev = (success_rate * (implied_odds - 1)) - ((1 - success_rate) * 1)
@@ -1429,13 +1412,13 @@ class AdaptiveBettingCard:
         
         # Color based on expected value
         if ev > 0.2:
-            color = '#10B981'  # Green for high EV
+            color = '#10B981'
         elif ev > 0.1:
-            color = '#3B82F6'  # Blue for medium EV
+            color = '#3B82F6'
         elif ev > 0:
-            color = '#8B5CF6'  # Purple for low EV
+            color = '#8B5CF6'
         else:
-            color = '#6B7280'  # Gray for negative EV
+            color = '#6B7280'
         
         st.markdown(f"""
         <div style="
@@ -1521,76 +1504,23 @@ def calculate_league_metrics(df):
     
     return {'avg_goals_per_match': avg_goals_per_match}
 
-# ========== FIXED FEEDBACK SYSTEM WITH CALLBACK ==========
-
-def record_outcome_callback():
-    """Callback function to handle outcome recording"""
-    if 'processing_score' in st.session_state:
-        score_input = st.session_state.processing_score
-        prediction = st.session_state.current_prediction
-        pattern_indicators = st.session_state.current_pattern_indicators
-        home_team = st.session_state.current_home_team
-        away_team = st.session_state.current_away_team
-        
-        if score_input and '-' in score_input:
-            try:
-                home_goals, away_goals = map(int, score_input.split('-'))
-                
-                # Record outcome
-                outcome, save_success, save_message = st.session_state.learning_system.record_outcome(
-                    prediction, pattern_indicators, "", score_input
-                )
-                
-                # Store results
-                st.session_state.last_outcome = outcome
-                st.session_state.save_success = save_success
-                st.session_state.save_message = save_message
-                st.session_state.show_success = True
-                
-                # Add to history
-                st.session_state.match_history.append({
-                    'timestamp': datetime.now(),
-                    'home_team': home_team,
-                    'away_team': away_team,
-                    'prediction': prediction,
-                    'actual_score': score_input,
-                    'winner_correct': outcome['winner_correct'],
-                    'totals_correct': outcome['totals_correct'],
-                    'save_status': save_success
-                })
-                
-                # Clear processing score
-                del st.session_state.processing_score
-                
-            except ValueError:
-                st.session_state.save_success = False
-                st.session_state.save_message = "❌ Please enter score in format '2-1' (numbers only)"
-                st.session_state.show_success = True
-        else:
-            st.session_state.save_success = False
-            st.session_state.save_message = "❌ Please enter a valid score format '2-1'"
-            st.session_state.show_success = True
+# ========== FIXED FEEDBACK SYSTEM ==========
 
 def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away_team):
-    """Record outcome with proper feedback that doesn't disappear"""
+    """Fixed feedback system that doesn't disappear"""
     
     st.divider()
     st.subheader("📝 Record Outcome for Learning")
     
-    # Store current prediction in session state for callback
-    st.session_state.current_prediction = prediction
-    st.session_state.current_pattern_indicators = pattern_indicators
-    st.session_state.current_home_team = home_team
-    st.session_state.current_away_team = away_team
-    
-    # Show success/error message if exists
-    if st.session_state.get('show_success'):
-        if st.session_state.get('save_success'):
-            st.success(st.session_state.save_message)
+    # Show previous feedback if exists
+    if st.session_state.get('save_status'):
+        status_type, status_message = st.session_state.save_status
+        if status_type == "success":
+            st.success(status_message)
             
             # Show what was learned in an expander
-            with st.expander("📈 What was learned?", expanded=True):
-                if st.session_state.get('last_outcome'):
+            if st.session_state.get('last_outcome'):
+                with st.expander("📈 What was learned?", expanded=True):
                     outcome = st.session_state.last_outcome
                     st.write(f"**Match**: {outcome['home_team']} vs {outcome['away_team']}")
                     st.write(f"**Actual Score**: {outcome['actual_score']}")
@@ -1613,15 +1543,21 @@ def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away
                     st.write(f"**Totals Success Rate**: {totals_success:.0%}")
                     st.write(f"**Total Patterns Learned**: {len(st.session_state.learning_system.pattern_memory)}")
                     st.write(f"**Total Outcomes Recorded**: {len(st.session_state.learning_system.outcomes)}")
+                    
+                    # Show Supabase status
+                    if st.session_state.learning_system.supabase:
+                        st.success("✅ Saved to Supabase successfully!")
+                    else:
+                        st.warning("⚠️ Saved locally (Supabase not available)")
         else:
-            st.error(st.session_state.save_message)
+            st.error(status_message)
     
     # Simple input and button
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Use session state to persist input
-        score_key = f"score_input_{home_team}_{away_team}"
+        # Use a unique key for this input
+        score_key = f"score_{home_team}_{away_team}"
         if score_key not in st.session_state:
             st.session_state[score_key] = ""
         
@@ -1634,28 +1570,71 @@ def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away
         st.session_state[score_key] = score_input
     
     with col2:
-        # Button with on_click callback
-        if st.button(
-            "✅ Record Outcome & Save", 
+        record_button = st.button(
+            "✅ Record Outcome & Save to Supabase", 
             type="primary", 
             use_container_width=True,
-            key=f"record_btn_{home_team}_{away_team}",
-            on_click=record_outcome_callback
-        ):
-            # Store the score to process in callback
-            st.session_state.processing_score = score_input
+            key=f"record_btn_{home_team}_{away_team}"
+        )
+    
+    if record_button:
+        if not score_input or score_input.strip() == "":
+            st.error("❌ Please enter a score first")
+            return
+        
+        if '-' in score_input:
+            try:
+                home_goals, away_goals = map(int, score_input.split('-'))
+                
+                # Record outcome and SAVE TO SUPABASE
+                with st.spinner("⏳ Saving to Supabase..."):
+                    outcome, save_success, save_message = st.session_state.learning_system.record_outcome(
+                        prediction, pattern_indicators, "", score_input
+                    )
+                
+                # Store results
+                st.session_state.last_outcome = outcome
+                st.session_state.save_status = ("success" if save_success else "error", save_message)
+                
+                # Clear the input
+                st.session_state[score_key] = ""
+                
+                # Add to history
+                st.session_state.match_history.append({
+                    'timestamp': datetime.now(),
+                    'home_team': home_team,
+                    'away_team': away_team,
+                    'prediction': prediction,
+                    'actual_score': score_input,
+                    'winner_correct': outcome['winner_correct'],
+                    'totals_correct': outcome['totals_correct'],
+                    'save_status': save_success
+                })
+                
+                # Show message
+                if save_success:
+                    st.success(save_message)
+                else:
+                    st.error(save_message)
+                    
+                # Force a rerun to show the message
+                st.rerun()
+                    
+            except ValueError:
+                st.error("❌ Please enter score in format '2-1' (numbers only)")
+        else:
+            st.error("❌ Please enter a valid score format '2-1'")
     
     # Clear messages button
-    if st.session_state.get('show_success'):
+    if st.session_state.get('save_status'):
         if st.button("🗑️ Clear Messages", type="secondary", use_container_width=True):
-            st.session_state.show_success = False
-            st.session_state.save_success = None
-            st.session_state.save_message = None
-            st.session_state[score_key] = ""  # Clear the input
+            st.session_state.save_status = None
+            if score_key in st.session_state:
+                st.session_state[score_key] = ""
             st.rerun()
     
     st.caption("💡 **Tip**: Enter the actual match result to help the system learn.")
-    
+
 # ========== STREAMLIT UI ==========
 
 # Sidebar
@@ -1709,21 +1688,14 @@ with st.sidebar:
     st.write(f"📊 **Your Patterns**: {len(st.session_state.learning_system.pattern_memory)}")
     st.write(f"📈 **Your Outcomes**: {len(st.session_state.learning_system.outcomes)}")
     
-    # REMOVED the confusing "Save Learning" button
-    # Instead, add a "Refresh Data" button
+    # Refresh data button
     if st.button("🔄 Refresh Learning Data", use_container_width=True):
-        # Reload learning data
         success = st.session_state.learning_system.load_learning()
         if success:
-            st.success("Learning data refreshed from Supabase!")
+            st.success("Learning data refreshed!")
         else:
             st.warning("Could not refresh from Supabase")
-    
-    # Clear feedback button
-    if st.session_state.save_status:
-        if st.button("🗑️ Clear Status Message", type="secondary", use_container_width=True):
-            st.session_state.save_status = None
-            st.session_state.score_input = ""
+        st.rerun()
     
     st.divider()
     
@@ -1758,10 +1730,36 @@ if df is None:
     st.error("Please add CSV files to the 'leagues' folder")
     st.stop()
 
-if 'calculate_btn' not in locals() or not calculate_btn:
+# ========== CHECK IF WE SHOULD SHOW PREDICTION ==========
+# This is the key fix: persist prediction across reruns
+
+# Check if we have a prediction to show (either new or from last time)
+show_prediction = False
+prediction = None
+pattern_indicators = None
+engine = None
+
+# Option 1: User just clicked "Generate Prediction"
+if 'calculate_btn' in locals() and calculate_btn:
+    show_prediction = True
+    # We'll generate the prediction below
+    
+# Option 2: We have a stored prediction from last time
+elif (st.session_state.last_prediction is not None and 
+      st.session_state.last_teams is not None and
+      st.session_state.last_league == selected_league):
+    show_prediction = True
+    # Use stored prediction
+    prediction = st.session_state.last_prediction
+    pattern_indicators = st.session_state.last_pattern_indicators
+    engine = st.session_state.last_engine
+    home_team, away_team = st.session_state.last_teams
+
+# If no prediction to show
+if not show_prediction:
     st.info("👈 Select teams and click 'Generate Prediction'")
     
-    # Show learning insights even when no prediction
+    # Show learning insights
     with st.expander("🧠 Learning System Insights", expanded=True):
         insights = st.session_state.learning_system.generate_learned_insights()
         for insight in insights:
@@ -1772,7 +1770,7 @@ if 'calculate_btn' not in locals() or not calculate_btn:
         st.subheader("📊 Your Learning History")
         for hist in reversed(st.session_state.match_history[-10:]):
             with st.container():
-                col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 2])
+                col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
                 with col1:
                     st.write(f"**{hist['home_team']} vs {hist['away_team']}**")
                     st.caption(f"{hist['timestamp'].strftime('%Y-%m-%d %H:%M')}")
@@ -1783,37 +1781,43 @@ if 'calculate_btn' not in locals() or not calculate_btn:
                     st.write(f"Winner: {'✅' if hist['winner_correct'] else '❌'}")
                 with col4:
                     st.write(f"Totals: {'✅' if hist['totals_correct'] else '❌'}")
-                with col5:
-                    st.write(f"Save: {'✅' if hist.get('save_status', False) else '❌'}")
                 st.divider()
     
     st.stop()
 
-try:
-    home_stats = home_stats_df.loc[home_team]
-    away_stats = away_stats_df.loc[away_team]
-except KeyError as e:
-    st.error(f"Team data error: {e}")
-    st.stop()
+# ========== IF WE GET HERE, WE HAVE A PREDICTION TO SHOW ==========
 
-# Generate prediction
+# If this is a new prediction (user clicked "Generate Prediction")
+if 'calculate_btn' in locals() and calculate_btn:
+    try:
+        home_stats = home_stats_df.loc[home_team]
+        away_stats = away_stats_df.loc[away_team]
+        
+        # Generate prediction
+        engine = AdaptiveFootballIntelligenceEngineV4(
+            league_metrics, 
+            selected_league, 
+            st.session_state.learning_system
+        )
+        
+        prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
+        pattern_generator = AdaptivePatternIndicators(st.session_state.learning_system)
+        pattern_indicators = pattern_generator.generate_indicators(prediction)
+        
+        # Store in session state for next time
+        st.session_state.last_prediction = prediction
+        st.session_state.last_pattern_indicators = pattern_indicators
+        st.session_state.last_teams = (home_team, away_team)
+        st.session_state.last_league = selected_league
+        st.session_state.last_engine = engine
+        
+    except KeyError as e:
+        st.error(f"Team data error: {e}")
+        st.stop()
+
+# ========== DISPLAY THE PREDICTION ==========
 st.header(f"🎯 {home_team} vs {away_team}")
 st.caption(f"League: {selected_league} | League Avg Goals: {league_metrics['avg_goals_per_match']:.2f}")
-
-# Use adaptive engine
-engine = AdaptiveFootballIntelligenceEngineV4(
-    league_metrics, 
-    selected_league, 
-    st.session_state.learning_system
-)
-
-prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
-
-# Generate adaptive pattern indicators
-pattern_generator = AdaptivePatternIndicators(st.session_state.learning_system)
-pattern_indicators = pattern_generator.generate_indicators(prediction)
-
-# ========== DISPLAY RESULTS ==========
 
 # Main prediction cards
 col1, col2 = st.columns(2)
@@ -2040,32 +2044,6 @@ recommendation = betting_card.get_recommendation(prediction, pattern_indicators)
 # Display the card
 betting_card.display_card(recommendation)
 
-# Show reasoning
-with st.expander("🧠 Decision Logic (Based on YOUR Data)", expanded=False):
-    st.write("**ADAPTIVE RULES (Learned from YOUR outcomes):**")
-    st.write("1. 🟢 **YOUR STRONG PATTERNS**: >70% success with ≥3 matches → BET")
-    st.write("2. 🔴 **YOUR WEAK PATTERNS**: <40% success with ≥3 matches → AVOID")
-    st.write("3. 🔵 **PROMISING PATTERNS**: 60-70% success → Consider")
-    st.write("4. 🤔 **NO PATTERN YET**: Check expected value (EV)")
-    st.write("5. 📈 **DECISION RULE**: BET if EV > 0.15, DOUBLE BET if both markets EV > 0.10")
-    
-    # Show pattern details
-    st.write("**For this match:**")
-    st.write(f"**Winner Pattern**: {pattern_indicators['winner']['text']}")
-    st.write(f"**Winner Explanation**: {pattern_indicators['winner']['explanation']}")
-    st.write(f"**Totals Pattern**: {pattern_indicators['totals']['text']}")
-    st.write(f"**Totals Explanation**: {pattern_indicators['totals']['explanation']}")
-    
-    if recommendation['type'] == 'combo':
-        st.success("🎯 **DOUBLE BET** - Both markets show positive expected value based on YOUR data")
-    elif recommendation['type'] == 'single':
-        if 'winner' in recommendation['text']:
-            st.success("🏆 **SINGLE WINNER BET** - Positive expected value based on YOUR data")
-        else:
-            st.success("📈 **SINGLE TOTALS BET** - Positive expected value based on YOUR data")
-    else:
-        st.warning("🚫 **NO BET** - Insufficient expected value based on YOUR data")
-
 # ========== INSIGHTS ==========
 if prediction['insights']:
     st.subheader("🧠 Enhanced Insights")
@@ -2179,32 +2157,10 @@ with st.expander("🧠 Your Learning System Insights", expanded=True):
     else:
         st.caption("Record more outcomes to identify your strong patterns")
 
-# Show history if requested
-if st.session_state.show_history and st.session_state.match_history:
-    st.divider()
-    st.subheader("📊 Your Learning History")
-    for hist in reversed(st.session_state.match_history[-10:]):
-        with st.container():
-            col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 2])
-            with col1:
-                st.write(f"**{hist['home_team']} vs {hist['away_team']}**")
-                st.caption(f"{hist['timestamp'].strftime('%Y-%m-%d %H:%M')}")
-            with col2:
-                st.write(f"Predicted: {hist['prediction']['winner']['team']}")
-                st.caption(f"Actual: {hist['actual_score']}")
-            with col3:
-                st.write(f"Winner: {'✅' if hist['winner_correct'] else '❌'}")
-            with col4:
-                st.write(f"Totals: {'✅' if hist['totals_correct'] else '❌'}")
-            with col5:
-                st.write(f"Save: {'✅' if hist.get('save_status', False) else '❌'}")
-            st.divider()
-
 # ========== EXPORT REPORT ==========
 st.divider()
 st.subheader("📤 Export Prediction Report")
 
-# Get original recommendations for report
 report = f"""
 ⚽ FOOTBALL INTELLIGENCE ENGINE v4.0 - YOUR PERSONAL LEARNING SYSTEM
 Match: {home_team} vs {away_team}
@@ -2292,22 +2248,3 @@ with col2:
             'adaptive_recommendation': recommendation
         })
         st.success("Added to prediction history!")
-
-# Show prediction history
-if st.session_state.prediction_history:
-    with st.expander("📚 Prediction History", expanded=False):
-        for i, hist in enumerate(reversed(st.session_state.prediction_history[-5:])):
-            with st.container():
-                col1, col2, col3 = st.columns([3, 2, 2])
-                with col1:
-                    st.write(f"**{hist['home_team']} vs {hist['away_team']}**")
-                    st.caption(f"{hist['timestamp'].strftime('%Y-%m-%d %H:%M')}")
-                with col2:
-                    winner = hist['prediction']['winner']['team']
-                    st.write(f"🏆 {winner}")
-                with col3:
-                    if 'adaptive_recommendation' in hist:
-                        unified = hist['adaptive_recommendation']
-                        st.write(f"🎯 {unified['subtext']}")
-                        st.caption(f"{unified['icon']} {unified['text'][:20]}...")
-                st.divider()
