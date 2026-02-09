@@ -1632,10 +1632,31 @@ with st.sidebar:
             st.markdown("### 🎯 Prediction Settings")
             show_details = st.checkbox("Show Detailed Analysis", value=True)
             
+            # Store teams in session state
+            if home_team and away_team:
+                st.session_state.selected_teams = (home_team, away_team)
+                st.session_state.selected_league = selected_league
+            
+            # Generate Prediction button
             if st.button("🚀 Generate Prediction", type="primary", use_container_width=True):
-                calculate_btn = True
-            else:
-                calculate_btn = False
+                # Set flags to show prediction
+                st.session_state.generate_clicked = True
+                st.session_state.show_prediction = True
+                # Store the team selections
+                st.session_state.current_home_team = home_team
+                st.session_state.current_away_team = away_team
+                st.session_state.current_league = selected_league
+                # Rerun to show prediction
+                st.rerun()
+            
+            # Check if we should load a stored prediction
+            load_stored_prediction = (
+                st.session_state.get('show_prediction', False) and 
+                st.session_state.get('current_prediction') is not None and
+                home_team == st.session_state.get('current_home_team') and
+                away_team == st.session_state.get('current_away_team')
+            )
+            
         else:
             st.error("Could not prepare team data")
             st.stop()
@@ -1657,12 +1678,12 @@ with st.sidebar:
     
     with col2:
         if st.button("🔄 Refresh Stats", use_container_width=True):
-            # Reload learning data
+            # Just update the stats without rerun
             st.session_state.learning_system.load_learning()
-            st.success("Learning stats refreshed!")
+            st.success("✅ Learning stats updated from Supabase!")
     
     # Clear feedback message button
-    if st.session_state.show_feedback_message:
+    if st.session_state.get('show_feedback_message', False):
         if st.button("🗑️ Clear Feedback", type="secondary", use_container_width=True):
             st.session_state.show_feedback_message = False
             st.session_state.last_outcome = None
@@ -1701,21 +1722,64 @@ if df is None:
     st.error("Please add CSV files to the 'leagues' folder")
     st.stop()
 
-if 'calculate_btn' in locals() and calculate_btn:
-    show_prediction = True
-    # Store the prediction in session state
-    st.session_state.prediction_made = True 
+# ========== DECIDE WHAT TO DISPLAY ==========
 
-# Check 2: Do we have a stored prediction from before?
-elif st.session_state.prediction_made and st.session_state.current_prediction:
-    show_prediction = True
+# Check if we should show prediction or start screen
+show_prediction = st.session_state.get('show_prediction', False)
+has_stored_prediction = 'current_prediction' in st.session_state and st.session_state.current_prediction is not None
+
+# If we have a stored prediction and the same teams are selected, show it
+if has_stored_prediction and show_prediction:
     # Use stored prediction
     prediction = st.session_state.current_prediction
-    home_team, away_team = st.session_state.current_teams
-    # Skip generating new prediction, use stored one
-
-# If no prediction to show, display start screen
-if not show_prediction:
+    home_team = st.session_state.current_home_team
+    away_team = st.session_state.current_away_team
+    selected_league = st.session_state.current_league
+    
+    # Get stats for display
+    home_stats = home_stats_df.loc[home_team]
+    away_stats = away_stats_df.loc[away_team]
+    
+    # Generate pattern indicators
+    pattern_generator = AdaptivePatternIndicators(st.session_state.learning_system)
+    pattern_indicators = pattern_generator.generate_indicators(prediction)
+    
+    # Show the prediction
+    display_prediction = True
+    
+elif st.session_state.get('generate_clicked', False):
+    # User just clicked "Generate Prediction" - create new prediction
+    try:
+        home_stats = home_stats_df.loc[home_team]
+        away_stats = away_stats_df.loc[away_team]
+    except KeyError as e:
+        st.error(f"Team data error: {e}")
+        st.stop()
+    
+    # Generate prediction
+    engine = AdaptiveFootballIntelligenceEngineV4(
+        league_metrics, 
+        selected_league, 
+        st.session_state.learning_system
+    )
+    
+    prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
+    
+    # STORE THE PREDICTION
+    st.session_state.current_prediction = prediction
+    st.session_state.current_home_team = home_team
+    st.session_state.current_away_team = away_team
+    st.session_state.current_league = selected_league
+    st.session_state.show_prediction = True
+    
+    # Generate pattern indicators
+    pattern_generator = AdaptivePatternIndicators(st.session_state.learning_system)
+    pattern_indicators = pattern_generator.generate_indicators(prediction)
+    
+    display_prediction = True
+    
+else:
+    # Show start screen
     st.info("👈 Select teams and click 'Generate Prediction'")
     
     # Show learning insights even when no prediction
@@ -1725,7 +1789,7 @@ if not show_prediction:
             st.write(f"• {insight}")
     
     # Show history if requested
-    if st.session_state.show_history and st.session_state.match_history:
+    if st.session_state.get('show_history', False) and st.session_state.match_history:
         st.subheader("📊 Your Learning History")
         for hist in reversed(st.session_state.match_history[-10:]):
             with st.container():
@@ -1744,29 +1808,11 @@ if not show_prediction:
     
     st.stop()
 
-try:
-    home_stats = home_stats_df.loc[home_team]
-    away_stats = away_stats_df.loc[away_team]
-except KeyError as e:
-    st.error(f"Team data error: {e}")
-    st.stop()
+# ========== DISPLAY PREDICTION (ONLY REACHED IF display_prediction = True) ==========
 
 # Generate prediction
 st.header(f"🎯 {home_team} vs {away_team}")
 st.caption(f"League: {selected_league} | League Avg Goals: {league_metrics['avg_goals_per_match']:.2f}")
-
-# Use adaptive engine
-engine = AdaptiveFootballIntelligenceEngineV4(
-    league_metrics, 
-    selected_league, 
-    st.session_state.learning_system
-)
-
-prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
-
-# Generate adaptive pattern indicators
-pattern_generator = AdaptivePatternIndicators(st.session_state.learning_system)
-pattern_indicators = pattern_generator.generate_indicators(prediction)
 
 # ========== DISPLAY RESULTS ==========
 
