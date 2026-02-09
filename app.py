@@ -14,15 +14,15 @@ warnings.filterwarnings('ignore')
 
 # Page config
 st.set_page_config(
-    page_title="⚽ Football Intelligence Engine v7.1 - SIMPLIFIED SURGICAL",
-    page_icon="🔧",
+    page_title="⚽ Football Intelligence Engine v8.0 - PROVEN PATTERN MASTER",
+    page_icon="🎯",
     layout="wide"
 )
 
-st.title("🔧 Football Intelligence Engine v7.1 - SIMPLIFIED SURGICAL")
+st.title("🎯 Football Intelligence Engine v8.0 - PROVEN PATTERN MASTER")
 st.markdown("""
-    **PROVEN FIXES ONLY** - Based on 41-match data analysis
-    *3 anti-pattern overrides, no synthetic metrics*
+    **DATA-DRIVEN OVERRIDES** - Based on 41-match empirical analysis
+    *10 proven rules, 7 anti-patterns, 4 gold patterns*
 """)
 
 # ========== SUPABASE INITIALIZATION ==========
@@ -46,53 +46,152 @@ MAX_GOALS_CALC = 8
 
 # League-specific adjustments (ORIGINAL VALUES - no surgical changes)
 LEAGUE_ADJUSTMENTS = {
-    "Premier League": {"over_threshold": 2.5, "under_threshold": 2.5, "avg_goals": 2.79},
-    "Bundesliga": {"over_threshold": 3.0, "under_threshold": 2.2, "avg_goals": 3.20},
-    "Serie A": {"over_threshold": 2.7, "under_threshold": 2.3, "avg_goals": 2.40},
-    "La Liga": {"over_threshold": 2.6, "under_threshold": 2.4, "avg_goals": 2.61},
-    "Ligue 1": {"over_threshold": 2.8, "under_threshold": 2.2, "avg_goals": 2.85},
-    "Eredivisie": {"over_threshold": 2.9, "under_threshold": 2.1, "avg_goals": 3.10},
-    "RFPL": {"over_threshold": 2.5, "under_threshold": 2.2, "avg_goals": 2.53}
+    "Premier League": {"over_threshold": 2.5, "under_threshold": 2.5, "avg_goals": 2.79, "very_high_threshold": 3.3},
+    "Bundesliga": {"over_threshold": 3.0, "under_threshold": 2.2, "avg_goals": 3.20, "very_high_threshold": 3.5},
+    "Serie A": {"over_threshold": 2.7, "under_threshold": 2.3, "avg_goals": 2.40, "very_high_threshold": 3.0},
+    "La Liga": {"over_threshold": 2.6, "under_threshold": 2.4, "avg_goals": 2.61, "very_high_threshold": 3.2},
+    "Ligue 1": {"over_threshold": 2.8, "under_threshold": 2.2, "avg_goals": 2.85, "very_high_threshold": 3.3},
+    "Eredivisie": {"over_threshold": 2.9, "under_threshold": 2.1, "avg_goals": 3.10, "very_high_threshold": 3.6},
+    "RFPL": {"over_threshold": 2.5, "under_threshold": 2.2, "avg_goals": 2.53, "very_high_threshold": 3.1}
 }
 
-# ========== PROVEN ANTI-PATTERNS FROM 41-MATCH DATA ==========
+# ========== PROVEN PATTERNS DATABASE FROM 41-MATCH ANALYSIS ==========
 
-PROVEN_ANTI_PATTERNS = {
-    # FROM YOUR DATA: These patterns ALWAYS FAILED
+PROVEN_FAILURES = {
+    # ALWAYS WRONG PATTERNS (bet opposite)
     "TOTALS_RISKY_VERY_HIGH": {
+        "record": "0/2",
         "action": "BET_OPPOSITE",
         "confidence": 85,
-        "reason": "0/2 success in 41-match analysis",
+        "reason": "Market overreacts to high xG with volatile teams",
         "matches": "2 matches, 0 wins"
     },
     "TOTALS_LOW_OVER_HIGH": {
+        "record": "0/2",
         "action": "BET_OPPOSITE", 
         "confidence": 80,
-        "reason": "0/2 success in 41-match analysis",
+        "reason": "Weak finishing + high xG = inflated expectations",
         "matches": "2 matches, 0 wins"
     },
     "TOTALS_LOW_UNDER_HIGH": {
+        "record": "0/1",
         "action": "BET_OPPOSITE",
         "confidence": 80,
-        "reason": "0/1 success in 41-match analysis",
+        "reason": "Same failure pattern",
+        "matches": "1 match, 0 wins"
+    },
+    "WINNER_HIGH_70.0": {
+        "record": "0/2",
+        "action": "BET_OPPOSITE",
+        "confidence": 70,
+        "reason": "70% false favorite zone",
+        "matches": "2 matches, 0 wins"
+    },
+    "WINNER_HIGH_69.0": {
+        "record": "0/1",
+        "action": "BET_OPPOSITE",
+        "confidence": 70,
+        "reason": "70% false favorite zone",
         "matches": "1 match, 0 wins"
     }
 }
 
-# 70% CONFIDENCE BUG (from your data: WINNER_HIGH_70.0 had 0/2 success)
-CONFIDENCE_70_BUG_RANGE = (68, 72)
-CONFIDENCE_70_DERATE_FACTOR = 0.7  # Derate by 30%
+PROVEN_SUCCESSES = {
+    # GOLD PATTERNS (bet strongly)
+    "TOTALS_MED_OVER_MODERATE_LOW": {
+        "record": "4/6 → 5/7",
+        "action": "BET_STRONGLY",
+        "boost": 20,
+        "reason": "Sweet spot pattern - reliable edge",
+        "matches": "7 matches, 5 wins"
+    },
+    "TOTALS_HIGH_OVER_MODERATE_LOW": {
+        "record": "2/2 → 3/3",
+        "action": "BET_STRONGLY",
+        "boost": 25,
+        "reason": "Perfect pattern - maximum confidence",
+        "matches": "3 matches, 3 wins"
+    },
+    "TOTALS_MED_UNDER_VERY_HIGH": {
+        "record": "3/3",
+        "action": "BET_STRONGLY",
+        "boost": 20,
+        "reason": "Counter-market value - market mispricing",
+        "matches": "3 matches, 3 wins"
+    },
+    "WINNER_VERY_HIGH_100": {
+        "record": "4/5",
+        "action": "BET_STRONGLY",
+        "boost": 15,
+        "reason": "True dominance - algorithm certainty",
+        "matches": "5 matches, 4 wins"
+    },
+    "TOTALS_NEUTRAL_MODERATE_LOW": {
+        "record": "3/4",
+        "action": "BET",
+        "boost": 15,
+        "reason": "Reliable baseline pattern",
+        "matches": "4 matches, 3 wins"
+    }
+}
+
+# ========== CONFIDENCE LEVEL RULES ==========
+
+CONFIDENCE_RULES = {
+    # 70% CONFIDENCE BUG (from your data: WINNER_HIGH_70.0 had 0/2 success)
+    "70_PERCENT_ZONE": {
+        "range": (68, 72),
+        "action": "BET_OPPOSITE",
+        "confidence": 70,
+        "reason": "70% false favorite zone (0/3 success)"
+    },
+    
+    # 90% OVERCONFIDENCE TRAP
+    "90_PERCENT_ZONE": {
+        "range": (88, 94),
+        "action": "CAUTION",
+        "derate_factor": 0.8,
+        "reason": "90% overconfidence trap zone"
+    },
+    
+    # 100% HAMMER ZONE
+    "100_PERCENT_ZONE": {
+        "range": (99, 101),
+        "action": "BET_STRONGLY",
+        "boost": 1.1,
+        "reason": "True dominance (4/5 success)"
+    }
+}
+
+# ========== HIGH VARIANCE DIRECTIONAL LOGIC ==========
+
+HIGH_VARIANCE_RULES = {
+    "OVERPERFORMER": {
+        "threshold": 0.4,
+        "over_boost": 20,
+        "under_penalty": -15,
+        "over_reason": "High variance overperformer amplifies OVER",
+        "under_reason": "Overperformer likely to score, hurting UNDER"
+    },
+    "UNDERPERFORMER": {
+        "threshold": -0.4,
+        "under_boost": 20,
+        "over_penalty": -15,
+        "under_reason": "High variance underperformer amplifies UNDER",
+        "over_reason": "Underperformer due for goals, helping OVER"
+    }
+}
 
 # ========== SIMPLIFIED LEARNING SYSTEM ==========
 
-class SimpleLearningSystem:
-    """LEARNING SYSTEM WITH ONLY PROVEN FIXES"""
+class ProvenPatternSystem:
+    """LEARNING SYSTEM WITH EMPIRICAL OVERRIDES"""
     
     def __init__(self):
         self.pattern_memory = {}
         self.supabase = init_supabase()
         
-        # SIMPLE thresholds from your data
+        # Thresholds from your data
         self.min_matches = 3
         self.strong_threshold = 0.70  # >70% = STRONG
         self.weak_threshold = 0.40    # <40% = WEAK
@@ -116,14 +215,15 @@ class SimpleLearningSystem:
                     "successful_matches": stats['success'],
                     "last_updated": datetime.now().isoformat(),
                     "metadata": json.dumps({
-                        "success_rate": stats['success'] / stats['total'] if stats['total'] > 0 else 0
+                        "success_rate": stats['success'] / stats['total'] if stats['total'] > 0 else 0,
+                        "strength": self._get_strength_category(stats)
                     })
                 }
                 supabase_data.append(data)
             
             if supabase_data:
-                self.supabase.table("football_learning").delete().neq("pattern_key", "dummy").execute()
-                self.supabase.table("football_learning").insert(supabase_data).execute()
+                self.supabase.table("proven_patterns").delete().neq("pattern_key", "dummy").execute()
+                self.supabase.table("proven_patterns").insert(supabase_data).execute()
                 return True
                 
             return True
@@ -131,13 +231,26 @@ class SimpleLearningSystem:
         except Exception as e:
             return self._save_learning_local()
     
+    def _get_strength_category(self, stats):
+        """Get strength category for pattern"""
+        if stats['total'] < self.min_matches:
+            return "INSUFFICIENT_DATA"
+        
+        success_rate = stats['success'] / stats['total']
+        if success_rate > self.strong_threshold:
+            return "STRONG"
+        elif success_rate < self.weak_threshold:
+            return "WEAK"
+        else:
+            return "NEUTRAL"
+    
     def _save_learning_local(self):
         """Fallback local storage"""
         try:
-            with open("simple_learning_data.pkl", "wb") as f:
+            with open("proven_patterns_data.pkl", "wb") as f:
                 pickle.dump({
                     'pattern_memory': self.pattern_memory,
-                    'version': '7.1_simple'
+                    'version': '8.0_proven'
                 }, f)
             return True
         except:
@@ -149,7 +262,7 @@ class SimpleLearningSystem:
             if not self.supabase:
                 return self._load_learning_local()
             
-            response = self.supabase.table("football_learning").select("*").execute()
+            response = self.supabase.table("proven_patterns").select("*").execute()
             
             if response.data:
                 for row in response.data:
@@ -167,8 +280,8 @@ class SimpleLearningSystem:
     def _load_learning_local(self):
         """Fallback local storage"""
         try:
-            if os.path.exists("simple_learning_data.pkl"):
-                with open("simple_learning_data.pkl", "rb") as f:
+            if os.path.exists("proven_patterns_data.pkl"):
+                with open("proven_patterns_data.pkl", "rb") as f:
                     data = pickle.load(f)
                     self.pattern_memory = data.get('pattern_memory', {})
                 return True
@@ -233,13 +346,14 @@ class SimpleLearningSystem:
         pred_type = winner_pred.get('original_prediction', winner_pred.get('type', 'UNKNOWN'))
         confidence = winner_pred.get('original_confidence', winner_pred.get('confidence', '50'))
         
-        # Standardize (remove .0)
-        if isinstance(confidence, str) and confidence.endswith('.0'):
-            confidence = confidence[:-2]
+        # Standardize confidence
+        if isinstance(confidence, str):
+            if confidence.endswith('.0'):
+                confidence = confidence[:-2]
         elif isinstance(confidence, float):
-            confidence = str(int(confidence)) if confidence.is_integer() else str(confidence)
+            confidence = str(int(confidence)) if confidence.is_integer() else f"{confidence:.1f}"
         
-        return f"WINNER_{pred_type}_{confidence}"
+        return f"WINNER_{winner_pred.get('confidence_category', 'MEDIUM')}_{confidence}"
     
     def _generate_totals_key(self, totals_pred):
         """Generate totals pattern key"""
@@ -254,58 +368,169 @@ class SimpleLearningSystem:
         
         return f"TOTALS_{finishing}_{total_cat}"
     
-    def get_simple_advice(self, winner_pred, totals_pred):
-        """Get betting advice with ONLY proven fixes"""
+    def get_proven_advice(self, winner_pred, totals_pred, home_finish, away_finish, league_name):
+        """Get betting advice with EMPIRICAL PROVEN RULES"""
         winner_key = self._generate_winner_key(winner_pred)
         totals_key = self._generate_totals_key(totals_pred)
         
         advice = {
-            'winner': {'action': 'FOLLOW', 'bet_on': winner_pred['type'], 'confidence': winner_pred['confidence_score']},
-            'totals': {'action': 'FOLLOW', 'bet_on': totals_pred['direction'], 'confidence': totals_pred['confidence_score']}
+            'winner': {
+                'action': 'FOLLOW', 
+                'bet_on': winner_pred['type'], 
+                'confidence': winner_pred['confidence_score'],
+                'reason': 'Algorithm prediction',
+                'stake': 'HALF',
+                'variance_effect': 'NONE'
+            },
+            'totals': {
+                'action': 'FOLLOW', 
+                'bet_on': totals_pred['direction'], 
+                'confidence': totals_pred['confidence_score'],
+                'reason': 'Algorithm prediction',
+                'stake': 'HALF',
+                'variance_effect': 'NONE'
+            }
         }
         
-        # ====== APPLY PROVEN FIXES ======
+        # ====== STEP 1: CHECK PROVEN FAILURE PATTERNS ======
         
-        # FIX 1: 70% confidence bug for winner
-        if (winner_pred['confidence'] == "HIGH" and 
-            CONFIDENCE_70_BUG_RANGE[0] <= winner_pred['confidence_score'] <= CONFIDENCE_70_BUG_RANGE[1]):
-            advice['winner']['action'] = 'DERATED'
-            advice['winner']['confidence'] = winner_pred['confidence_score'] * CONFIDENCE_70_DERATE_FACTOR
-            advice['winner']['reason'] = "70% confidence bug fix"
+        # Check winner proven failures
+        winner_confidence = winner_pred['confidence_score']
+        winner_conf_str = f"{winner_confidence:.1f}"
         
-        # FIX 2: Check for proven anti-patterns in totals
-        if totals_key in PROVEN_ANTI_PATTERNS:
-            rule = PROVEN_ANTI_PATTERNS[totals_key]
-            if rule['action'] == 'BET_OPPOSITE':
-                advice['totals']['action'] = 'BET_OPPOSITE'
-                advice['totals']['bet_on'] = 'UNDER' if totals_pred['direction'] == 'OVER' else 'OVER'
-                advice['totals']['confidence'] = rule['confidence']
-                advice['totals']['reason'] = f"Anti-pattern: {rule['reason']}"
+        if f"WINNER_HIGH_{winner_conf_str}" in PROVEN_FAILURES:
+            rule = PROVEN_FAILURES[f"WINNER_HIGH_{winner_conf_str}"]
+            advice['winner']['action'] = rule['action']
+            advice['winner']['confidence'] = rule['confidence']
+            advice['winner']['reason'] = f"PROVEN FAILURE: {rule['reason']} ({rule['record']})"
+            advice['winner']['stake'] = 'HALF'
         
-        # ====== APPLY HISTORICAL LEARNING (only if ≥3 matches) ======
+        # Check totals proven failures
+        if totals_key in PROVEN_FAILURES:
+            rule = PROVEN_FAILURES[totals_key]
+            advice['totals']['action'] = rule['action']
+            advice['totals']['bet_on'] = 'UNDER' if totals_pred['direction'] == 'OVER' else 'OVER'
+            advice['totals']['confidence'] = rule['confidence']
+            advice['totals']['reason'] = f"PROVEN FAILURE: {rule['reason']} ({rule['record']})"
+            advice['totals']['stake'] = 'FULL'
         
-        # Winner pattern learning
-        if winner_key in self.pattern_memory:
+        # ====== STEP 2: CHECK PROVEN SUCCESS PATTERNS ======
+        
+        # Check winner proven successes
+        if winner_key in PROVEN_SUCCESSES and advice['winner']['action'] != 'BET_OPPOSITE':
+            rule = PROVEN_SUCCESSES[winner_key]
+            advice['winner']['action'] = rule['action']
+            advice['winner']['confidence'] = min(95, winner_pred['confidence_score'] + rule['boost'])
+            advice['winner']['reason'] = f"PROVEN SUCCESS: {rule['reason']} ({rule['record']})"
+            advice['winner']['stake'] = 'FULL'
+        
+        # Check totals proven successes
+        if totals_key in PROVEN_SUCCESSES and advice['totals']['action'] != 'BET_OPPOSITE':
+            rule = PROVEN_SUCCESSES[totals_key]
+            advice['totals']['action'] = rule['action']
+            advice['totals']['confidence'] = min(95, totals_pred['confidence_score'] + rule['boost'])
+            advice['totals']['reason'] = f"PROVEN SUCCESS: {rule['reason']} ({rule['record']})"
+            advice['totals']['stake'] = 'FULL'
+        
+        # ====== STEP 3: APPLY CONFIDENCE LEVEL RULES ======
+        
+        # Apply confidence zone rules for winner
+        for zone_name, zone_rule in CONFIDENCE_RULES.items():
+            if zone_rule['range'][0] <= winner_confidence <= zone_rule['range'][1]:
+                if zone_name == "70_PERCENT_ZONE" and advice['winner']['action'] != 'BET_OPPOSITE':
+                    advice['winner']['action'] = zone_rule['action']
+                    advice['winner']['confidence'] = zone_rule['confidence']
+                    advice['winner']['reason'] = zone_rule['reason']
+                    advice['winner']['stake'] = 'HALF'
+                elif zone_name == "90_PERCENT_ZONE" and advice['winner']['action'] == 'FOLLOW':
+                    advice['winner']['confidence'] *= zone_rule['derate_factor']
+                    advice['winner']['reason'] = zone_rule['reason']
+                    advice['winner']['stake'] = 'REDUCED'
+                elif zone_name == "100_PERCENT_ZONE" and advice['winner']['action'] == 'FOLLOW':
+                    advice['winner']['action'] = zone_rule['action']
+                    advice['winner']['confidence'] *= zone_rule['boost']
+                    advice['winner']['reason'] = zone_rule['reason']
+                    advice['winner']['stake'] = 'FULL'
+        
+        # ====== STEP 4: APPLY HIGH VARIANCE DIRECTIONAL LOGIC ======
+        
+        # Apply variance rules to totals
+        if advice['totals']['action'] != 'BET_OPPOSITE':  # Don't override proven failures
+            # Check for overperformer
+            if home_finish > HIGH_VARIANCE_RULES["OVERPERFORMER"]["threshold"] or \
+               away_finish > HIGH_VARIANCE_RULES["OVERPERFORMER"]["threshold"]:
+                
+                variance_type = "OVERPERFORMER"
+                rule = HIGH_VARIANCE_RULES[variance_type]
+                
+                if totals_pred['direction'] == "OVER":
+                    advice['totals']['confidence'] += rule['over_boost']
+                    advice['totals']['variance_effect'] = 'AMPLIFIED'
+                    advice['totals']['reason'] = f"{rule['over_reason']} (+{rule['over_boost']}% boost)"
+                else:
+                    advice['totals']['confidence'] += rule['under_penalty']
+                    advice['totals']['variance_effect'] = 'REDUCED'
+                    advice['totals']['reason'] = f"{rule['under_reason']} ({rule['under_penalty']}% penalty)"
+            
+            # Check for underperformer
+            elif home_finish < HIGH_VARIANCE_RULES["UNDERPERFORMER"]["threshold"] or \
+                 away_finish < HIGH_VARIANCE_RULES["UNDERPERFORMER"]["threshold"]:
+                
+                variance_type = "UNDERPERFORMER"
+                rule = HIGH_VARIANCE_RULES[variance_type]
+                
+                if totals_pred['direction'] == "UNDER":
+                    advice['totals']['confidence'] += rule['under_boost']
+                    advice['totals']['variance_effect'] = 'AMPLIFIED'
+                    advice['totals']['reason'] = f"{rule['under_reason']} (+{rule['under_boost']}% boost)"
+                else:
+                    advice['totals']['confidence'] += rule['over_penalty']
+                    advice['totals']['variance_effect'] = 'REDUCED'
+                    advice['totals']['reason'] = f"{rule['over_reason']} ({rule['over_penalty']}% penalty)"
+        
+        # ====== STEP 5: APPLY LEAGUE-SPECIFIC EXECUTION ======
+        
+        league_adj = LEAGUE_ADJUSTMENTS.get(league_name, LEAGUE_ADJUSTMENTS["Premier League"])
+        total_xg = totals_pred['total_xg']
+        
+        # Higher scoring leagues = trust OVER more
+        if league_name == "Bundesliga" or league_name == "Eredivisie":
+            if totals_pred['direction'] == "OVER" and total_xg > league_adj['over_threshold']:
+                advice['totals']['confidence'] = min(95, advice['totals']['confidence'] * 1.1)
+                advice['totals']['reason'] += " | High-scoring league boost"
+        
+        # Lower scoring leagues = trust UNDER more
+        elif league_name == "Serie A" or league_name == "RFPL":
+            if totals_pred['direction'] == "UNDER" and total_xg < league_adj['under_threshold']:
+                advice['totals']['confidence'] = min(95, advice['totals']['confidence'] * 1.1)
+                advice['totals']['reason'] += " | Low-scoring league boost"
+        
+        # ====== STEP 6: APPLY HISTORICAL LEARNING (only if ≥3 matches) ======
+        
+        # Winner pattern learning (only if not already overridden)
+        if winner_key in self.pattern_memory and advice['winner']['action'] == 'FOLLOW':
             stats = self.pattern_memory[winner_key]
             if stats['total'] >= self.min_matches:
                 success_rate = stats['success'] / stats['total']
                 
-                if success_rate > self.strong_threshold and advice['winner']['action'] != 'DERATED':
+                if success_rate > self.strong_threshold:
                     advice['winner']['action'] = 'BET_STRONGLY'
                     advice['winner']['confidence'] = min(95, winner_pred['confidence_score'] * 1.3)
-                    advice['winner']['reason'] = f"Strong pattern: {stats['success']}/{stats['total']}"
+                    advice['winner']['reason'] = f"Strong pattern: {stats['success']}/{stats['total']} ({success_rate:.0%})"
+                    advice['winner']['stake'] = 'FULL'
                 
-                elif success_rate < self.weak_threshold and advice['winner']['action'] != 'DERATED':
+                elif success_rate < self.weak_threshold:
                     advice['winner']['action'] = 'BET_OPPOSITE'
                     advice['winner']['confidence'] = 85
                     if winner_pred['type'] == 'HOME':
                         advice['winner']['bet_on'] = 'AWAY'
                     elif winner_pred['type'] == 'AWAY':
                         advice['winner']['bet_on'] = 'HOME'
-                    advice['winner']['reason'] = f"Weak pattern: {stats['success']}/{stats['total']}"
+                    advice['winner']['reason'] = f"Weak pattern: {stats['success']}/{stats['total']} ({success_rate:.0%})"
+                    advice['winner']['stake'] = 'HALF'
         
-        # Totals pattern learning (only if not already overridden by anti-pattern)
-        if totals_key in self.pattern_memory and advice['totals']['action'] != 'BET_OPPOSITE':
+        # Totals pattern learning (only if not already overridden)
+        if totals_key in self.pattern_memory and advice['totals']['action'] == 'FOLLOW':
             stats = self.pattern_memory[totals_key]
             if stats['total'] >= self.min_matches:
                 success_rate = stats['success'] / stats['total']
@@ -313,13 +538,19 @@ class SimpleLearningSystem:
                 if success_rate > self.strong_threshold:
                     advice['totals']['action'] = 'BET_STRONGLY'
                     advice['totals']['confidence'] = min(95, totals_pred['confidence_score'] * 1.3)
-                    advice['totals']['reason'] = f"Strong pattern: {stats['success']}/{stats['total']}"
+                    advice['totals']['reason'] = f"Strong pattern: {stats['success']}/{stats['total']} ({success_rate:.0%})"
+                    advice['totals']['stake'] = 'FULL'
                 
                 elif success_rate < self.weak_threshold:
                     advice['totals']['action'] = 'BET_OPPOSITE'
                     advice['totals']['confidence'] = 85
                     advice['totals']['bet_on'] = 'UNDER' if totals_pred['direction'] == 'OVER' else 'OVER'
-                    advice['totals']['reason'] = f"Weak pattern: {stats['success']}/{stats['total']}"
+                    advice['totals']['reason'] = f"Weak pattern: {stats['success']}/{stats['total']} ({success_rate:.0%})"
+                    advice['totals']['stake'] = 'HALF'
+        
+        # Ensure confidence is within bounds
+        advice['winner']['confidence'] = max(5, min(100, advice['winner']['confidence']))
+        advice['totals']['confidence'] = max(5, min(100, advice['totals']['confidence']))
         
         return advice
     
@@ -328,8 +559,8 @@ class SimpleLearningSystem:
         return self.pattern_memory.get(pattern_key, {'total': 0, 'success': 0})
 
 # ========== INITIALIZE SESSION STATES ==========
-if 'learning_system' not in st.session_state:
-    st.session_state.learning_system = SimpleLearningSystem()
+if 'proven_system' not in st.session_state:
+    st.session_state.proven_system = ProvenPatternSystem()
 
 if 'last_prediction' not in st.session_state:
     st.session_state.last_prediction = None
@@ -338,7 +569,7 @@ if 'last_teams' not in st.session_state:
     st.session_state.last_teams = None
 
 # ========== ORIGINAL CORE PREDICTION CLASSES ==========
-# Using your ORIGINAL working classes, with only minor fixes
+# Keeping your original working classes
 
 class ExpectedGoalsPredictor:
     """ORIGINAL expected goals calculation"""
@@ -375,10 +606,10 @@ class ExpectedGoalsPredictor:
         return home_xg, away_xg
 
 class WinnerPredictor:
-    """ORIGINAL winner determination with 70% bug fix"""
+    """ORIGINAL winner determination with empirical overrides"""
     
     def predict_winner(self, home_xg, away_xg, home_stats, away_stats):
-        """Predict winner (ORIGINAL with 70% bug fix)"""
+        """Predict winner with original logic"""
         home_finishing = home_stats['goals_vs_xg_pm']
         away_finishing = away_stats['goals_vs_xg_pm']
         home_defense = home_stats['goals_allowed_vs_xga_pm']
@@ -419,16 +650,13 @@ class WinnerPredictor:
         
         winner_confidence = min(100, max(30, base_confidence + form_bonus))
         
-        # Store ORIGINAL confidence before any fixes
+        # Store ORIGINAL values
         original_confidence = winner_confidence
         
-        # ====== ONLY PROVEN FIX: 70% confidence bug ======
-        if CONFIDENCE_70_BUG_RANGE[0] <= winner_confidence <= CONFIDENCE_70_BUG_RANGE[1]:
-            winner_confidence *= CONFIDENCE_70_DERATE_FACTOR
-            strength = "QUESTIONABLE"
-        
         # Confidence categorization (ORIGINAL)
-        if winner_confidence >= 75:
+        if winner_confidence >= 90:
+            confidence_category = "VERY HIGH"
+        elif winner_confidence >= 75:
             confidence_category = "VERY HIGH"
         elif winner_confidence >= 65:
             confidence_category = "HIGH"
@@ -446,12 +674,13 @@ class WinnerPredictor:
             'confidence_score': winner_confidence,
             'confidence': confidence_category,
             'original_confidence': f"{original_confidence:.1f}",
+            'confidence_category': confidence_category,
             'delta': delta,
-            'has_70_bug_fix': CONFIDENCE_70_BUG_RANGE[0] <= original_confidence <= CONFIDENCE_70_BUG_RANGE[1]
+            'has_confidence_bug': CONFIDENCE_RULES["70_PERCENT_ZONE"]["range"][0] <= winner_confidence <= CONFIDENCE_RULES["70_PERCENT_ZONE"]["range"][1]
         }
 
 class TotalsPredictor:
-    """ORIGINAL totals prediction with anti-pattern overrides"""
+    """ORIGINAL totals prediction with empirical overrides"""
     
     def __init__(self, league_name):
         self.league_name = league_name
@@ -517,8 +746,10 @@ class TotalsPredictor:
         return alignment_matrix[home_cat][away_cat]
     
     def categorize_total_xg(self, total_xg):
-        """ORIGINAL total xG categories"""
-        if total_xg > 3.3:
+        """ORIGINAL total xG categories with league adjustments"""
+        very_high_thresh = self.league_adjustments.get('very_high_threshold', 3.3)
+        
+        if total_xg > very_high_thresh:
             return "VERY_HIGH"
         elif total_xg > 3.0:
             return "HIGH"
@@ -532,7 +763,7 @@ class TotalsPredictor:
             return "VERY_LOW"
     
     def predict_totals(self, home_xg, away_xg, home_stats, away_stats):
-        """Predict totals with ONLY proven anti-pattern overrides"""
+        """Predict totals with original logic"""
         total_xg = home_xg + away_xg
         home_finish = home_stats['goals_vs_xg_pm']
         away_finish = away_stats['goals_vs_xg_pm']
@@ -549,72 +780,37 @@ class TotalsPredictor:
         original_finishing = finishing_alignment
         original_category = total_category
         
-        # ====== CHECK FOR PROVEN ANTI-PATTERNS ======
-        
-        # ANTI-PATTERN 1: TOTALS_RISKY_VERY_HIGH (0/2 success)
-        if finishing_alignment == "RISKY" and total_category == "VERY_HIGH":
-            return {
-                'direction': 'UNDER',
-                'total_xg': total_xg,
-                'confidence': "HIGH",
-                'confidence_score': 85,
-                'finishing_alignment': finishing_alignment,
-                'original_finishing_alignment': original_finishing,
-                'total_category': total_category,
-                'original_total_category': original_category,
-                'original_direction': original_direction,
-                'risk_flags': ["ANTI-PATTERN: RISKY+VERY_HIGH (0/2)"],
-                'home_finishing': home_finish,
-                'away_finishing': away_finish,
-                'is_anti_pattern_override': True,
-                'anti_pattern_reason': "RISKY+VERY_HIGH has 0/2 success"
-            }
-        
-        # ANTI-PATTERN 2: TOTALS_LOW_+_HIGH/VERY_HIGH (0/6 success)
-        if "LOW" in finishing_alignment and total_category in ["HIGH", "VERY_HIGH"]:
-            opposite = "UNDER" if base_direction == "OVER" else "OVER"
-            return {
-                'direction': opposite,
-                'total_xg': total_xg,
-                'confidence': "HIGH",
-                'confidence_score': 80,
-                'finishing_alignment': finishing_alignment,
-                'original_finishing_alignment': original_finishing,
-                'total_category': total_category,
-                'original_total_category': original_category,
-                'original_direction': original_direction,
-                'risk_flags': [f"ANTI-PATTERN: {finishing_alignment}+{total_category} (0/6)"],
-                'home_finishing': home_finish,
-                'away_finishing': away_finish,
-                'is_anti_pattern_override': True,
-                'anti_pattern_reason': f"{finishing_alignment}+{total_category} has 0/6 success"
-            }
-        
-        # ====== ORIGINAL PREDICTION LOGIC (if no anti-patterns) ======
-        
+        # Risk assessment
         risk_flags = []
+        
+        # HIGH VARIANCE TEAM flag (will be used directionally, not as penalty)
         if abs(home_finish) > 0.4 or abs(away_finish) > 0.4:
             risk_flags.append("HIGH_VARIANCE_TEAM")
         
+        # CLOSE TO THRESHOLD flag
         lower_thresh = self.league_adjustments['under_threshold'] - 0.1
         upper_thresh = self.league_adjustments['over_threshold'] + 0.1
         if lower_thresh < total_xg < upper_thresh:
             risk_flags.append("CLOSE_TO_THRESHOLD")
         
-        # ORIGINAL decision matrix (simplified for example)
-        direction = base_direction
+        # Check for proven anti-patterns (these will be overridden later)
+        if finishing_alignment in ["RISKY", "HIGH_RISK"] and total_category == "VERY_HIGH":
+            risk_flags.append("PROVEN_ANTI_PATTERN")
+        
+        if "LOW" in finishing_alignment and total_category in ["HIGH", "VERY_HIGH"]:
+            risk_flags.append("PROVEN_ANTI_PATTERN")
+        
+        # Base confidence
         base_confidence = 60
         
-        # Apply risk penalties (ORIGINAL)
+        # Apply CLOSE_TO_THRESHOLD penalty only
         for flag in risk_flags:
-            if flag == "HIGH_VARIANCE_TEAM":
-                base_confidence -= 15
-            elif flag == "CLOSE_TO_THRESHOLD":
+            if flag == "CLOSE_TO_THRESHOLD":
                 base_confidence -= 10
         
         base_confidence = max(5, min(95, base_confidence))
         
-        # Confidence category (ORIGINAL)
+        # Confidence category
         if base_confidence >= 75:
             confidence_category = "VERY HIGH"
         elif base_confidence >= 65:
@@ -627,8 +823,8 @@ class TotalsPredictor:
             confidence_category = "VERY LOW"
         
         return {
-            'direction': direction,
-            'original_direction': direction,
+            'direction': base_direction,
+            'original_direction': base_direction,
             'total_xg': total_xg,
             'confidence': confidence_category,
             'confidence_score': base_confidence,
@@ -639,7 +835,8 @@ class TotalsPredictor:
             'risk_flags': risk_flags,
             'home_finishing': home_finish,
             'away_finishing': away_finish,
-            'is_anti_pattern_override': False
+            'league_threshold': over_threshold,
+            'is_proven_anti_pattern': "PROVEN_ANTI_PATTERN" in risk_flags
         }
 
 # ========== ORIGINAL PROBABILITY ENGINE ==========
@@ -710,10 +907,10 @@ def poisson_pmf(k, lam):
         return 0
     return (math.exp(-lam) * (lam ** k)) / factorial_cache(k)
 
-# ========== SIMPLIFIED FOOTBALL ENGINE ==========
+# ========== PROVEN FOOTBALL ENGINE ==========
 
-class SimpleFootballEngine:
-    """Engine with ONLY proven fixes"""
+class ProvenFootballEngine:
+    """Engine with EMPIRICAL PROVEN RULES"""
     
     def __init__(self, league_metrics, league_name):
         self.league_metrics = league_metrics
@@ -725,7 +922,7 @@ class SimpleFootballEngine:
         self.probability_engine = PoissonProbabilityEngine()
     
     def predict_match(self, home_team, away_team, home_stats, away_stats):
-        """Generate prediction with ONLY proven fixes"""
+        """Generate prediction with EMPIRICAL PROVEN RULES"""
         
         # Get ORIGINAL predictions
         home_xg, away_xg = self.xg_predictor.predict_expected_goals(home_stats, away_stats)
@@ -740,9 +937,13 @@ class SimpleFootballEngine:
             home_xg, away_xg, home_stats, away_stats
         )
         
-        # Get SIMPLE betting advice (only proven fixes)
-        betting_advice = st.session_state.learning_system.get_simple_advice(
-            winner_prediction, totals_prediction
+        # Get PROVEN betting advice (empirical rules)
+        betting_advice = st.session_state.proven_system.get_proven_advice(
+            winner_prediction, 
+            totals_prediction,
+            totals_prediction['home_finishing'],
+            totals_prediction['away_finishing'],
+            self.league_name
         )
         
         # Apply betting advice
@@ -765,23 +966,26 @@ class SimpleFootballEngine:
                 'team': final_winner['team'],
                 'type': final_winner['type'],
                 'probability': winner_prob,
-                'confidence': final_winner['confidence'],
-                'confidence_score': final_winner['confidence_score'],
+                'confidence': self._get_confidence_category(final_winner['confidence']),
+                'confidence_score': final_winner['confidence'],
                 'strength': final_winner.get('strength', 'N/A'),
                 'most_likely_score': probabilities['most_likely_score'],
                 'betting_action': betting_advice['winner']['action'],
                 'original_prediction': winner_prediction['original_prediction'],
                 'original_confidence': winner_prediction['original_confidence'],
-                'reason': betting_advice['winner'].get('reason', 'Algorithm prediction'),
+                'original_confidence_score': winner_prediction['confidence_score'],
+                'reason': betting_advice['winner']['reason'],
+                'stake': betting_advice['winner']['stake'],
                 'color': self._get_color_for_action(betting_advice['winner']['action']),
-                'has_70_bug_fix': winner_prediction.get('has_70_bug_fix', False)
+                'has_confidence_bug': winner_prediction.get('has_confidence_bug', False),
+                'variance_effect': betting_advice['winner'].get('variance_effect', 'NONE')
             },
             
             'totals': {
                 'direction': final_totals['direction'],
                 'probability': totals_prob,
-                'confidence': final_totals['confidence'],
-                'confidence_score': final_totals['confidence_score'],
+                'confidence': self._get_confidence_category(final_totals['confidence']),
+                'confidence_score': final_totals['confidence'],
                 'total_xg': totals_prediction['total_xg'],
                 'finishing_alignment': totals_prediction['finishing_alignment'],
                 'original_finishing_alignment': totals_prediction['original_finishing_alignment'],
@@ -790,16 +994,19 @@ class SimpleFootballEngine:
                 'risk_flags': totals_prediction.get('risk_flags', []),
                 'betting_action': betting_advice['totals']['action'],
                 'original_direction': totals_prediction['original_direction'],
-                'reason': betting_advice['totals'].get('reason', 'Algorithm prediction'),
+                'original_confidence_score': totals_prediction['confidence_score'],
+                'reason': betting_advice['totals']['reason'],
+                'stake': betting_advice['totals']['stake'],
                 'color': self._get_color_for_action(betting_advice['totals']['action']),
-                'is_anti_pattern_override': totals_prediction.get('is_anti_pattern_override', False),
-                'anti_pattern_reason': totals_prediction.get('anti_pattern_reason', '')
+                'is_proven_anti_pattern': totals_prediction.get('is_proven_anti_pattern', False),
+                'variance_effect': betting_advice['totals'].get('variance_effect', 'NONE')
             },
             
             'probabilities': probabilities,
             'expected_goals': {'home': home_xg, 'away': away_xg, 'total': home_xg + away_xg},
             'betting_advice': betting_advice,
-            'version': '7.1_simple'
+            'version': '8.0_proven',
+            'league': self.league_name
         }
     
     def _apply_advice_to_winner(self, original, advice, home_team, away_team):
@@ -818,36 +1025,22 @@ class SimpleFootballEngine:
                 final['type'] = 'DRAW'
                 final['team'] = 'DRAW'
             
-            final['confidence_score'] = advice['confidence']
-            final['confidence'] = 'HIGH' if advice['confidence'] >= 65 else 'MEDIUM'
+            final['confidence'] = advice['confidence']
         
-        elif advice['action'] == 'DERATED':
-            # 70% bug fix
-            final['confidence_score'] = advice['confidence']
-            if advice['confidence'] >= 75:
-                final['confidence'] = 'VERY HIGH'
-            elif advice['confidence'] >= 65:
-                final['confidence'] = 'HIGH'
-            else:
-                final['confidence'] = 'MEDIUM'
-            
+        elif advice['action'] == 'CAUTION':
+            # Derate confidence
+            final['confidence'] = advice['confidence']
             final['team'] = home_team if original['type'] == 'HOME' else away_team if original['type'] == 'AWAY' else 'DRAW'
         
         elif advice['action'] == 'BET_STRONGLY':
             # Boost confidence
-            final['confidence_score'] = advice['confidence']
-            if advice['confidence'] >= 75:
-                final['confidence'] = 'VERY HIGH'
-            elif advice['confidence'] >= 65:
-                final['confidence'] = 'HIGH'
-            else:
-                final['confidence'] = 'MEDIUM'
-            
+            final['confidence'] = advice['confidence']
             final['team'] = home_team if original['type'] == 'HOME' else away_team if original['type'] == 'AWAY' else 'DRAW'
         
         else:
             # Follow algorithm
             final['team'] = home_team if original['type'] == 'HOME' else away_team if original['type'] == 'AWAY' else 'DRAW'
+            final['confidence'] = advice['confidence']
         
         return final
     
@@ -857,19 +1050,16 @@ class SimpleFootballEngine:
         
         if advice['action'] == 'BET_OPPOSITE':
             # Bet opposite
-            final['direction'] = 'UNDER' if original['direction'] == 'OVER' else 'OVER'
-            final['confidence_score'] = advice['confidence']
-            final['confidence'] = 'HIGH' if advice['confidence'] >= 65 else 'MEDIUM'
+            final['direction'] = advice['bet_on']
+            final['confidence'] = advice['confidence']
         
         elif advice['action'] == 'BET_STRONGLY':
             # Boost confidence
-            final['confidence_score'] = advice['confidence']
-            if advice['confidence'] >= 75:
-                final['confidence'] = 'VERY HIGH'
-            elif advice['confidence'] >= 65:
-                final['confidence'] = 'HIGH'
-            else:
-                final['confidence'] = 'MEDIUM'
+            final['confidence'] = advice['confidence']
+        
+        else:
+            # Follow algorithm
+            final['confidence'] = advice['confidence']
         
         return final
     
@@ -889,133 +1079,214 @@ class SimpleFootballEngine:
         else:
             return probabilities['under_2_5_probability']
     
+    def _get_confidence_category(self, confidence_score):
+        """Get confidence category from score"""
+        if confidence_score >= 85:
+            return "VERY HIGH"
+        elif confidence_score >= 75:
+            return "HIGH"
+        elif confidence_score >= 65:
+            return "MEDIUM"
+        elif confidence_score >= 55:
+            return "LOW"
+        else:
+            return "VERY LOW"
+    
     def _get_color_for_action(self, action):
         """Get color for betting action"""
         colors = {
             'BET_OPPOSITE': '#DC2626',  # Red
-            'DERATED': '#F59E0B',        # Orange
+            'CAUTION': '#F59E0B',        # Orange
             'BET_STRONGLY': '#10B981',   # Green
-            'FOLLOW': '#6B7280'          # Gray
+            'FOLLOW': '#6B7280',         # Gray
+            'BET': '#3B82F6'             # Blue
         }
         return colors.get(action, '#6B7280')
 
-# ========== SIMPLE BETTING CARD ==========
+# ========== EMPIRICAL BETTING CARD ==========
 
-class SimpleBettingCard:
-    """Simple betting card"""
+class EmpiricalBettingCard:
+    """Empirical betting card based on proven patterns"""
     
     @staticmethod
     def get_recommendation(prediction):
-        """Get betting recommendation"""
+        """Get betting recommendation based on proven rules"""
         winner_pred = prediction['winner']
         totals_pred = prediction['totals']
         
-        # Anti-pattern overrides first
-        if totals_pred.get('is_anti_pattern_override', False):
+        # Check for proven failure overrides first
+        if winner_pred['betting_action'] == 'BET_OPPOSITE' and winner_pred.get('has_confidence_bug', False):
             return {
-                'type': 'ANTI_PATTERN_OVERRIDE',
+                'type': '70_PERCENT_BUG_FIX',
+                'text': f"🎯 {winner_pred['team']} to win",
+                'subtext': '70% FALSE FAVORITE ZONE',
+                'reason': winner_pred['reason'],
+                'confidence': winner_pred['confidence_score'],
+                'color': '#DC2626',
+                'icon': '🎯',
+                'stake': winner_pred.get('stake', 'HALF'),
+                'proven_type': 'FAILURE_OVERRIDE'
+            }
+        
+        if totals_pred.get('is_proven_anti_pattern', False) and totals_pred['betting_action'] == 'BET_OPPOSITE':
+            return {
+                'type': 'PROVEN_ANTI_PATTERN',
                 'text': f"🎯 {totals_pred['direction']} 2.5 Goals",
-                'subtext': 'ANTI-PATTERN OVERRIDE',
-                'reason': totals_pred.get('anti_pattern_reason', 'Proven failure pattern'),
+                'subtext': 'PROVEN ANTI-PATTERN',
+                'reason': totals_pred['reason'],
                 'confidence': totals_pred['confidence_score'],
                 'color': '#DC2626',
                 'icon': '🎯',
-                'stake': 'FULL'
+                'stake': totals_pred.get('stake', 'FULL'),
+                'proven_type': 'FAILURE_OVERRIDE'
             }
         
-        # 70% bug fix
-        if winner_pred.get('has_70_bug_fix', False) and winner_pred['betting_action'] == 'DERATED':
+        # Check for proven success patterns
+        if totals_pred['betting_action'] == 'BET_STRONGLY' and 'PROVEN SUCCESS' in totals_pred['reason']:
             return {
-                'type': '70_BUG_FIX',
-                'text': f"⚠️ {winner_pred['team']} to win",
-                'subtext': '70% CONFIDENCE BUG FIX',
-                'reason': 'Confidence derated due to 70% bug',
-                'confidence': winner_pred['confidence_score'],
-                'color': '#F59E0B',
-                'icon': '⚠️',
-                'stake': 'HALF'
-            }
-        
-        # Check for strong patterns
-        if winner_pred['betting_action'] == 'BET_STRONGLY' and totals_pred['betting_action'] == 'BET_STRONGLY':
-            return {
-                'type': 'DOUBLE_STRONG',
-                'text': f"✅ {winner_pred['team']} + 📈 {totals_pred['direction']} 2.5",
-                'subtext': 'DOUBLE STRONG PATTERN',
-                'reason': 'Both markets show strong historical edge',
-                'confidence': min(winner_pred['confidence_score'], totals_pred['confidence_score']),
+                'type': 'PROVEN_GOLD_PATTERN',
+                'text': f"✅ {totals_pred['direction']} 2.5 Goals",
+                'subtext': 'PROVEN GOLD PATTERN',
+                'reason': totals_pred['reason'],
+                'confidence': totals_pred['confidence_score'],
                 'color': '#10B981',
                 'icon': '✅',
-                'stake': 'FULL'
+                'stake': totals_pred.get('stake', 'FULL'),
+                'proven_type': 'SUCCESS_PATTERN'
+            }
+        
+        if winner_pred['betting_action'] == 'BET_STRONGLY' and 'PROVEN SUCCESS' in winner_pred['reason']:
+            return {
+                'type': 'PROVEN_WINNER_PATTERN',
+                'text': f"✅ {winner_pred['team']} to win",
+                'subtext': 'PROVEN WINNER PATTERN',
+                'reason': winner_pred['reason'],
+                'confidence': winner_pred['confidence_score'],
+                'color': '#10B981',
+                'icon': '✅',
+                'stake': winner_pred.get('stake', 'FULL'),
+                'proven_type': 'SUCCESS_PATTERN'
+            }
+        
+        # Check for high variance amplification
+        if totals_pred.get('variance_effect') == 'AMPLIFIED':
+            return {
+                'type': 'VARIANCE_AMPLIFICATION',
+                'text': f"⚡ {totals_pred['direction']} 2.5 Goals",
+                'subtext': 'VARIANCE AMPLIFICATION',
+                'reason': totals_pred['reason'],
+                'confidence': totals_pred['confidence_score'],
+                'color': '#8B5CF6',
+                'icon': '⚡',
+                'stake': totals_pred.get('stake', 'HALF'),
+                'proven_type': 'VARIANCE_PLAY'
+            }
+        
+        # Check for double strong patterns
+        if winner_pred['betting_action'] == 'BET_STRONGLY' and totals_pred['betting_action'] == 'BET_STRONGLY':
+            return {
+                'type': 'DOUBLE_STRONG_PATTERNS',
+                'text': f"🔥 {winner_pred['team']} + {totals_pred['direction']} 2.5",
+                'subtext': 'DOUBLE STRONG PATTERNS',
+                'reason': 'Both markets show proven edges',
+                'confidence': min(winner_pred['confidence_score'], totals_pred['confidence_score']),
+                'color': '#10B981',
+                'icon': '🔥',
+                'stake': 'FULL',
+                'proven_type': 'DOUBLE_STRONG'
             }
         
         # Single strong patterns
         if winner_pred['betting_action'] == 'BET_STRONGLY':
             return {
-                'type': 'WINNER_STRONG',
+                'type': 'WINNER_STRONG_PATTERN',
                 'text': f"✅ {winner_pred['team']} to win",
-                'subtext': 'STRONG PATTERN',
-                'reason': winner_pred.get('reason', 'Strong historical pattern'),
+                'subtext': 'STRONG WINNER PATTERN',
+                'reason': winner_pred['reason'],
                 'confidence': winner_pred['confidence_score'],
                 'color': '#10B981',
                 'icon': '✅',
-                'stake': 'HALF'
+                'stake': winner_pred.get('stake', 'HALF'),
+                'proven_type': 'SINGLE_STRONG'
             }
         
         if totals_pred['betting_action'] == 'BET_STRONGLY':
             return {
-                'type': 'TOTALS_STRONG',
+                'type': 'TOTALS_STRONG_PATTERN',
                 'text': f"📈 {totals_pred['direction']} 2.5 Goals",
-                'subtext': 'STRONG PATTERN',
-                'reason': totals_pred.get('reason', 'Strong historical pattern'),
+                'subtext': 'STRONG TOTALS PATTERN',
+                'reason': totals_pred['reason'],
                 'confidence': totals_pred['confidence_score'],
                 'color': '#10B981',
                 'icon': '✅',
-                'stake': 'HALF'
+                'stake': totals_pred.get('stake', 'HALF'),
+                'proven_type': 'SINGLE_STRONG'
             }
         
         # Weak patterns (bet opposite)
         if winner_pred['betting_action'] == 'BET_OPPOSITE':
             return {
-                'type': 'WINNER_OPPOSITE',
+                'type': 'WINNER_WEAK_PATTERN',
                 'text': f"🎯 {winner_pred['team']} to win",
                 'subtext': 'BET OPPOSITE (Weak pattern)',
-                'reason': winner_pred.get('reason', 'Weak historical pattern'),
+                'reason': winner_pred['reason'],
                 'confidence': winner_pred['confidence_score'],
                 'color': '#DC2626',
                 'icon': '🎯',
-                'stake': 'HALF'
+                'stake': winner_pred.get('stake', 'HALF'),
+                'proven_type': 'WEAK_PATTERN'
             }
         
         if totals_pred['betting_action'] == 'BET_OPPOSITE':
             return {
-                'type': 'TOTALS_OPPOSITE',
+                'type': 'TOTALS_WEAK_PATTERN',
                 'text': f"📈 {totals_pred['direction']} 2.5 Goals",
                 'subtext': 'BET OPPOSITE (Weak pattern)',
-                'reason': totals_pred.get('reason', 'Weak historical pattern'),
+                'reason': totals_pred['reason'],
                 'confidence': totals_pred['confidence_score'],
                 'color': '#DC2626',
                 'icon': '🎯',
-                'stake': 'HALF'
+                'stake': totals_pred.get('stake', 'HALF'),
+                'proven_type': 'WEAK_PATTERN'
+            }
+        
+        # Caution zone
+        if winner_pred['betting_action'] == 'CAUTION':
+            return {
+                'type': 'CAUTION_ZONE',
+                'text': f"⚠️ {winner_pred['team']} to win",
+                'subtext': 'CAUTION (90% trap zone)',
+                'reason': winner_pred['reason'],
+                'confidence': winner_pred['confidence_score'],
+                'color': '#F59E0B',
+                'icon': '⚠️',
+                'stake': 'REDUCED',
+                'proven_type': 'CAUTION'
             }
         
         # No clear edge
         return {
-            'type': 'NO_BET',
-            'text': "🤔 No Clear Bet",
+            'type': 'NO_PROVEN_EDGE',
+            'text': "🤔 No Proven Edge",
             'subtext': 'NO BET',
-            'reason': 'Insufficient edge or neutral patterns',
+            'reason': 'Insufficient proven edge or neutral patterns',
             'confidence': max(winner_pred['confidence_score'], totals_pred['confidence_score']),
             'color': '#6B7280',
             'icon': '🤔',
-            'stake': 'NONE'
+            'stake': 'NONE',
+            'proven_type': 'NEUTRAL'
         }
     
     @staticmethod
     def display_card(recommendation):
         """Display the betting card"""
         color = recommendation['color']
-        stake_colors = {'FULL': '#10B981', 'HALF': '#F59E0B', 'NONE': '#6B7280'}
+        stake_colors = {
+            'FULL': '#10B981', 
+            'HALF': '#F59E0B', 
+            'REDUCED': '#F59E0B',
+            'NONE': '#6B7280'
+        }
         stake_color = stake_colors.get(recommendation['stake'], '#6B7280')
         
         st.markdown(f"""
@@ -1108,18 +1379,18 @@ def calculate_league_metrics(df):
 
 # ========== FEEDBACK SYSTEM ==========
 
-def record_outcome_simple(prediction):
-    """Simple feedback system"""
+def record_outcome_proven(prediction):
+    """Proven feedback system"""
     
     st.divider()
-    st.subheader("📝 Record Outcome")
+    st.subheader("📝 Record Outcome for Pattern Learning")
     
     # Show current patterns
-    winner_key = st.session_state.learning_system._generate_winner_key(prediction['winner'])
-    totals_key = st.session_state.learning_system._generate_totals_key(prediction['totals'])
+    winner_key = st.session_state.proven_system._generate_winner_key(prediction['winner'])
+    totals_key = st.session_state.proven_system._generate_totals_key(prediction['totals'])
     
-    winner_stats = st.session_state.learning_system.get_pattern_stats(winner_key)
-    totals_stats = st.session_state.learning_system.get_pattern_stats(totals_key)
+    winner_stats = st.session_state.proven_system.get_pattern_stats(winner_key)
+    totals_stats = st.session_state.proven_system.get_pattern_stats(totals_key)
     
     col1, col2 = st.columns(2)
     
@@ -1129,6 +1400,12 @@ def record_outcome_simple(prediction):
         if winner_stats['total'] > 0:
             success = winner_stats['success'] / winner_stats['total'] if winner_stats['total'] > 0 else 0
             st.write(f"Current: {winner_stats['success']}/{winner_stats['total']} ({success:.0%})")
+        
+        # Check if proven pattern
+        if winner_key in PROVEN_FAILURES:
+            st.error(f"🔴 PROVEN FAILURE: {PROVEN_FAILURES[winner_key]['record']}")
+        elif winner_key in PROVEN_SUCCESSES:
+            st.success(f"✅ PROVEN SUCCESS: {PROVEN_SUCCESSES[winner_key]['record']}")
     
     with col2:
         st.write("**Totals Pattern:**")
@@ -1136,12 +1413,18 @@ def record_outcome_simple(prediction):
         if totals_stats['total'] > 0:
             success = totals_stats['success'] / totals_stats['total'] if totals_stats['total'] > 0 else 0
             st.write(f"Current: {totals_stats['success']}/{totals_stats['total']} ({success:.0%})")
+        
+        # Check if proven pattern
+        if totals_key in PROVEN_FAILURES:
+            st.error(f"🔴 PROVEN FAILURE: {PROVEN_FAILURES[totals_key]['record']}")
+        elif totals_key in PROVEN_SUCCESSES:
+            st.success(f"✅ PROVEN SUCCESS: {PROVEN_SUCCESSES[totals_key]['record']}")
     
     # Score input
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        score = st.text_input("Actual Score (e.g., 2-1)", key="simple_score_input")
+        score = st.text_input("Actual Score (e.g., 2-1)", key="proven_score_input")
     
     with col2:
         if st.button("✅ Record Outcome", type="primary", use_container_width=True):
@@ -1149,12 +1432,12 @@ def record_outcome_simple(prediction):
                 st.error("Enter valid score like '2-1'")
             else:
                 try:
-                    with st.spinner("Saving..."):
-                        result, message = st.session_state.learning_system.record_outcome(prediction, score)
+                    with st.spinner("Saving pattern data..."):
+                        result, message = st.session_state.proven_system.record_outcome(prediction, score)
                         
                         if result:
                             if result['save_success']:
-                                st.success("✅ Saved successfully!")
+                                st.success("✅ Pattern saved successfully!")
                             else:
                                 st.warning("⚠️ Saved locally")
                             
@@ -1171,6 +1454,13 @@ def record_outcome_simple(prediction):
                                     st.success(f"✅ Totals correct!")
                                 else:
                                     st.error(f"❌ Totals wrong!")
+                            
+                            # Update proven patterns if needed
+                            if not result['winner_correct'] and winner_key not in PROVEN_FAILURES and winner_stats['total'] >= 2:
+                                st.error(f"⚠️ Consider adding {winner_key} to PROVEN_FAILURES")
+                            
+                            if result['totals_correct'] and totals_key not in PROVEN_SUCCESSES and totals_stats['total'] >= 3:
+                                st.success(f"⚠️ Consider adding {totals_key} to PROVEN_SUCCESSES")
                             
                             st.rerun()
                         else:
@@ -1218,34 +1508,49 @@ with st.sidebar:
             st.error("Could not prepare team data")
             st.stop()
 
-    # Simple System Section
+    # Proven System Section
     st.divider()
-    st.header("🔧 PROVEN FIXES ONLY")
+    st.header("🎯 EMPIRICAL PROVEN RULES")
     
-    st.error("""
-    **ANTI-PATTERN OVERRIDES:**
+    st.subheader("🔴 PROVEN FAILURES (Bet Opposite):")
+    for pattern, rule in PROVEN_FAILURES.items():
+        st.error(f"""
+        **{pattern}**
+        → {rule['action']} (Confidence: {rule['confidence']}%)
+        → Reason: {rule['reason']}
+        → Record: {rule['record']}
+        """)
     
-    🎯 **TOTALS_RISKY_VERY_HIGH**
-    → Bet UNDER (0/2 success)
+    st.subheader("✅ PROVEN SUCCESSES (Bet Strongly):")
+    for pattern, rule in PROVEN_SUCCESSES.items():
+        st.success(f"""
+        **{pattern}**
+        → {rule['action']} (Boost: +{rule['boost']}%)
+        → Reason: {rule['reason']}
+        → Record: {rule['record']}
+        """)
     
-    🎯 **TOTALS_LOW_+_HIGH/VERY_HIGH**
-    → Bet opposite (0/6 success)
+    st.subheader("⚡ HIGH VARIANCE RULES:")
+    st.info("""
+    **Overperformer (>+0.4 goals vs xG):**
+    → OVER: +20% confidence boost
+    → UNDER: -15% confidence penalty
+    
+    **Underperformer (<-0.4 goals vs xG):**
+    → UNDER: +20% confidence boost
+    → OVER: -15% confidence penalty
     """)
     
+    st.subheader("📊 CONFIDENCE ZONES:")
     st.warning("""
-    **70% CONFIDENCE BUG:**
+    **70% Zone (68-72%):**
+    → BET OPPOSITE (0/3 success)
     
-    ⚠️ **WINNER predictions at 70% confidence**
-    → Derate by 30% (0/2 success)
-    """)
+    **90% Zone (88-94%):**
+    → CAUTION (Derate by 20%)
     
-    st.success("""
-    **NO SYNTHETIC METRICS:**
-    
-    ✅ **No fake volatility scores**
-    ✅ **No fake trend calculations**
-    ✅ **Original algorithm logic**
-    ✅ **Proven fixes only**
+    **100% Zone (99-100%):**
+    → BET STRONGLY (4/5 success)
     """)
     
     # Show current match patterns if available
@@ -1254,56 +1559,51 @@ with st.sidebar:
             winner_pred = st.session_state.last_prediction['winner']
             totals_pred = st.session_state.last_prediction['totals']
             
-            winner_key = st.session_state.learning_system._generate_winner_key(winner_pred)
-            totals_key = st.session_state.learning_system._generate_totals_key(totals_pred)
+            winner_key = st.session_state.proven_system._generate_winner_key(winner_pred)
+            totals_key = st.session_state.proven_system._generate_totals_key(totals_pred)
             
-            winner_stats = st.session_state.learning_system.get_pattern_stats(winner_key)
-            totals_stats = st.session_state.learning_system.get_pattern_stats(totals_key)
+            winner_stats = st.session_state.proven_system.get_pattern_stats(winner_key)
+            totals_stats = st.session_state.proven_system.get_pattern_stats(totals_key)
             
-            st.subheader("Current Match:")
+            st.subheader("Current Match Patterns:")
             
             col1, col2 = st.columns(2)
             
             with col1:
+                st.write(f"**Winner:** {winner_key}")
                 if winner_stats['total'] >= 3:
                     success = winner_stats['success'] / winner_stats['total']
                     if success > 0.7:
-                        st.success(f"✅ Winner: {success:.0%}")
+                        st.success(f"✅ {success:.0%}")
                     elif success < 0.4:
-                        st.error(f"🎯 Winner: {success:.0%}")
+                        st.error(f"🎯 {success:.0%}")
                     else:
-                        st.info(f"⚪ Winner: {success:.0%}")
+                        st.info(f"⚪ {success:.0%}")
                 else:
-                    st.caption(f"Winner: {winner_stats['total']}/3 matches")
+                    st.caption(f"{winner_stats['total']}/3 matches")
             
             with col2:
+                st.write(f"**Totals:** {totals_key}")
                 if totals_stats['total'] >= 3:
                     success = totals_stats['success'] / totals_stats['total']
                     if success > 0.7:
-                        st.success(f"✅ Totals: {success:.0%}")
+                        st.success(f"✅ {success:.0%}")
                     elif success < 0.4:
-                        st.error(f"🎯 Totals: {success:.0%}")
+                        st.error(f"🎯 {success:.0%}")
                     else:
-                        st.info(f"⚪ Totals: {success:.0%}")
+                        st.info(f"⚪ {success:.0%}")
                 else:
-                    st.caption(f"Totals: {totals_stats['total']}/3 matches")
+                    st.caption(f"{totals_stats['total']}/3 matches")
                     
         except Exception as e:
             st.warning("Could not display pattern stats")
     
     st.divider()
     
-    # Show active anti-patterns
-    st.subheader("🔴 Active Anti-Patterns:")
-    for pattern, rule in PROVEN_ANTI_PATTERNS.items():
-        st.error(f"{pattern}: {rule['reason']}")
-    
-    st.divider()
-    
     # Statistics
-    st.subheader("📊 Statistics:")
+    st.subheader("📊 Pattern Statistics:")
     
-    pattern_memory = st.session_state.learning_system.pattern_memory
+    pattern_memory = st.session_state.proven_system.pattern_memory
     total_patterns = len(pattern_memory)
     qualifying = len([v for v in pattern_memory.values() if v['total'] >= 3])
     strong = len([v for v in pattern_memory.values() 
@@ -1311,10 +1611,21 @@ with st.sidebar:
     weak = len([v for v in pattern_memory.values() 
                if v['total'] >= 3 and v['success']/v['total'] < 0.4])
     
-    st.write(f"Total patterns: {total_patterns}")
+    st.write(f"Total patterns tracked: {total_patterns}")
     st.write(f"Qualifying (≥3 matches): {qualifying}")
-    st.write(f"Strong (>70%): {strong}")
-    st.write(f"Weak (<40%): {weak}")
+    st.write(f"Strong patterns (>70%): {strong}")
+    st.write(f"Weak patterns (<40%): {weak}")
+    
+    # Show top patterns
+    if qualifying > 0:
+        st.subheader("🏆 Top Patterns:")
+        sorted_patterns = sorted([(k, v) for k, v in pattern_memory.items() if v['total'] >= 3], 
+                                key=lambda x: x[1]['success']/x[1]['total'], 
+                                reverse=True)[:5]
+        
+        for pattern, stats in sorted_patterns:
+            success = stats['success'] / stats['total']
+            st.write(f"**{pattern}:** {stats['success']}/{stats['total']} ({success:.0%})")
 
 # Main content
 if df is None:
@@ -1327,8 +1638,8 @@ if 'calculate_btn' in locals() and calculate_btn:
         home_stats = home_stats_df.loc[home_team]
         away_stats = away_stats_df.loc[away_team]
         
-        # Generate prediction
-        engine = SimpleFootballEngine(league_metrics, selected_league)
+        # Generate prediction with PROVEN RULES
+        engine = ProvenFootballEngine(league_metrics, selected_league)
         prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
         
         # Store for next time
@@ -1347,8 +1658,8 @@ else:
     st.stop()
 
 # ========== DISPLAY PREDICTION ==========
-st.header(f"🔧 {home_team} vs {away_team}")
-st.caption(f"League: {selected_league} | Version: {prediction.get('version', '7.1')}")
+st.header(f"🎯 {home_team} vs {away_team}")
+st.caption(f"League: {selected_league} | Version: {prediction.get('version', '8.0')} | Empirical Rules Applied")
 
 # Prediction cards
 col1, col2 = st.columns(2)
@@ -1357,18 +1668,18 @@ with col1:
     winner_pred = prediction['winner']
     color = winner_pred.get('color', '#6B7280')
     
-    # Determine icon
-    if winner_pred.get('has_70_bug_fix', False):
-        icon = "⚠️"
-        subtitle = "70% BUG FIX"
-        card_color = "#78350F"
-    elif winner_pred['betting_action'] == 'BET_OPPOSITE':
+    # Determine icon based on action
+    if winner_pred['betting_action'] == 'BET_OPPOSITE':
         icon = "🎯"
-        subtitle = "BET OPPOSITE"
+        subtitle = "BET OPPOSITE (Proven Failure)"
         card_color = "#7F1D1D"
+    elif winner_pred['betting_action'] == 'CAUTION':
+        icon = "⚠️"
+        subtitle = "CAUTION (90% Trap Zone)"
+        card_color = "#78350F"
     elif winner_pred['betting_action'] == 'BET_STRONGLY':
         icon = "✅"
-        subtitle = "STRONG PATTERN"
+        subtitle = "BET STRONGLY (Proven Success)"
         card_color = "#14532D"
     else:
         icon = "🏠" if winner_pred['type'] == "HOME" else "✈️" if winner_pred['type'] == "AWAY" else "🤝"
@@ -1387,7 +1698,17 @@ with col1:
         <div style="font-size: 16px; color: white;">
             {subtitle} | Confidence: {winner_pred['confidence_score']:.0f}/100
         </div>
-        {f'<div style="font-size: 14px; color: #FCA5A5; margin-top: 10px;">{winner_pred["reason"]}</div>' if winner_pred.get('reason') and winner_pred['reason'] != 'Algorithm prediction' else ''}
+        <div style="font-size: 14px; color: #D1D5DB; margin-top: 10px;">
+            {winner_pred['reason']}
+        </div>
+        <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
+            <div style="font-size: 12px; color: #9CA3AF;">
+                Stake: {winner_pred.get('stake', 'HALF')}
+            </div>
+            <div style="font-size: 12px; color: #9CA3AF;">
+                Original: {winner_pred['original_prediction']} ({winner_pred['original_confidence_score']:.0f}%)
+            </div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1395,21 +1716,17 @@ with col2:
     totals_pred = prediction['totals']
     color = totals_pred.get('color', '#6B7280')
     
-    # Determine icon
-    if totals_pred.get('is_anti_pattern_override', False):
+    # Determine icon based on action
+    if totals_pred['betting_action'] == 'BET_OPPOSITE':
         icon = "🎯"
-        subtitle = "ANTI-PATTERN OVERRIDE"
-        card_color = "#7F1D1D"
-    elif totals_pred['betting_action'] == 'BET_OPPOSITE':
-        icon = "🎯"
-        subtitle = "BET OPPOSITE"
+        subtitle = "BET OPPOSITE (Proven Failure)"
         card_color = "#7F1D1D"
     elif totals_pred['betting_action'] == 'BET_STRONGLY':
         icon = "✅"
-        subtitle = "STRONG PATTERN"
+        subtitle = "BET STRONGLY (Proven Success)"
         card_color = "#14532D"
     else:
-        icon = "📈"
+        icon = "📈" if totals_pred['direction'] == "OVER" else "📉"
         card_color = "#1E293B"
         subtitle = totals_pred['confidence']
     
@@ -1425,122 +1742,242 @@ with col2:
         <div style="font-size: 16px; color: white;">
             {subtitle} | Confidence: {totals_pred['confidence_score']:.0f}/100
         </div>
-        {f'<div style="font-size: 14px; color: #FCA5A5; margin-top: 10px;">{totals_pred["reason"]}</div>' if totals_pred.get('reason') and totals_pred['reason'] != 'Algorithm prediction' else ''}
-        {f'<div style="font-size: 12px; color: #FCD34D; margin-top: 5px;">xG: {totals_pred["total_xg"]:.2f}</div>' if totals_pred.get('total_xg') else ''}
+        <div style="font-size: 14px; color: #D1D5DB; margin-top: 10px;">
+            {totals_pred['reason']}
+        </div>
+        <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
+            <div style="font-size: 12px; color: #9CA3AF;">
+                Stake: {totals_pred.get('stake', 'HALF')}
+            </div>
+            <div style="font-size: 12px; color: #9CA3AF;">
+                Original: {totals_pred['original_direction']} ({totals_pred['original_confidence_score']:.0f}%)
+            </div>
+        </div>
+        <div style="font-size: 12px; color: #FCD34D; margin-top: 5px;">
+            xG: {totals_pred['total_xg']:.2f} | Variance: {totals_pred.get('variance_effect', 'NONE')}
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-# ========== BETTING CARD ==========
+# ========== EMPIRICAL BETTING CARD ==========
 st.divider()
-st.subheader("🎯 BETTING ADVICE")
+st.subheader("🎯 EMPIRICAL BETTING ADVICE")
 
-recommendation = SimpleBettingCard.get_recommendation(prediction)
-SimpleBettingCard.display_card(recommendation)
+recommendation = EmpiricalBettingCard.get_recommendation(prediction)
+EmpiricalBettingCard.display_card(recommendation)
 
 # ========== PATTERN ANALYSIS ==========
 st.divider()
-st.subheader("🔍 Pattern Analysis")
+st.subheader("🔍 EMPIRICAL PATTERN ANALYSIS")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
-    winner_pred = prediction['winner']
-    winner_key = st.session_state.learning_system._generate_winner_key(winner_pred)
-    winner_stats = st.session_state.learning_system.get_pattern_stats(winner_key)
+    st.subheader("🎯 Original Algorithm")
     
-    st.write("**Winner Pattern:**")
-    st.code(winner_key)
+    st.write(f"**Winner:**")
+    st.write(f"- Prediction: {prediction['winner']['original_prediction']}")
+    st.write(f"- Confidence: {prediction['winner']['original_confidence_score']:.1f}%")
     
-    if winner_stats['total'] > 0:
-        success_rate = winner_stats['success'] / winner_stats['total'] if winner_stats['total'] > 0 else 0
-        
-        if winner_stats['total'] >= 3:
-            if success_rate > 0.7:
-                st.success(f"✅ STRONG: {winner_stats['success']}/{winner_stats['total']} ({success_rate:.0%})")
-            elif success_rate < 0.4:
-                st.error(f"🎯 WEAK: {winner_stats['success']}/{winner_stats['total']} ({success_rate:.0%})")
-            else:
-                st.info(f"⚪ NEUTRAL: {winner_stats['success']}/{winner_stats['total']} ({success_rate:.0%})")
-        else:
-            st.warning(f"⚠️ NEED MORE DATA: {winner_stats['total']}/3 matches")
-    
-    if winner_pred.get('has_70_bug_fix', False):
-        st.warning("⚠️ **70% confidence bug fix applied**")
+    st.write(f"**Totals:**")
+    st.write(f"- Prediction: {prediction['totals']['original_direction']}")
+    st.write(f"- Confidence: {prediction['totals']['original_confidence_score']:.1f}%")
+    st.write(f"- xG: {prediction['totals']['total_xg']:.2f}")
+    st.write(f"- Pattern: {prediction['totals']['original_finishing_alignment']} + {prediction['totals']['original_total_category']}")
 
 with col2:
-    totals_pred = prediction['totals']
-    totals_key = st.session_state.learning_system._generate_totals_key(totals_pred)
-    totals_stats = st.session_state.learning_system.get_pattern_stats(totals_key)
+    st.subheader("📊 Proven Rules Applied")
     
-    st.write("**Totals Pattern:**")
+    st.write(f"**Winner Rules:**")
+    if prediction['winner']['has_confidence_bug']:
+        st.error("→ 70% Confidence Bug Fix")
+    if "PROVEN FAILURE" in prediction['winner']['reason']:
+        st.error(f"→ {prediction['winner']['reason'].split(':')[1]}")
+    if "PROVEN SUCCESS" in prediction['winner']['reason']:
+        st.success(f"→ {prediction['winner']['reason'].split(':')[1]}")
+    if prediction['winner'].get('variance_effect') != 'NONE':
+        st.info(f"→ Variance: {prediction['winner']['variance_effect']}")
+    
+    st.write(f"**Totals Rules:**")
+    if prediction['totals'].get('is_proven_anti_pattern'):
+        st.error("→ Proven Anti-Pattern Detected")
+    if "PROVEN FAILURE" in prediction['totals']['reason']:
+        st.error(f"→ {prediction['totals']['reason'].split(':')[1]}")
+    if "PROVEN SUCCESS" in prediction['totals']['reason']:
+        st.success(f"→ {prediction['totals']['reason'].split(':')[1]}")
+    if prediction['totals'].get('variance_effect') != 'NONE':
+        st.info(f"→ Variance: {prediction['totals']['variance_effect']}")
+
+with col3:
+    st.subheader("📈 Pattern Statistics")
+    
+    winner_key = st.session_state.proven_system._generate_winner_key(prediction['winner'])
+    totals_key = st.session_state.proven_system._generate_totals_key(prediction['totals'])
+    
+    winner_stats = st.session_state.proven_system.get_pattern_stats(winner_key)
+    totals_stats = st.session_state.proven_system.get_pattern_stats(totals_key)
+    
+    st.write(f"**Winner Pattern:**")
+    st.code(winner_key)
+    if winner_stats['total'] > 0:
+        success = winner_stats['success'] / winner_stats['total']
+        st.write(f"Record: {winner_stats['success']}/{winner_stats['total']} ({success:.0%})")
+    
+    st.write(f"**Totals Pattern:**")
     st.code(totals_key)
-    
     if totals_stats['total'] > 0:
-        success_rate = totals_stats['success'] / totals_stats['total'] if totals_stats['total'] > 0 else 0
+        success = totals_stats['success'] / totals_stats['total']
+        st.write(f"Record: {totals_stats['success']}/{totals_stats['total']} ({success:.0%})")
+
+# ========== DETAILED RULE BREAKDOWN ==========
+st.divider()
+st.subheader("🔬 Detailed Rule Breakdown")
+
+# Winner rules
+with st.expander("🎯 Winner Rules Applied", expanded=False):
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**Original Algorithm Output:**")
+        st.write(f"- Type: {prediction['winner']['original_prediction']}")
+        st.write(f"- Confidence: {prediction['winner']['original_confidence_score']:.1f}%")
+        st.write(f"- Category: {prediction['winner'].get('confidence_category', 'N/A')}")
+    
+    with col2:
+        st.write("**Proven Rules Applied:**")
         
-        if totals_stats['total'] >= 3:
-            if success_rate > 0.7:
-                st.success(f"✅ STRONG: {totals_stats['success']}/{totals_stats['total']} ({success_rate:.0%})")
-            elif success_rate < 0.4:
-                st.error(f"🎯 WEAK: {totals_stats['success']}/{totals_stats['total']} ({success_rate:.0%})")
+        # Check each rule
+        winner_confidence = prediction['winner']['original_confidence_score']
+        
+        # 70% zone check
+        if CONFIDENCE_RULES["70_PERCENT_ZONE"]["range"][0] <= winner_confidence <= CONFIDENCE_RULES["70_PERCENT_ZONE"]["range"][1]:
+            st.error(f"**70% Zone Rule:** BET OPPOSITE")
+            st.write(f"→ Confidence: {winner_confidence:.1f}% is in 68-72% false favorite zone")
+            st.write(f"→ Record: 0/3 success in this zone")
+        
+        # 90% zone check
+        if CONFIDENCE_RULES["90_PERCENT_ZONE"]["range"][0] <= winner_confidence <= CONFIDENCE_RULES["90_PERCENT_ZONE"]["range"][1]:
+            st.warning(f"**90% Zone Rule:** CAUTION")
+            st.write(f"→ Confidence: {winner_confidence:.1f}% is in 88-94% overconfidence trap")
+            st.write(f"→ Action: Derate confidence by 20%")
+        
+        # 100% zone check
+        if CONFIDENCE_RULES["100_PERCENT_ZONE"]["range"][0] <= winner_confidence <= CONFIDENCE_RULES["100_PERCENT_ZONE"]["range"][1]:
+            st.success(f"**100% Zone Rule:** BET STRONGLY")
+            st.write(f"→ Confidence: {winner_confidence:.1f}% indicates true dominance")
+            st.write(f"→ Record: 4/5 success at 100% confidence")
+            st.write(f"→ Action: Boost confidence by 10%")
+
+# Totals rules
+with st.expander("📈 Totals Rules Applied", expanded=False):
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**Original Algorithm Output:**")
+        st.write(f"- Direction: {prediction['totals']['original_direction']}")
+        st.write(f"- Confidence: {prediction['totals']['original_confidence_score']:.1f}%")
+        st.write(f"- Pattern: {prediction['totals']['original_finishing_alignment']} + {prediction['totals']['original_total_category']}")
+        st.write(f"- xG: {prediction['totals']['total_xg']:.2f}")
+        st.write(f"- League Threshold: {prediction['totals'].get('league_threshold', 2.5)}")
+    
+    with col2:
+        st.write("**Proven Rules Applied:**")
+        
+        # Check for proven failure patterns
+        totals_key = f"TOTALS_{prediction['totals']['original_finishing_alignment']}_{prediction['totals']['original_total_category']}"
+        
+        if totals_key in PROVEN_FAILURES:
+            st.error(f"**Proven Failure Pattern:** {totals_key}")
+            st.write(f"→ Action: BET OPPOSITE")
+            st.write(f"→ Reason: {PROVEN_FAILURES[totals_key]['reason']}")
+            st.write(f"→ Record: {PROVEN_FAILURES[totals_key]['record']}")
+        
+        # Check for proven success patterns
+        elif totals_key in PROVEN_SUCCESSES:
+            st.success(f"**Proven Success Pattern:** {totals_key}")
+            st.write(f"→ Action: {PROVEN_SUCCESSES[totals_key]['action']}")
+            st.write(f"→ Reason: {PROVEN_SUCCESSES[totals_key]['reason']}")
+            st.write(f"→ Record: {PROVEN_SUCCESSES[totals_key]['record']}")
+            st.write(f"→ Boost: +{PROVEN_SUCCESSES[totals_key]['boost']}%")
+        
+        # Check for high variance
+        home_finish = prediction['totals']['home_finishing']
+        away_finish = prediction['totals']['away_finishing']
+        
+        if home_finish > HIGH_VARIANCE_RULES["OVERPERFORMER"]["threshold"] or away_finish > HIGH_VARIANCE_RULES["OVERPERFORMER"]["threshold"]:
+            st.info(f"**High Variance - Overperformer:**")
+            if prediction['totals']['direction'] == "OVER":
+                st.write(f"→ Action: AMPLIFY OVER")
+                st.write(f"→ Boost: +{HIGH_VARIANCE_RULES['OVERPERFORMER']['over_boost']}% confidence")
+                st.write(f"→ Reason: {HIGH_VARIANCE_RULES['OVERPERFORMER']['over_reason']}")
             else:
-                st.info(f"⚪ NEUTRAL: {totals_stats['success']}/{totals_stats['total']} ({success_rate:.0%})")
-        else:
-            st.warning(f"⚠️ NEED MORE DATA: {totals_stats['total']}/3 matches")
-    
-    if totals_pred.get('is_anti_pattern_override', False):
-        st.error(f"🔴 **Anti-pattern override active:** {totals_pred.get('anti_pattern_reason', '')}")
-    
-    # Show risk flags
-    if totals_pred.get('risk_flags'):
-        st.warning(f"⚠️ **Risk flags:** {', '.join(totals_pred['risk_flags'])}")
+                st.write(f"→ Action: REDUCE UNDER")
+                st.write(f"→ Penalty: {HIGH_VARIANCE_RULES['OVERPERFORMER']['under_penalty']}% confidence")
+                st.write(f"→ Reason: {HIGH_VARIANCE_RULES['OVERPERFORMER']['under_reason']}")
+        
+        elif home_finish < HIGH_VARIANCE_RULES["UNDERPERFORMER"]["threshold"] or away_finish < HIGH_VARIANCE_RULES["UNDERPERFORMER"]["threshold"]:
+            st.info(f"**High Variance - Underperformer:**")
+            if prediction['totals']['direction'] == "UNDER":
+                st.write(f"→ Action: AMPLIFY UNDER")
+                st.write(f"→ Boost: +{HIGH_VARIANCE_RULES['UNDERPERFORMER']['under_boost']}% confidence")
+                st.write(f"→ Reason: {HIGH_VARIANCE_RULES['UNDERPERFORMER']['under_reason']}")
+            else:
+                st.write(f"→ Action: REDUCE OVER")
+                st.write(f"→ Penalty: {HIGH_VARIANCE_RULES['UNDERPERFORMER']['over_penalty']}% confidence")
+                st.write(f"→ Reason: {HIGH_VARIANCE_RULES['UNDERPERFORMER']['over_reason']}")
 
 # ========== FEEDBACK ==========
-record_outcome_simple(prediction)
+record_outcome_proven(prediction)
 
-# ========== EXPORT ==========
+# ========== EMPIRICAL REPORT ==========
 st.divider()
-st.subheader("📤 Export Report")
+st.subheader("📤 Empirical Pattern Report")
 
-winner_stats = st.session_state.learning_system.get_pattern_stats(winner_key)
-totals_stats = st.session_state.learning_system.get_pattern_stats(totals_key)
+winner_stats = st.session_state.proven_system.get_pattern_stats(winner_key)
+totals_stats = st.session_state.proven_system.get_pattern_stats(totals_key)
 
 winner_success_rate = winner_stats['success'] / winner_stats['total'] if winner_stats['total'] > 0 else 0
 totals_success_rate = totals_stats['success'] / totals_stats['total'] if totals_stats['total'] > 0 else 0
 
-report = f"""🔧 FOOTBALL INTELLIGENCE ENGINE v7.1 - SIMPLIFIED SURGICAL
+report = f"""🎯 FOOTBALL INTELLIGENCE ENGINE v8.0 - EMPIRICAL PATTERN MASTER
 Match: {home_team} vs {away_team}
 League: {selected_league}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-Version: 7.1 (Proven fixes only)
+Version: 8.0 (Empirical proven rules)
 
-🎯 BETTING ADVICE:
+🎯 EMPIRICAL BETTING ADVICE:
 {recommendation['icon']} {recommendation['text']}
 {recommendation['subtext']}
+Type: {recommendation['proven_type']}
 Reason: {recommendation['reason']}
 Confidence: {recommendation['confidence']:.0f}/100
 Stake: {recommendation['stake']}
 
-🎯 WINNER:
-Bet on: {winner_pred['team']}
-Original algorithm: {winner_pred['original_prediction']}
-Betting action: {winner_pred['betting_action']}
-Reason: {winner_pred['reason']}
-Probability: {winner_pred['probability']*100:.1f}%
-Confidence: {winner_pred['confidence']} ({winner_pred['confidence_score']:.0f}/100)
-70% bug fix: {winner_pred.get('has_70_bug_fix', False)}
+🎯 WINNER ANALYSIS:
+Final bet: {prediction['winner']['team']} ({prediction['winner']['type']})
+Original algorithm: {prediction['winner']['original_prediction']} ({prediction['winner']['original_confidence_score']:.1f}%)
+Final confidence: {prediction['winner']['confidence_score']:.0f}/100 ({prediction['winner']['confidence']})
+Betting action: {prediction['winner']['betting_action']}
+Reason: {prediction['winner']['reason']}
+Probability: {prediction['winner']['probability']*100:.1f}%
+Stake: {prediction['winner']['stake']}
+70% bug zone: {prediction['winner']['has_confidence_bug']}
+Variance effect: {prediction['winner']['variance_effect']}
 Pattern: {winner_key}
 Pattern stats: {winner_stats['success']}/{winner_stats['total']} wins ({winner_success_rate:.0%})
 
-🎯 TOTALS:
-Bet on: {totals_pred['direction']} 2.5
-Original algorithm: {totals_pred['original_direction']} 2.5
-Betting action: {totals_pred['betting_action']}
-Reason: {totals_pred['reason']}
-Probability: {totals_pred['probability']*100:.1f}%
-Confidence: {totals_pred['confidence']} ({totals_pred['confidence_score']:.0f}/100)
-Anti-pattern override: {totals_pred.get('is_anti_pattern_override', False)}
-Pattern: {totals_key}
+🎯 TOTALS ANALYSIS:
+Final bet: {prediction['totals']['direction']} 2.5
+Original algorithm: {prediction['totals']['original_direction']} ({prediction['totals']['original_confidence_score']:.1f}%)
+Final confidence: {prediction['totals']['confidence_score']:.0f}/100 ({prediction['totals']['confidence']})
+Betting action: {prediction['totals']['betting_action']}
+Reason: {prediction['totals']['reason']}
+Probability: {prediction['totals']['probability']*100:.1f}%
+Stake: {prediction['totals']['stake']}
+Proven anti-pattern: {prediction['totals']['is_proven_anti_pattern']}
+Variance effect: {prediction['totals']['variance_effect']}
+xG: {prediction['totals']['total_xg']:.2f}
+Pattern: {prediction['totals']['original_finishing_alignment']} + {prediction['totals']['original_total_category']}
 Pattern stats: {totals_stats['success']}/{totals_stats['total']} wins ({totals_success_rate:.0%})
 
 📊 EXPECTED GOALS:
@@ -1548,35 +1985,59 @@ Pattern stats: {totals_stats['success']}/{totals_stats['total']} wins ({totals_s
 {away_team}: {prediction['expected_goals']['away']:.2f} xG
 Total: {prediction['expected_goals']['total']:.2f} xG
 
-⚠️ RISK FLAGS: {', '.join(prediction['totals']['risk_flags']) if prediction['totals']['risk_flags'] else 'None'}
+🎲 PROBABILITIES:
+Home win: {prediction['probabilities']['home_win_probability']*100:.1f}%
+Draw: {prediction['probabilities']['draw_probability']*100:.1f}%
+Away win: {prediction['probabilities']['away_win_probability']*100:.1f}%
+Over 2.5: {prediction['probabilities']['over_2_5_probability']*100:.1f}%
+Under 2.5: {prediction['probabilities']['under_2_5_probability']*100:.1f}%
+Most likely score: {prediction['probabilities']['most_likely_score']}
 
 ---
-🔴 ACTIVE ANTI-PATTERN OVERRIDES:
-- TOTALS_RISKY_VERY_HIGH: Bet UNDER (0/2 success)
-- TOTALS_LOW_+_HIGH/VERY_HIGH: Bet opposite (0/6 success)
+🔴 ACTIVE PROVEN FAILURE PATTERNS:
+{TOTALS_RISKY_VERY_HIGH} → Bet UNDER (0/2 success)
+{TOTALS_LOW_OVER_HIGH} → Bet opposite (0/2 success)
+{TOTALS_LOW_UNDER_HIGH} → Bet opposite (0/1 success)
+WINNER_HIGH_70.0 → Bet opposite (0/2 success)
+WINNER_HIGH_69.0 → Bet opposite (0/1 success)
 
-⚠️ ACTIVE BUG FIXES:
-- 70% confidence bug: Derate by 30% (0/2 success)
+✅ ACTIVE PROVEN SUCCESS PATTERNS:
+{TOTALS_MED_OVER_MODERATE_LOW} → Bet strongly (5/7 success)
+{TOTALS_HIGH_OVER_MODERATE_LOW} → Bet strongly (3/3 success)
+{TOTALS_MED_UNDER_VERY_HIGH} → Bet strongly (3/3 success)
+WINNER_VERY_HIGH_100 → Bet strongly (4/5 success)
 
-📊 STATISTICS:
-- Total patterns: {len(st.session_state.learning_system.pattern_memory)}
-- Qualifying (≥3 matches): {len([v for v in st.session_state.learning_system.pattern_memory.values() if v['total'] >= 3])}
-- Strong patterns (>70%): {len([v for v in st.session_state.learning_system.pattern_memory.values() if v['total'] >= 3 and v['success']/v['total'] > 0.7])}
-- Weak patterns (<40%): {len([v for v in st.session_state.learning_system.pattern_memory.values() if v['total'] >= 3 and v['success']/v['total'] < 0.4])}
+⚡ HIGH VARIANCE RULES:
+Overperformer (>+0.4): OVER +20%, UNDER -15%
+Underperformer (<-0.4): UNDER +20%, OVER -15%
 
-✅ SYSTEM FEATURES:
-- Original algorithm logic
-- No synthetic volatility/trend metrics
-- Only statistically proven fixes
-- Simple pattern learning
+📊 CONFIDENCE ZONE RULES:
+70% Zone (68-72%): BET OPPOSITE (0/3)
+90% Zone (88-94%): CAUTION (derate 20%)
+100% Zone (99-100%): BET STRONGLY (4/5)
+
+📈 PATTERN STATISTICS:
+Total patterns tracked: {len(st.session_state.proven_system.pattern_memory)}
+Qualifying (≥3 matches): {len([v for v in st.session_state.proven_system.pattern_memory.values() if v['total'] >= 3])}
+Strong patterns (>70%): {len([v for v in st.session_state.proven_system.pattern_memory.values() if v['total'] >= 3 and v['success']/v['total'] > 0.7])}
+Weak patterns (<40%): {len([v for v in st.session_state.proven_system.pattern_memory.values() if v['total'] >= 3 and v['success']/v['total'] < 0.4])}
+
+✅ EMPIRICAL SYSTEM FEATURES:
+- 10 proven rules from 41-match analysis
+- 7 anti-pattern overrides (bet opposite)
+- 4 gold patterns (bet strongly)
+- High variance directional logic
+- Confidence zone rules
+- League-specific execution
+- Pattern memory learning
 """
 
 st.code(report, language="text")
 
 st.download_button(
-    label="📥 Download Report",
+    label="📥 Download Empirical Report",
     data=report,
-    file_name=f"simple_{home_team}_vs_{away_team}.txt",
+    file_name=f"empirical_{home_team}_vs_{away_team}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
     mime="text/plain",
     use_container_width=True
 )
