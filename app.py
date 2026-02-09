@@ -836,7 +836,9 @@ class TotalsPredictor:
             'home_finishing': home_finish,
             'away_finishing': away_finish,
             'league_threshold': over_threshold,
-            'is_proven_anti_pattern': "PROVEN_ANTI_PATTERN" in risk_flags
+            'is_proven_anti_pattern': "PROVEN_ANTI_PATTERN" in risk_flags,
+            'home_finish_value': home_finish,
+            'away_finish_value': away_finish
         }
 
 # ========== ORIGINAL PROBABILITY ENGINE ==========
@@ -941,8 +943,8 @@ class ProvenFootballEngine:
         betting_advice = st.session_state.proven_system.get_proven_advice(
             winner_prediction, 
             totals_prediction,
-            totals_prediction['home_finishing'],
-            totals_prediction['away_finishing'],
+            totals_prediction['home_finish_value'],
+            totals_prediction['away_finish_value'],
             self.league_name
         )
         
@@ -959,7 +961,8 @@ class ProvenFootballEngine:
         winner_prob = self._get_probability_for_winner(final_winner, probabilities)
         totals_prob = self._get_probability_for_totals(final_totals, probabilities)
         
-        return {
+        # Create the final prediction dictionary
+        prediction_dict = {
             'home_team': home_team,
             'away_team': away_team,
             'winner': {
@@ -999,7 +1002,10 @@ class ProvenFootballEngine:
                 'stake': betting_advice['totals']['stake'],
                 'color': self._get_color_for_action(betting_advice['totals']['action']),
                 'is_proven_anti_pattern': totals_prediction.get('is_proven_anti_pattern', False),
-                'variance_effect': betting_advice['totals'].get('variance_effect', 'NONE')
+                'variance_effect': betting_advice['totals'].get('variance_effect', 'NONE'),
+                # CRITICAL FIX: Include the finishing values
+                'home_finishing': totals_prediction['home_finish_value'],
+                'away_finishing': totals_prediction['away_finish_value']
             },
             
             'probabilities': probabilities,
@@ -1008,6 +1014,8 @@ class ProvenFootballEngine:
             'version': '8.0_proven',
             'league': self.league_name
         }
+        
+        return prediction_dict
     
     def _apply_advice_to_winner(self, original, advice, home_team, away_team):
         """Apply advice to winner"""
@@ -1868,7 +1876,7 @@ with st.expander("🎯 Winner Rules Applied", expanded=False):
             st.write(f"→ Record: 4/5 success at 100% confidence")
             st.write(f"→ Action: Boost confidence by 10%")
 
-# Totals rules - FIXED VERSION
+# Totals rules
 with st.expander("📈 Totals Rules Applied", expanded=False):
     col1, col2 = st.columns(2)
     
@@ -1900,13 +1908,14 @@ with st.expander("📈 Totals Rules Applied", expanded=False):
             st.write(f"→ Record: {PROVEN_SUCCESSES[totals_key]['record']}")
             st.write(f"→ Boost: +{PROVEN_SUCCESSES[totals_key]['boost']}%")
         
-        # Check for high variance - SAFELY access home_finishing
-        # Use .get() method with default value to avoid KeyError
+        # Check for high variance - NOW THIS WILL WORK!
         home_finish = prediction['totals'].get('home_finishing', 0)
         away_finish = prediction['totals'].get('away_finishing', 0)
         
         if home_finish > HIGH_VARIANCE_RULES["OVERPERFORMER"]["threshold"] or away_finish > HIGH_VARIANCE_RULES["OVERPERFORMER"]["threshold"]:
             st.info(f"**High Variance - Overperformer:**")
+            st.write(f"→ Home finishing: {home_finish:.2f}")
+            st.write(f"→ Away finishing: {away_finish:.2f}")
             if prediction['totals']['direction'] == "OVER":
                 st.write(f"→ Action: AMPLIFY OVER")
                 st.write(f"→ Boost: +{HIGH_VARIANCE_RULES['OVERPERFORMER']['over_boost']}% confidence")
@@ -1918,6 +1927,8 @@ with st.expander("📈 Totals Rules Applied", expanded=False):
         
         elif home_finish < HIGH_VARIANCE_RULES["UNDERPERFORMER"]["threshold"] or away_finish < HIGH_VARIANCE_RULES["UNDERPERFORMER"]["threshold"]:
             st.info(f"**High Variance - Underperformer:**")
+            st.write(f"→ Home finishing: {home_finish:.2f}")
+            st.write(f"→ Away finishing: {away_finish:.2f}")
             if prediction['totals']['direction'] == "UNDER":
                 st.write(f"→ Action: AMPLIFY UNDER")
                 st.write(f"→ Boost: +{HIGH_VARIANCE_RULES['UNDERPERFORMER']['under_boost']}% confidence")
@@ -1926,11 +1937,6 @@ with st.expander("📈 Totals Rules Applied", expanded=False):
                 st.write(f"→ Action: REDUCE OVER")
                 st.write(f"→ Penalty: {HIGH_VARIANCE_RULES['UNDERPERFORMER']['over_penalty']}% confidence")
                 st.write(f"→ Reason: {HIGH_VARIANCE_RULES['UNDERPERFORMER']['over_reason']}")
-        
-        # Also show the actual finishing values for transparency
-        st.write(f"**Finishing Stats:**")
-        st.write(f"→ Home: {home_finish:.3f} goals vs xG")
-        st.write(f"→ Away: {away_finish:.3f} goals vs xG")
 
 # ========== FEEDBACK ==========
 record_outcome_proven(prediction)
@@ -1984,6 +1990,8 @@ Proven anti-pattern: {prediction['totals']['is_proven_anti_pattern']}
 Variance effect: {prediction['totals']['variance_effect']}
 xG: {prediction['totals']['total_xg']:.2f}
 Pattern: {prediction['totals']['original_finishing_alignment']} + {prediction['totals']['original_total_category']}
+Home finishing: {prediction['totals'].get('home_finishing', 0):.2f}
+Away finishing: {prediction['totals'].get('away_finishing', 0):.2f}
 Pattern stats: {totals_stats['success']}/{totals_stats['total']} wins ({totals_success_rate:.0%})
 
 📊 EXPECTED GOALS:
@@ -2001,16 +2009,16 @@ Most likely score: {prediction['probabilities']['most_likely_score']}
 
 ---
 🔴 ACTIVE PROVEN FAILURE PATTERNS:
-{TOTALS_RISKY_VERY_HIGH} → Bet UNDER (0/2 success)
-{TOTALS_LOW_OVER_HIGH} → Bet opposite (0/2 success)
-{TOTALS_LOW_UNDER_HIGH} → Bet opposite (0/1 success)
+TOTALS_RISKY_VERY_HIGH → Bet UNDER (0/2 success)
+TOTALS_LOW_OVER_HIGH → Bet opposite (0/2 success)
+TOTALS_LOW_UNDER_HIGH → Bet opposite (0/1 success)
 WINNER_HIGH_70.0 → Bet opposite (0/2 success)
 WINNER_HIGH_69.0 → Bet opposite (0/1 success)
 
 ✅ ACTIVE PROVEN SUCCESS PATTERNS:
-{TOTALS_MED_OVER_MODERATE_LOW} → Bet strongly (5/7 success)
-{TOTALS_HIGH_OVER_MODERATE_LOW} → Bet strongly (3/3 success)
-{TOTALS_MED_UNDER_VERY_HIGH} → Bet strongly (3/3 success)
+TOTALS_MED_OVER_MODERATE_LOW → Bet strongly (5/7 success)
+TOTALS_HIGH_OVER_MODERATE_LOW → Bet strongly (3/3 success)
+TOTALS_MED_UNDER_VERY_HIGH → Bet strongly (3/3 success)
 WINNER_VERY_HIGH_100 → Bet strongly (4/5 success)
 
 ⚡ HIGH VARIANCE RULES:
