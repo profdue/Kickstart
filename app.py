@@ -728,7 +728,7 @@ class WinnerPredictor:
         }
 
 class TotalsPredictor:
-    """ORIGINAL totals prediction with empirical overrides"""
+    """ORIGINAL totals prediction with empirical overrides - NOW WITH THE FIX"""
     
     def __init__(self, league_name):
         self.league_name = league_name
@@ -811,17 +811,25 @@ class TotalsPredictor:
             return "VERY_LOW"
     
     def predict_totals(self, home_xg, away_xg, home_stats, away_stats):
-        """Predict totals with original logic"""
+        """Predict totals with original logic - FIXED VERSION"""
         total_xg = home_xg + away_xg
         home_finish = home_stats['goals_vs_xg_pm']
         away_finish = away_stats['goals_vs_xg_pm']
         
-        over_threshold = self.league_adjustments['over_threshold']
-        base_direction = "OVER" if total_xg > over_threshold else "UNDER"
+        # ========== THE FIX ==========
+        # Apply finishing impact to adjust xG BEFORE making decision
+        finishing_impact = (home_finish + away_finish) * 0.6
+        adjusted_xg = total_xg * (1 + finishing_impact)
         
-        # ORIGINAL finishing alignment
+        over_threshold = self.league_adjustments['over_threshold']
+        
+        # Use ADJUSTED xG for the decision (not raw xG)
+        base_direction = "OVER" if adjusted_xg > over_threshold else "UNDER"
+        # ========== END FIX ==========
+        
+        # ORIGINAL finishing alignment (unchanged)
         finishing_alignment = self.get_finishing_alignment(home_finish, away_finish)
-        total_category = self.categorize_total_xg(total_xg)
+        total_category = self.categorize_total_xg(total_xg)  # Note: Still use raw xG for category
         
         # Store original values
         original_direction = base_direction
@@ -835,10 +843,10 @@ class TotalsPredictor:
         if abs(home_finish) > 0.4 or abs(away_finish) > 0.4:
             risk_flags.append("HIGH_VARIANCE_TEAM")
         
-        # CLOSE TO THRESHOLD flag
+        # CLOSE TO THRESHOLD flag - Now using ADJUSTED xG
         lower_thresh = self.league_adjustments['under_threshold'] - 0.1
         upper_thresh = self.league_adjustments['over_threshold'] + 0.1
-        if lower_thresh < total_xg < upper_thresh:
+        if lower_thresh < adjusted_xg < upper_thresh:
             risk_flags.append("CLOSE_TO_THRESHOLD")
         
         # Check for proven anti-patterns (these will be overridden later)
@@ -870,10 +878,13 @@ class TotalsPredictor:
         else:
             confidence_category = "VERY LOW"
         
+        # Include adjusted_xg in the output for debugging
         return {
             'direction': base_direction,
             'original_direction': base_direction,
             'total_xg': total_xg,
+            'adjusted_xg': adjusted_xg,  # NEW: for debugging
+            'finishing_impact': finishing_impact,  # NEW: for debugging
             'confidence': confidence_category,
             'confidence_score': base_confidence,
             'finishing_alignment': finishing_alignment,
@@ -1039,6 +1050,8 @@ class ProvenFootballEngine:
                 'confidence': self._get_confidence_category(final_totals['confidence']),
                 'confidence_score': final_totals['confidence'],
                 'total_xg': totals_prediction['total_xg'],
+                'adjusted_xg': totals_prediction.get('adjusted_xg', totals_prediction['total_xg']),  # NEW
+                'finishing_impact': totals_prediction.get('finishing_impact', 0),  # NEW
                 'finishing_alignment': totals_prediction['finishing_alignment'],
                 'original_finishing_alignment': totals_prediction['original_finishing_alignment'],
                 'total_category': totals_prediction['total_category'],
@@ -1826,9 +1839,12 @@ with col2:
             <div style="font-size: 12px; color: #9CA3AF;">
                 Original: {totals_pred['original_direction']} ({totals_pred['original_confidence_score']:.0f}%)
             </div>
+            <div style="font-size: 12px; color: #60A5FA;">
+                Adj. xG: {totals_pred.get('adjusted_xg', totals_pred['total_xg']):.2f}
+            </div>
         </div>
         <div style="font-size: 12px; color: #FCD34D; margin-top: 5px;">
-            xG: {totals_pred['total_xg']:.2f} | Variance: {totals_pred.get('variance_effect', 'NONE')}
+            Raw xG: {totals_pred['total_xg']:.2f} | Impact: {totals_pred.get('finishing_impact', 0):.1%} | Variance: {totals_pred.get('variance_effect', 'NONE')}
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1856,7 +1872,8 @@ with col1:
     st.write(f"**Totals:**")
     st.write(f"- Prediction: {prediction['totals']['original_direction']}")
     st.write(f"- Confidence: {prediction['totals']['original_confidence_score']:.1f}%")
-    st.write(f"- xG: {prediction['totals']['total_xg']:.2f}")
+    st.write(f"- Raw xG: {prediction['totals']['total_xg']:.2f}")
+    st.write(f"- Adj. xG: {prediction['totals'].get('adjusted_xg', prediction['totals']['total_xg']):.2f}")
     st.write(f"- Pattern: {prediction['totals']['original_finishing_alignment']} + {prediction['totals']['original_total_category']}")
 
 with col2:
@@ -1948,14 +1965,27 @@ with st.expander("📈 Totals Rules Applied", expanded=False):
     
     with col1:
         st.write("**Original Algorithm Output:**")
-        st.write(f"- Direction: {prediction['totals']['original_direction']}")
-        st.write(f"- Confidence: {prediction['totals']['original_confidence_score']:.1f}%")
+        st.write(f"- Raw xG: {prediction['totals']['total_xg']:.2f}")
+        st.write(f"- Adj. xG: {prediction['totals'].get('adjusted_xg', prediction['totals']['total_xg']):.2f}")
+        st.write(f"- Finishing Impact: {prediction['totals'].get('finishing_impact', 0):.1%}")
+        st.write(f"- Original Direction: {prediction['totals']['original_direction']}")
         st.write(f"- Pattern: {prediction['totals']['original_finishing_alignment']} + {prediction['totals']['original_total_category']}")
-        st.write(f"- xG: {prediction['totals']['total_xg']:.2f}")
         st.write(f"- League Threshold: {prediction['totals'].get('league_threshold', 2.5)}")
     
     with col2:
         st.write("**Proven Rules Applied:**")
+        
+        # Show the finishing adjustment calculation
+        home_finish = prediction['totals'].get('home_finishing', 0)
+        away_finish = prediction['totals'].get('away_finishing', 0)
+        
+        st.write(f"**Finishing Adjustment:**")
+        st.write(f"→ Home finishing: {home_finish:.2f}")
+        st.write(f"→ Away finishing: {away_finish:.2f}")
+        st.write(f"→ Total: {home_finish + away_finish:.2f}")
+        st.write(f"→ Impact factor: ×0.6 = {(home_finish + away_finish) * 0.6:.2f}")
+        st.write(f"→ Raw xG: {prediction['totals']['total_xg']:.2f}")
+        st.write(f"→ Adj. xG: {prediction['totals'].get('adjusted_xg', prediction['totals']['total_xg']):.2f}")
         
         # Check for proven failure patterns
         totals_key = f"TOTALS_{prediction['totals']['original_finishing_alignment']}_{prediction['totals']['original_total_category']}"
@@ -1974,10 +2004,7 @@ with st.expander("📈 Totals Rules Applied", expanded=False):
             st.write(f"→ Record: {PROVEN_SUCCESSES[totals_key]['record']}")
             st.write(f"→ Boost: +{PROVEN_SUCCESSES[totals_key]['boost']}%")
         
-        # Check for high variance - NOW THIS WILL WORK!
-        home_finish = prediction['totals'].get('home_finishing', 0)
-        away_finish = prediction['totals'].get('away_finishing', 0)
-        
+        # Check for high variance
         if home_finish > HIGH_VARIANCE_RULES["OVERPERFORMER"]["threshold"] or away_finish > HIGH_VARIANCE_RULES["OVERPERFORMER"]["threshold"]:
             st.info(f"**High Variance - Overperformer:**")
             st.write(f"→ Home finishing: {home_finish:.2f}")
@@ -1988,7 +2015,7 @@ with st.expander("📈 Totals Rules Applied", expanded=False):
                 st.write(f"→ Reason: {HIGH_VARIANCE_RULES['OVERPERFORMER']['over_reason']}")
             else:
                 st.write(f"→ Action: REDUCE UNDER")
-                st.write(f"→ Penalty: {HIGH_VARIANCE_RULES['OVERPERFORMER']['under_penalty']}% confidence")
+                st.write(f"→ Penalty: {HIGH_VARIANCE_RULES['OVERPERformer']['under_penalty']}% confidence")
                 st.write(f"→ Reason: {HIGH_VARIANCE_RULES['OVERPERFORMER']['under_reason']}")
         
         elif home_finish < HIGH_VARIANCE_RULES["UNDERPERFORMER"]["threshold"] or away_finish < HIGH_VARIANCE_RULES["UNDERPERFORMER"]["threshold"]:
@@ -2054,7 +2081,9 @@ Probability: {prediction['totals']['probability']*100:.1f}%
 Stake: {prediction['totals']['stake']}
 Proven anti-pattern: {prediction['totals']['is_proven_anti_pattern']}
 Variance effect: {prediction['totals']['variance_effect']}
-xG: {prediction['totals']['total_xg']:.2f}
+Raw xG: {prediction['totals']['total_xg']:.2f}
+Adj. xG: {prediction['totals'].get('adjusted_xg', prediction['totals']['total_xg']):.2f}
+Finishing Impact: {prediction['totals'].get('finishing_impact', 0):.1%}
 Pattern: {prediction['totals']['original_finishing_alignment']} + {prediction['totals']['original_total_category']}
 Home finishing: {prediction['totals'].get('home_finishing', 0):.2f}
 Away finishing: {prediction['totals'].get('away_finishing', 0):.2f}
