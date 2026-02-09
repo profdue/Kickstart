@@ -217,9 +217,8 @@ class SurgicalLearningSystem:
     
     def standardize_pattern_key(self, pattern_key):
         """Standardize pattern keys - remove .0 decimals"""
-        if not pattern_key or pattern_key is None:
-            return {'total': 0, 'success': 0}
-        return self.pattern_memory.get(pattern_key, {'total': 0, 'success': 0})
+        if not pattern_key:
+            return pattern_key
         
         parts = pattern_key.split('_')
         if len(parts) >= 3:
@@ -286,53 +285,59 @@ class SurgicalLearningSystem:
             'save_success': save_success
         }, "Outcome recorded with surgical precision!"
     
-def generate_standardized_keys(self, prediction):
-    """Generate standardized pattern keys with robust fallback logic"""
-    try:
-        winner_pred = prediction.get('winner', {})
-        totals_pred = prediction.get('totals', {})
-        
-        # Winner key with robust fallbacks
-        orig_pred = winner_pred.get('original_prediction', 
-                                   winner_pred.get('type', 
-                                                   winner_pred.get('prediction', 'UNKNOWN')))
-        
-        # Handle confidence with multiple fallbacks
-        orig_conf = winner_pred.get('original_confidence', 
-                                   winner_pred.get('confidence', '50.0'))
-        if isinstance(orig_conf, (int, float)):
-            orig_conf = str(float(orig_conf))
-        elif not isinstance(orig_conf, str):
-            orig_conf = '50.0'
-        
-        # Remove .0 decimal if present
-        if orig_conf.endswith('.0'):
-            orig_conf = orig_conf[:-2]
-        
-        winner_key = f"WINNER_{orig_pred}_{orig_conf}"
-        winner_key = self.standardize_pattern_key(winner_key)
-        
-        # Totals key with robust fallbacks
-        finishing = totals_pred.get('original_finishing_alignment', 
-                                  totals_pred.get('finishing_alignment',
-                                                 totals_pred.get('alignment', 'NEUTRAL')))
-        if finishing.endswith("_OVERRIDDEN"):
-            finishing = finishing[:-11]
-        
-        total_cat = totals_pred.get('original_total_category', 
-                                   totals_pred.get('total_category',
-                                                  totals_pred.get('category', 'MODERATE_LOW')))
-        
-        totals_key = f"TOTALS_{finishing}_{total_cat}"
-        totals_key = self.standardize_pattern_key(totals_key)
-        
-        return winner_key, totals_key
-        
-    except Exception as e:
-        # If anything fails, return default keys
-        st.error(f"Error generating pattern keys: {e}")
-        return "WINNER_UNKNOWN_50", "TOTALS_NEUTRAL_MODERATE_LOW"
+    def generate_standardized_keys(self, prediction):
+        """Generate standardized pattern keys with robust fallback logic"""
+        try:
+            winner_pred = prediction.get('winner', {})
+            totals_pred = prediction.get('totals', {})
+            
+            # Winner key with robust fallbacks
+            orig_pred = winner_pred.get('original_prediction', 
+                                       winner_pred.get('type', 
+                                                       winner_pred.get('prediction', 'UNKNOWN')))
+            
+            # Handle confidence with multiple fallbacks
+            orig_conf = winner_pred.get('original_confidence', 
+                                       winner_pred.get('confidence', '50.0'))
+            if isinstance(orig_conf, (int, float)):
+                orig_conf = str(float(orig_conf))
+            elif not isinstance(orig_conf, str):
+                orig_conf = '50.0'
+            
+            # Remove .0 decimal if present
+            if orig_conf.endswith('.0'):
+                orig_conf = orig_conf[:-2]
+            
+            winner_key = f"WINNER_{orig_pred}_{orig_conf}"
+            winner_key = self.standardize_pattern_key(winner_key)
+            
+            # Totals key with robust fallbacks
+            finishing = totals_pred.get('original_finishing_alignment', 
+                                      totals_pred.get('finishing_alignment',
+                                                     totals_pred.get('alignment', 'NEUTRAL')))
+            if finishing.endswith("_OVERRIDDEN"):
+                finishing = finishing[:-11]
+            
+            total_cat = totals_pred.get('original_total_category', 
+                                       totals_pred.get('total_category',
+                                                      totals_pred.get('category', 'MODERATE_LOW')))
+            
+            totals_key = f"TOTALS_{finishing}_{total_cat}"
+            totals_key = self.standardize_pattern_key(totals_key)
+            
+            return winner_key, totals_key
+            
+        except Exception as e:
+            # If anything fails, return default keys
+            return "WINNER_UNKNOWN_50", "TOTALS_NEUTRAL_MODERATE_LOW"
     
+    def get_pattern_stats(self, pattern_key):
+        """Get stats for a pattern with None handling"""
+        if not pattern_key or pattern_key is None:
+            return {'total': 0, 'success': 0}
+        return self.pattern_memory.get(pattern_key, {'total': 0, 'success': 0})
+    
+    # THIS IS THE CRITICAL METHOD THAT WAS MISSING OR NAMED DIFFERENTLY
     def get_surgical_advice(self, winner_pred, totals_pred):
         """APPLY SURGICAL RULES with anti-pattern overrides"""
         
@@ -345,14 +350,14 @@ def generate_standardized_keys(self, prediction):
         advice = {
             'winner': {
                 'action': 'FOLLOW', 
-                'bet_on': winner_pred['type'], 
-                'confidence': winner_pred['confidence_score'],
-                'original_confidence': winner_pred.get('original_confidence', winner_pred['confidence'])
+                'bet_on': winner_pred.get('type', 'UNKNOWN'), 
+                'confidence': winner_pred.get('confidence_score', 50),
+                'original_confidence': winner_pred.get('original_confidence', winner_pred.get('confidence', '50.0'))
             },
             'totals': {
                 'action': 'FOLLOW', 
-                'bet_on': totals_pred['direction'], 
-                'confidence': totals_pred['confidence_score'],
+                'bet_on': totals_pred.get('direction', 'OVER'), 
+                'confidence': totals_pred.get('confidence_score', 50),
                 'volatility': totals_pred.get('volatility_score', 0.5),
                 'trend': totals_pred.get('trend_score', 0)
             }
@@ -373,20 +378,26 @@ def generate_standardized_keys(self, prediction):
             rule = ANTI_PATTERNS[anti_pattern_key]
             if rule['action'] == 'BET_OPPOSITE':
                 advice['totals']['action'] = 'BET_OPPOSITE'
-                advice['totals']['bet_on'] = 'UNDER' if totals_pred['direction'] == 'OVER' else 'OVER'
+                advice['totals']['bet_on'] = 'UNDER' if totals_pred.get('direction') == 'OVER' else 'OVER'
                 advice['totals']['confidence'] = rule['confidence']
                 advice['totals']['reason'] = f"🎯 ANTI-PATTERN: {rule['reason']}"
                 advice['totals']['color'] = '#DC2626'
             elif rule['action'] == 'DERATE':
                 advice['totals']['action'] = 'REDUCED_STAKE'
-                advice['totals']['confidence'] = totals_pred['confidence_score'] * rule.get('confidence_multiplier', 0.7)
+                advice['totals']['confidence'] = totals_pred.get('confidence_score', 50) * rule.get('confidence_multiplier', 0.7)
                 advice['totals']['reason'] = f"⚠️ DERATED: {rule['reason']}"
+                advice['totals']['color'] = '#F59E0B'
+            elif rule['action'] == 'CAUTION':
+                advice['totals']['action'] = 'REDUCED_STAKE'
+                advice['totals']['confidence'] = totals_pred.get('confidence_score', 50) * rule.get('confidence_reduction', 0.7)
+                advice['totals']['reason'] = f"⚠️ CAUTION: {rule['reason']}"
                 advice['totals']['color'] = '#F59E0B'
         
         # 2. Check for 70% confidence bug in winner
-        if winner_pred['confidence'] == "HIGH" and 68 <= winner_pred['confidence_score'] <= 72:
+        winner_confidence = winner_pred.get('confidence_score', 50)
+        if winner_pred.get('confidence') == "HIGH" and 68 <= winner_confidence <= 72:
             advice['winner']['action'] = 'DERATED'
-            advice['winner']['confidence'] = winner_pred['confidence_score'] * 0.7
+            advice['winner']['confidence'] = winner_confidence * 0.7
             advice['winner']['reason'] = "🎯 70% CONFIDENCE BUG: Derating by 30%"
             advice['winner']['color'] = '#DC2626'
         
@@ -404,7 +415,7 @@ def generate_standardized_keys(self, prediction):
         if trend < self.thresholds['negative_trend_cutoff']:
             if advice['totals']['action'] in ['FOLLOW', 'REDUCED_STAKE']:
                 advice['totals']['action'] = 'BET_OPPOSITE'
-                advice['totals']['bet_on'] = 'UNDER' if totals_pred['direction'] == 'OVER' else 'OVER'
+                advice['totals']['bet_on'] = 'UNDER' if totals_pred.get('direction') == 'OVER' else 'OVER'
                 advice['totals']['confidence'] = 75
                 advice['totals']['reason'] = f"📉 NEGATIVE TREND: {trend:.2f} - Betting opposite"
                 advice['totals']['color'] = '#DC2626'
@@ -419,13 +430,13 @@ def generate_standardized_keys(self, prediction):
                 stats = self.pattern_memory[pattern_key]
                 
                 if stats['total'] >= self.thresholds['min_matches']:
-                    success_rate = stats['success'] / stats['total']
+                    success_rate = stats['success'] / stats['total'] if stats['total'] > 0 else 0
                     
                     # Only apply historical rules if not already overridden by anti-patterns
                     if market_type == 'winner' and advice['winner'].get('action') not in ['DERATED', 'BET_OPPOSITE']:
                         if success_rate > self.thresholds['strong_success']:
                             advice[market_type]['action'] = 'BET_STRONGLY'
-                            advice[market_type]['confidence'] = min(95, original['confidence_score'] * 1.3)
+                            advice[market_type]['confidence'] = min(95, original.get('confidence_score', 50) * 1.3)
                             advice[market_type]['reason'] = f"✅ STRONG: {stats['success']}/{stats['total']} ({success_rate:.0%})"
                             advice[market_type]['color'] = '#10B981'
                         
@@ -434,9 +445,9 @@ def generate_standardized_keys(self, prediction):
                             advice[market_type]['confidence'] = 85
                             # Determine opposite
                             if market_type == 'winner':
-                                if original['type'] == 'HOME':
+                                if original.get('type') == 'HOME':
                                     advice[market_type]['bet_on'] = 'AWAY'
-                                elif original['type'] == 'AWAY':
+                                elif original.get('type') == 'AWAY':
                                     advice[market_type]['bet_on'] = 'HOME'
                                 else:
                                     advice[market_type]['bet_on'] = 'DRAW'
@@ -446,14 +457,14 @@ def generate_standardized_keys(self, prediction):
                     if market_type == 'totals' and advice['totals'].get('action') not in ['BET_OPPOSITE', 'REDUCED_STAKE']:
                         if success_rate > self.thresholds['strong_success']:
                             advice[market_type]['action'] = 'BET_STRONGLY'
-                            advice[market_type]['confidence'] = min(95, original['confidence_score'] * 1.3)
+                            advice[market_type]['confidence'] = min(95, original.get('confidence_score', 50) * 1.3)
                             advice[market_type]['reason'] = f"✅ STRONG: {stats['success']}/{stats['total']} ({success_rate:.0%})"
                             advice[market_type]['color'] = '#10B981'
                         
                         elif success_rate < self.thresholds['weak_success']:
                             advice[market_type]['action'] = 'BET_OPPOSITE'
                             advice[market_type]['confidence'] = 85
-                            advice[market_type]['bet_on'] = 'UNDER' if original['direction'] == 'OVER' else 'OVER'
+                            advice[market_type]['bet_on'] = 'UNDER' if original.get('direction') == 'OVER' else 'OVER'
                             advice[market_type]['reason'] = f"🎯 WEAK: {stats['success']}/{stats['total']} ({success_rate:.0%}) → BET OPPOSITE!"
                             advice[market_type]['color'] = '#DC2626'
         
