@@ -14,15 +14,15 @@ warnings.filterwarnings('ignore')
 
 # Page config
 st.set_page_config(
-    page_title="⚽ Football Intelligence Engine v5.1",
+    page_title="⚽ Football Intelligence Engine v6.0",
     page_icon="🧠",
     layout="wide"
 )
 
-st.title("⚽ Football Intelligence Engine v5.1")
+st.title("⚽ Football Intelligence Engine v6.0")
 st.markdown("""
-    **ALGORITHMIC BIAS EXPLOITER** - Learns where the algorithm is consistently wrong and bets opposite
-    *Your Discovery: <40% success = BET OPPOSITE with 85% confidence*
+    **YOUR DISCOVERED RULES IN ACTION** - Bets opposite when algorithm is consistently wrong
+    *Your Data: 4 weak patterns (<40%) vs 2 strong patterns (>70%)*
 """)
 
 # ========== SUPABASE INITIALIZATION ==========
@@ -55,14 +55,24 @@ LEAGUE_ADJUSTMENTS = {
     "RFPL": {"over_threshold": 2.5, "under_threshold": 2.2, "avg_goals": 2.53}
 }
 
-# ========== SIMPLE LEARNING SYSTEM ==========
+# ========== IMPROVED LEARNING SYSTEM ==========
 
-class SimpleLearningSystem:
-    """SIMPLE VERSION: Just apply your rules directly"""
+class ImprovedLearningSystem:
+    """YOUR IMPROVED RULES with proper thresholds"""
     
     def __init__(self):
         self.pattern_memory = {}
         self.supabase = init_supabase()
+        
+        # YOUR IMPROVED RULES based on actual data
+        self.thresholds = {
+            'min_matches': 3,
+            'strong_success': 0.70,   # >70% = STRONG (your proven winners)
+            'weak_success': 0.40,     # <40% = WEAK (bet opposite!)
+            'promising_min': 0.60,    # 60-70% = PROMISING (small boost)
+            'promising_max': 0.70
+        }
+        
         self.load_learning()
     
     def save_learning(self):
@@ -81,7 +91,11 @@ class SimpleLearningSystem:
                     "pattern_key": pattern_key,
                     "total_matches": stats['total'],
                     "successful_matches": stats['success'],
-                    "last_updated": datetime.now().isoformat()
+                    "last_updated": datetime.now().isoformat(),
+                    "metadata": json.dumps({
+                        "thresholds": self.thresholds,
+                        "success_rate": stats['success'] / stats['total'] if stats['total'] > 0 else 0
+                    })
                 }
                 supabase_data.append(data)
             
@@ -94,15 +108,20 @@ class SimpleLearningSystem:
             return True
             
         except Exception as e:
+            st.error(f"Supabase save error: {e}")
             return self._save_learning_local()
     
     def _save_learning_local(self):
         """Fallback local storage"""
         try:
             with open("learning_data.pkl", "wb") as f:
-                pickle.dump(self.pattern_memory, f)
+                pickle.dump({
+                    'pattern_memory': self.pattern_memory,
+                    'thresholds': self.thresholds
+                }, f)
             return True
-        except:
+        except Exception as e:
+            st.error(f"Local save error: {e}")
             return False
     
     def load_learning(self):
@@ -119,6 +138,18 @@ class SimpleLearningSystem:
                         'total': row['total_matches'] or 0,
                         'success': row['successful_matches'] or 0
                     }
+                
+                # Load thresholds from metadata if available
+                for row in response.data:
+                    if row.get('metadata'):
+                        try:
+                            metadata = json.loads(row['metadata'])
+                            if 'thresholds' in metadata:
+                                self.thresholds.update(metadata['thresholds'])
+                                break
+                        except:
+                            pass
+                
                 return True
             
             return True
@@ -131,19 +162,24 @@ class SimpleLearningSystem:
         try:
             if os.path.exists("learning_data.pkl"):
                 with open("learning_data.pkl", "rb") as f:
-                    self.pattern_memory = pickle.load(f)
+                    data = pickle.load(f)
+                    self.pattern_memory = data.get('pattern_memory', {})
+                    self.thresholds = data.get('thresholds', self.thresholds)
                 return True
         except:
             pass
         return False
     
     def record_outcome(self, prediction, actual_score):
-        """Record a match outcome - SIMPLIFIED"""
+        """Record match outcome - SIMPLE and CLEAR"""
         winner_pred = prediction['winner']
         totals_pred = prediction['totals']
         
         # Parse score
-        home_goals, away_goals = map(int, actual_score.split('-'))
+        try:
+            home_goals, away_goals = map(int, actual_score.split('-'))
+        except:
+            return None, "Invalid score format"
         
         # Determine actual outcomes
         if home_goals > away_goals:
@@ -156,9 +192,9 @@ class SimpleLearningSystem:
         total_goals = home_goals + away_goals
         actual_over = total_goals > 2.5
         
-        # Create SIMPLE pattern keys (NO CONFUSION!)
-        winner_key = f"WINNER_{winner_pred['type']}_{winner_pred['confidence']}"
-        totals_key = f"TOTALS_{totals_pred.get('finishing_alignment', 'N/A')}_{totals_pred.get('total_category', 'N/A')}"
+        # Create pattern keys (SIMPLE and CONSISTENT)
+        winner_key = f"WINNER_{winner_pred['original_prediction']}_{winner_pred['original_confidence']}"
+        totals_key = f"TOTALS_{totals_pred['original_finishing_alignment']}_{totals_pred['original_total_category']}"
         
         # Initialize if not exists
         if winner_key not in self.pattern_memory:
@@ -166,30 +202,32 @@ class SimpleLearningSystem:
         if totals_key not in self.pattern_memory:
             self.pattern_memory[totals_key] = {'total': 0, 'success': 0}
         
-        # Update patterns
-        winner_correct = winner_pred['type'] == actual_winner
-        totals_correct = (totals_pred['direction'] == "OVER") == actual_over
+        # Check predictions
+        winner_correct = winner_pred['original_prediction'] == actual_winner
+        totals_correct = (totals_pred['original_direction'] == "OVER") == actual_over
         
+        # Update patterns
         self.pattern_memory[winner_key]['total'] += 1
         self.pattern_memory[winner_key]['success'] += 1 if winner_correct else 0
         
         self.pattern_memory[totals_key]['total'] += 1
         self.pattern_memory[totals_key]['success'] += 1 if totals_correct else 0
         
-        # Save
-        self.save_learning()
+        # Save to Supabase
+        save_success = self.save_learning()
         
         return {
             'winner_correct': winner_correct,
             'totals_correct': totals_correct,
             'winner_key': winner_key,
-            'totals_key': totals_key
-        }
+            'totals_key': totals_key,
+            'save_success': save_success
+        }, "Outcome recorded successfully!"
     
     def get_betting_advice(self, winner_pred, totals_pred):
-        """SIMPLE: Apply your rules directly"""
+        """APPLY YOUR IMPROVED RULES"""
         
-        # Create pattern keys (SAME as recording!)
+        # Create pattern keys
         winner_key = f"WINNER_{winner_pred['type']}_{winner_pred['confidence']}"
         totals_key = f"TOTALS_{totals_pred.get('finishing_alignment', 'N/A')}_{totals_pred.get('total_category', 'N/A')}"
         
@@ -198,7 +236,7 @@ class SimpleLearningSystem:
             'totals': {'action': 'FOLLOW', 'bet_on': totals_pred['direction'], 'confidence': totals_pred['confidence_score']}
         }
         
-        # Apply YOUR RULES directly
+        # Apply YOUR RULES to each market
         for market_type, pattern_key, original in [
             ('winner', winner_key, winner_pred),
             ('totals', totals_key, totals_pred)
@@ -206,22 +244,33 @@ class SimpleLearningSystem:
             if pattern_key in self.pattern_memory:
                 stats = self.pattern_memory[pattern_key]
                 
-                if stats['total'] >= 3:  # NEED AT LEAST 3 MATCHES
+                if stats['total'] >= self.thresholds['min_matches']:
                     success_rate = stats['success'] / stats['total']
                     
                     # YOUR RULE 1: STRONG PATTERN (>70% success)
-                    if success_rate >= 0.7:
+                    if success_rate > self.thresholds['strong_success']:
                         advice[market_type]['action'] = 'BET_STRONGLY'
+                        # Boost confidence for strong patterns
                         advice[market_type]['confidence'] = min(95, original['confidence_score'] * 1.3)
-                        advice[market_type]['reason'] = f"Strong pattern: {stats['success']}/{stats['total']} ({success_rate:.0%}) wins"
+                        advice[market_type]['reason'] = f"STRONG PATTERN: {stats['success']}/{stats['total']} ({success_rate:.0%}) wins"
+                        advice[market_type]['color'] = 'green'
                     
-                    # YOUR RULE 2: WEAK PATTERN (<40% success) → BET OPPOSITE!
-                    elif success_rate <= 0.4:
+                    # YOUR RULE 2: PROMISING PATTERN (60-70% success)
+                    elif (success_rate >= self.thresholds['promising_min'] and 
+                          success_rate <= self.thresholds['promising_max']):
+                        advice[market_type]['action'] = 'PROMISING'
+                        # Small confidence boost for promising patterns
+                        advice[market_type]['confidence'] = min(85, original['confidence_score'] * 1.15)
+                        advice[market_type]['reason'] = f"PROMISING: {stats['success']}/{stats['total']} ({success_rate:.0%}) wins"
+                        advice[market_type]['color'] = 'blue'
+                    
+                    # YOUR RULE 3: WEAK PATTERN (<40% success) → BET OPPOSITE!
+                    elif success_rate < self.thresholds['weak_success']:
                         advice[market_type]['action'] = 'BET_OPPOSITE'
                         advice[market_type]['confidence'] = 85  # Your rule: 85% confidence in opposite!
                         
+                        # Determine opposite bet
                         if market_type == 'winner':
-                            # For winner: HOME ↔ AWAY, DRAW stays DRAW
                             if original['type'] == 'HOME':
                                 advice[market_type]['bet_on'] = 'AWAY'
                             elif original['type'] == 'AWAY':
@@ -229,27 +278,36 @@ class SimpleLearningSystem:
                             else:
                                 advice[market_type]['bet_on'] = 'DRAW'
                         else:
-                            # For totals: OVER ↔ UNDER
                             advice[market_type]['bet_on'] = 'UNDER' if original['direction'] == 'OVER' else 'OVER'
                         
-                        advice[market_type]['reason'] = f"Weak pattern: Only {stats['success']}/{stats['total']} ({success_rate:.0%}) wins → BET OPPOSITE!"
+                        advice[market_type]['reason'] = f"WEAK PATTERN: Only {stats['success']}/{stats['total']} ({success_rate:.0%}) wins → BET OPPOSITE!"
+                        advice[market_type]['color'] = 'red'
                     
-                    # RULE 3: NEUTRAL PATTERN (40-70% success)
+                    # RULE 4: NEUTRAL PATTERN (40-60% success)
                     else:
-                        advice[market_type]['action'] = 'ADJUST'
-                        adjustment = (0.5 - success_rate) * 30
+                        advice[market_type]['action'] = 'NEUTRAL'
+                        # Small adjustment toward 50%
+                        adjustment = (0.5 - success_rate) * 20
                         advice[market_type]['confidence'] = max(20, min(80, original['confidence_score'] + adjustment))
-                        advice[market_type]['reason'] = f"Neutral pattern: {stats['success']}/{stats['total']} ({success_rate:.0%}) wins"
+                        advice[market_type]['reason'] = f"NEUTRAL: {stats['success']}/{stats['total']} ({success_rate:.0%}) wins"
+                        advice[market_type]['color'] = 'gray'
         
         return advice
     
     def get_pattern_stats(self, pattern_key):
         """Get stats for a pattern"""
         return self.pattern_memory.get(pattern_key, {'total': 0, 'success': 0})
+    
+    def get_pattern_success_rate(self, pattern_key):
+        """Get success rate for a pattern"""
+        stats = self.get_pattern_stats(pattern_key)
+        if stats['total'] > 0:
+            return stats['success'] / stats['total']
+        return 0.5  # Default to 50%
 
 # ========== INITIALIZE SESSION STATES ==========
 if 'learning_system' not in st.session_state:
-    st.session_state.learning_system = SimpleLearningSystem()
+    st.session_state.learning_system = ImprovedLearningSystem()
 
 if 'last_prediction' not in st.session_state:
     st.session_state.last_prediction = None
@@ -311,7 +369,7 @@ class WinnerPredictor:
     """Winner determination"""
     
     def predict_winner(self, home_xg, away_xg, home_stats, away_stats):
-        """Predict winner with finishing adjustment"""
+        """Predict winner"""
         home_finishing = home_stats['goals_vs_xg_pm']
         away_finishing = away_stats['goals_vs_xg_pm']
         home_defense = home_stats['goals_allowed_vs_xga_pm']
@@ -393,7 +451,7 @@ class TotalsPredictor:
             return "STRONG_UNDERPERFORM"
     
     def get_finishing_alignment(self, home_finish, away_finish):
-        """Finishing trend alignment matrix"""
+        """Finishing trend alignment"""
         home_cat = self.categorize_finishing(home_finish)
         away_cat = self.categorize_finishing(away_finish)
         
@@ -628,10 +686,10 @@ class PoissonProbabilityEngine:
             'total_expected_goals': home_xg + away_xg
         }
 
-# ========== SIMPLE FOOTBALL ENGINE ==========
+# ========== IMPROVED FOOTBALL ENGINE ==========
 
-class SimpleFootballEngine:
-    """Simple engine that applies your rules"""
+class ImprovedFootballEngine:
+    """Engine that applies YOUR IMPROVED RULES"""
     
     def __init__(self, league_metrics, league_name):
         self.league_metrics = league_metrics
@@ -643,7 +701,7 @@ class SimpleFootballEngine:
         self.probability_engine = PoissonProbabilityEngine()
     
     def predict_match(self, home_team, away_team, home_stats, away_stats):
-        """Generate prediction"""
+        """Generate prediction with YOUR RULES"""
         
         # Get base prediction
         home_xg, away_xg = self.xg_predictor.predict_expected_goals(home_stats, away_stats)
@@ -658,21 +716,21 @@ class SimpleFootballEngine:
             home_xg, away_xg, home_stats, away_stats
         )
         
-        # Get betting advice from YOUR rules
+        # Get betting advice from YOUR IMPROVED RULES
         betting_advice = st.session_state.learning_system.get_betting_advice(
             winner_prediction, totals_prediction
         )
         
-        # Apply betting advice to predictions
-        final_winner = self._apply_betting_advice_to_winner(
+        # Apply betting advice
+        final_winner = self._apply_advice_to_winner(
             winner_prediction, betting_advice['winner'], home_team, away_team
         )
         
-        final_totals = self._apply_betting_advice_to_totals(
+        final_totals = self._apply_advice_to_totals(
             totals_prediction, betting_advice['totals']
         )
         
-        # Get probabilities for final bets
+        # Get probabilities
         winner_prob = self._get_probability_for_winner(final_winner, probabilities)
         totals_prob = self._get_probability_for_totals(final_totals, probabilities)
         
@@ -689,7 +747,9 @@ class SimpleFootballEngine:
                 'most_likely_score': probabilities['most_likely_score'],
                 'betting_action': betting_advice['winner']['action'],
                 'original_prediction': winner_prediction['type'],
-                'reason': betting_advice['winner'].get('reason', 'Algorithm prediction')
+                'original_confidence': winner_prediction['confidence'],
+                'reason': betting_advice['winner'].get('reason', 'Algorithm prediction'),
+                'color': betting_advice['winner'].get('color', 'gray')
             },
             
             'totals': {
@@ -703,7 +763,10 @@ class SimpleFootballEngine:
                 'risk_flags': totals_prediction.get('risk_flags', []),
                 'betting_action': betting_advice['totals']['action'],
                 'original_direction': totals_prediction['direction'],
-                'reason': betting_advice['totals'].get('reason', 'Algorithm prediction')
+                'original_finishing_alignment': totals_prediction.get('finishing_alignment'),
+                'original_total_category': totals_prediction.get('total_category'),
+                'reason': betting_advice['totals'].get('reason', 'Algorithm prediction'),
+                'color': betting_advice['totals'].get('color', 'gray')
             },
             
             'probabilities': probabilities,
@@ -711,12 +774,12 @@ class SimpleFootballEngine:
             'betting_advice': betting_advice
         }
     
-    def _apply_betting_advice_to_winner(self, original, advice, home_team, away_team):
-        """Apply betting advice to winner prediction"""
+    def _apply_advice_to_winner(self, original, advice, home_team, away_team):
+        """Apply betting advice to winner"""
         final = original.copy()
         
         if advice['action'] == 'BET_OPPOSITE':
-            # Bet opposite of algorithm
+            # Bet opposite!
             if original['type'] == 'HOME':
                 final['type'] = 'AWAY'
                 final['team'] = away_team
@@ -727,45 +790,52 @@ class SimpleFootballEngine:
                 final['type'] = 'DRAW'
                 final['team'] = 'DRAW'
             
-            final['confidence_score'] = advice['confidence']  # Your rule: 85% confidence
+            final['confidence_score'] = advice['confidence']
             final['confidence'] = 'HIGH' if advice['confidence'] >= 65 else 'MEDIUM'
         
-        elif advice['action'] == 'BET_STRONGLY':
-            # Boost confidence for strong patterns
+        elif advice['action'] in ['BET_STRONGLY', 'PROMISING']:
+            # Boost confidence
             final['confidence_score'] = advice['confidence']
             if advice['confidence'] >= 75:
                 final['confidence'] = 'VERY HIGH'
             elif advice['confidence'] >= 65:
                 final['confidence'] = 'HIGH'
+            else:
+                final['confidence'] = 'MEDIUM'
+            
+            # Set team name
+            final['team'] = home_team if original['type'] == 'HOME' else away_team if original['type'] == 'AWAY' else 'DRAW'
         
         else:
-            # Use algorithm's prediction
+            # Use algorithm
             final['team'] = home_team if original['type'] == 'HOME' else away_team if original['type'] == 'AWAY' else 'DRAW'
         
         return final
     
-    def _apply_betting_advice_to_totals(self, original, advice):
-        """Apply betting advice to totals prediction"""
+    def _apply_advice_to_totals(self, original, advice):
+        """Apply betting advice to totals"""
         final = original.copy()
         
         if advice['action'] == 'BET_OPPOSITE':
-            # Bet opposite of algorithm
+            # Bet opposite!
             final['direction'] = 'UNDER' if original['direction'] == 'OVER' else 'OVER'
-            final['confidence_score'] = advice['confidence']  # Your rule: 85% confidence
+            final['confidence_score'] = advice['confidence']
             final['confidence'] = 'HIGH' if advice['confidence'] >= 65 else 'MEDIUM'
         
-        elif advice['action'] == 'BET_STRONGLY':
-            # Boost confidence for strong patterns
+        elif advice['action'] in ['BET_STRONGLY', 'PROMISING']:
+            # Boost confidence
             final['confidence_score'] = advice['confidence']
             if advice['confidence'] >= 75:
                 final['confidence'] = 'VERY HIGH'
             elif advice['confidence'] >= 65:
                 final['confidence'] = 'HIGH'
+            else:
+                final['confidence'] = 'MEDIUM'
         
         return final
     
     def _get_probability_for_winner(self, winner_pred, probabilities):
-        """Get probability for winner prediction"""
+        """Get probability for winner"""
         if winner_pred['type'] == 'HOME':
             return probabilities['home_win_probability']
         elif winner_pred['type'] == 'AWAY':
@@ -774,16 +844,16 @@ class SimpleFootballEngine:
             return probabilities['draw_probability']
     
     def _get_probability_for_totals(self, totals_pred, probabilities):
-        """Get probability for totals prediction"""
+        """Get probability for totals"""
         if totals_pred['direction'] == 'OVER':
             return probabilities['over_2_5_probability']
         else:
             return probabilities['under_2_5_probability']
 
-# ========== SIMPLE BETTING CARD ==========
+# ========== IMPROVED BETTING CARD ==========
 
-class SimpleBettingCard:
-    """Simple betting card that shows your rules in action"""
+class ImprovedBettingCard:
+    """Betting card that shows YOUR IMPROVED RULES"""
     
     @staticmethod
     def get_recommendation(prediction):
@@ -791,13 +861,13 @@ class SimpleBettingCard:
         winner_pred = prediction['winner']
         totals_pred = prediction['totals']
         
-        # Check for opposite bets (YOUR RULE!)
+        # Check for opposite bets
         if winner_pred['betting_action'] == 'BET_OPPOSITE' and totals_pred['betting_action'] == 'BET_OPPOSITE':
             return {
                 'type': 'DOUBLE_OPPOSITE',
                 'text': f"🎯 {winner_pred['team']} + 📈 {totals_pred['direction']} 2.5",
                 'subtext': 'DOUBLE BET OPPOSITE!',
-                'reason': f"Algorithm wrong on both! Winner: {winner_pred['reason']} | Totals: {totals_pred['reason']}",
+                'reason': f"Algorithm consistently wrong on both patterns",
                 'confidence': min(winner_pred['confidence_score'], totals_pred['confidence_score']),
                 'color': '#DC2626',
                 'icon': '🎯'
@@ -830,7 +900,7 @@ class SimpleBettingCard:
                 'type': 'DOUBLE_STRONG',
                 'text': f"✅ {winner_pred['team']} + 📈 {totals_pred['direction']} 2.5",
                 'subtext': 'DOUBLE STRONG PATTERN',
-                'reason': f"Strong patterns both! Winner: {winner_pred['reason']} | Totals: {totals_pred['reason']}",
+                'reason': f"Both patterns have >70% historical success",
                 'confidence': min(winner_pred['confidence_score'], totals_pred['confidence_score']),
                 'color': '#10B981',
                 'icon': '✅'
@@ -840,7 +910,7 @@ class SimpleBettingCard:
             return {
                 'type': 'WINNER_STRONG',
                 'text': f"✅ {winner_pred['team']} to win",
-                'subtext': 'STRONG WINNER PATTERN',
+                'subtext': 'STRONG PATTERN (>70%)',
                 'reason': winner_pred['reason'],
                 'confidence': winner_pred['confidence_score'],
                 'color': '#10B981',
@@ -851,11 +921,44 @@ class SimpleBettingCard:
             return {
                 'type': 'TOTALS_STRONG',
                 'text': f"📈 {totals_pred['direction']} 2.5 Goals",
-                'subtext': 'STRONG TOTALS PATTERN',
+                'subtext': 'STRONG PATTERN (>70%)',
                 'reason': totals_pred['reason'],
                 'confidence': totals_pred['confidence_score'],
                 'color': '#10B981',
                 'icon': '✅'
+            }
+        
+        elif winner_pred['betting_action'] == 'PROMISING' and totals_pred['betting_action'] == 'PROMISING':
+            return {
+                'type': 'DOUBLE_PROMISING',
+                'text': f"🔵 {winner_pred['team']} + 📈 {totals_pred['direction']} 2.5",
+                'subtext': 'DOUBLE PROMISING (60-70%)',
+                'reason': f"Both patterns have 60-70% historical success",
+                'confidence': min(winner_pred['confidence_score'], totals_pred['confidence_score']),
+                'color': '#3B82F6',
+                'icon': '🔵'
+            }
+        
+        elif winner_pred['betting_action'] == 'PROMISING':
+            return {
+                'type': 'WINNER_PROMISING',
+                'text': f"🔵 {winner_pred['team']} to win",
+                'subtext': 'PROMISING PATTERN (60-70%)',
+                'reason': winner_pred['reason'],
+                'confidence': winner_pred['confidence_score'],
+                'color': '#3B82F6',
+                'icon': '🔵'
+            }
+        
+        elif totals_pred['betting_action'] == 'PROMISING':
+            return {
+                'type': 'TOTALS_PROMISING',
+                'text': f"📈 {totals_pred['direction']} 2.5 Goals",
+                'subtext': 'PROMISING PATTERN (60-70%)',
+                'reason': totals_pred['reason'],
+                'confidence': totals_pred['confidence_score'],
+                'color': '#3B82F6',
+                'icon': '🔵'
             }
         
         else:
@@ -870,7 +973,7 @@ class SimpleBettingCard:
                     'subtext': 'DOUBLE BET',
                     'reason': f'Both positive expected value',
                     'confidence': min(winner_pred['confidence_score'], totals_pred['confidence_score']),
-                    'color': '#3B82F6',
+                    'color': '#8B5CF6',
                     'icon': '🎯'
                 }
             elif winner_ev > 0.15:
@@ -880,7 +983,7 @@ class SimpleBettingCard:
                     'subtext': 'WINNER BET',
                     'reason': f'Positive expected value',
                     'confidence': winner_pred['confidence_score'],
-                    'color': '#3B82F6',
+                    'color': '#8B5CF6',
                     'icon': '🏆'
                 }
             elif totals_ev > 0.15:
@@ -898,7 +1001,7 @@ class SimpleBettingCard:
                     'type': 'NO_BET',
                     'text': "🤔 No Clear Bet",
                     'subtext': 'NO BET',
-                    'reason': f'Insufficient expected value',
+                    'reason': f'Insufficient expected value or neutral patterns',
                     'confidence': max(winner_pred['confidence_score'], totals_pred['confidence_score']),
                     'color': '#6B7280',
                     'icon': '🤔'
@@ -994,15 +1097,15 @@ def calculate_league_metrics(df):
 
 # ========== FEEDBACK SYSTEM ==========
 
-def record_outcome_simple(prediction):
-    """Simple feedback system"""
+def record_outcome_improved(prediction):
+    """Improved feedback system with Supabase confirmation"""
     
     st.divider()
-    st.subheader("📝 Record Outcome")
+    st.subheader("📝 Record Outcome for Learning")
     
-    # Show current pattern info
-    winner_key = f"WINNER_{prediction['winner']['original_prediction']}_{prediction['winner']['confidence']}"
-    totals_key = f"TOTALS_{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
+    # Show current patterns
+    winner_key = f"WINNER_{prediction['winner']['original_prediction']}_{prediction['winner']['original_confidence']}"
+    totals_key = f"TOTALS_{prediction['totals']['original_finishing_alignment']}_{prediction['totals']['original_total_category']}"
     
     winner_stats = st.session_state.learning_system.get_pattern_stats(winner_key)
     totals_stats = st.session_state.learning_system.get_pattern_stats(totals_key)
@@ -1011,27 +1114,35 @@ def record_outcome_simple(prediction):
     
     with col1:
         st.write("**Winner Pattern:**")
-        st.write(f"`{winner_key[:40]}...`")
+        st.code(winner_key)
         if winner_stats['total'] > 0:
-            success_rate = winner_stats['success'] / winner_stats['total']
-            st.write(f"Current: {winner_stats['success']}/{winner_stats['total']} ({success_rate:.0%})")
+            success = winner_stats['success'] / winner_stats['total']
+            st.write(f"Current: {winner_stats['success']}/{winner_stats['total']} ({success:.0%})")
             if winner_stats['total'] >= 3:
-                if success_rate >= 0.7:
-                    st.success(f"✅ STRONG PATTERN (>70%)")
-                elif success_rate <= 0.4:
-                    st.error(f"🎯 WEAK PATTERN (<40%) - BET OPPOSITE!")
+                if success > 0.7:
+                    st.success("✅ STRONG PATTERN (>70%)")
+                elif success >= 0.6:
+                    st.info("🔵 PROMISING (60-70%)")
+                elif success < 0.4:
+                    st.error("🎯 WEAK PATTERN (<40%) - BET OPPOSITE!")
+                else:
+                    st.info("⚪ NEUTRAL (40-60%)")
     
     with col2:
         st.write("**Totals Pattern:**")
-        st.write(f"`{totals_key[:40]}...`")
+        st.code(totals_key)
         if totals_stats['total'] > 0:
-            success_rate = totals_stats['success'] / totals_stats['total']
-            st.write(f"Current: {totals_stats['success']}/{totals_stats['total']} ({success_rate:.0%})")
+            success = totals_stats['success'] / totals_stats['total']
+            st.write(f"Current: {totals_stats['success']}/{totals_stats['total']} ({success:.0%})")
             if totals_stats['total'] >= 3:
-                if success_rate >= 0.7:
-                    st.success(f"✅ STRONG PATTERN (>70%)")
-                elif success_rate <= 0.4:
-                    st.error(f"🎯 WEAK PATTERN (<40%) - BET OPPOSITE!")
+                if success > 0.7:
+                    st.success("✅ STRONG PATTERN (>70%)")
+                elif success >= 0.6:
+                    st.info("🔵 PROMISING (60-70%)")
+                elif success < 0.4:
+                    st.error("🎯 WEAK PATTERN (<40%) - BET OPPOSITE!")
+                else:
+                    st.info("⚪ NEUTRAL (40-60%)")
     
     # Score input
     col1, col2 = st.columns([2, 1])
@@ -1045,23 +1156,38 @@ def record_outcome_simple(prediction):
                 st.error("Enter valid score like '2-1'")
             else:
                 try:
-                    home_goals, away_goals = map(int, score.split('-'))
-                    result = st.session_state.learning_system.record_outcome(prediction, score)
-                    
-                    if result['winner_correct']:
-                        st.success(f"✅ Winner correct! Updated pattern: {result['winner_key']}")
-                    else:
-                        st.error(f"❌ Winner wrong! Updated pattern: {result['winner_key']}")
-                    
-                    if result['totals_correct']:
-                        st.success(f"✅ Totals correct! Updated pattern: {result['totals_key']}")
-                    else:
-                        st.error(f"❌ Totals wrong! Updated pattern: {result['totals_key']}")
-                    
-                    st.rerun()
-                    
+                    with st.spinner("Saving to Supabase..."):
+                        result, message = st.session_state.learning_system.record_outcome(prediction, score)
+                        
+                        if result:
+                            if result['save_success']:
+                                st.success("✅ Saved to Supabase successfully!")
+                            else:
+                                st.warning("⚠️ Saved locally (Supabase failed)")
+                            
+                            # Show what happened
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                if result['winner_correct']:
+                                    st.success(f"✅ Winner correct! Pattern updated")
+                                else:
+                                    st.error(f"❌ Winner wrong! Pattern updated")
+                            
+                            with col2:
+                                if result['totals_correct']:
+                                    st.success(f"✅ Totals correct! Pattern updated")
+                                else:
+                                    st.error(f"❌ Totals wrong! Pattern updated")
+                            
+                            st.rerun()
+                        else:
+                            st.error(message)
+                            
                 except ValueError:
                     st.error("Enter numbers like '2-1'")
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
 
 # ========== STREAMLIT UI ==========
 
@@ -1102,38 +1228,47 @@ with st.sidebar:
 
     # Learning System Section
     st.divider()
-    st.header("🎯 YOUR BETTING RULES")
+    st.header("🎯 YOUR IMPROVED RULES")
     
     st.info("""
-    **SIMPLE RULES:**
+    **BASED ON YOUR DATA:**
     
-    1. **≥3 matches with SAME pattern**
-    2. **>70% success** → ✅ BET STRONGLY
-    3. **<40% success** → 🎯 BET OPPOSITE!
-    4. **40-70% success** → Use algorithm
+    ✅ **STRONG** (>70% success, ≥3 matches)
+    → BET STRONGLY with boosted confidence
+    
+    🔵 **PROMISING** (60-70% success, ≥3 matches)
+    → Small confidence boost
+    
+    ⚪ **NEUTRAL** (40-60% success, ≥3 matches)
+    → Use algorithm's prediction
+    
+    🎯 **WEAK** (<40% success, ≥3 matches)
+    → BET OPPOSITE with 85% confidence!
     """)
     
-    # Show current pattern matches
+    # Show current match patterns if available
     if st.session_state.last_prediction:
         winner_pred = st.session_state.last_prediction['winner']
         totals_pred = st.session_state.last_prediction['totals']
         
-        winner_key = f"WINNER_{winner_pred['original_prediction']}_{winner_pred['confidence']}"
-        totals_key = f"TOTALS_{totals_pred.get('finishing_alignment', 'N/A')}_{totals_pred.get('total_category', 'N/A')}"
+        winner_key = f"WINNER_{winner_pred['original_prediction']}_{winner_pred['original_confidence']}"
+        totals_key = f"TOTALS_{totals_pred['original_finishing_alignment']}_{totals_pred['original_total_category']}"
         
         winner_stats = st.session_state.learning_system.get_pattern_stats(winner_key)
         totals_stats = st.session_state.learning_system.get_pattern_stats(totals_key)
         
-        st.subheader("Current Match Patterns:")
+        st.subheader("Current Match:")
         
         col1, col2 = st.columns(2)
         
         with col1:
             if winner_stats['total'] >= 3:
                 success = winner_stats['success'] / winner_stats['total']
-                if success >= 0.7:
+                if success > 0.7:
                     st.success(f"✅ Winner: {success:.0%}")
-                elif success <= 0.4:
+                elif success >= 0.6:
+                    st.info(f"🔵 Winner: {success:.0%}")
+                elif success < 0.4:
                     st.error(f"🎯 Winner: {success:.0%}")
                 else:
                     st.info(f"⚪ Winner: {success:.0%}")
@@ -1143,9 +1278,11 @@ with st.sidebar:
         with col2:
             if totals_stats['total'] >= 3:
                 success = totals_stats['success'] / totals_stats['total']
-                if success >= 0.7:
+                if success > 0.7:
                     st.success(f"✅ Totals: {success:.0%}")
-                elif success <= 0.4:
+                elif success >= 0.6:
+                    st.info(f"🔵 Totals: {success:.0%}")
+                elif success < 0.4:
                     st.error(f"🎯 Totals: {success:.0%}")
                 else:
                     st.info(f"⚪ Totals: {success:.0%}")
@@ -1154,21 +1291,23 @@ with st.sidebar:
     
     st.divider()
     
-    # Show top patterns
+    # Show your best patterns
     st.subheader("Your Best Patterns:")
     
     patterns = list(st.session_state.learning_system.pattern_memory.items())
-    patterns_with_3 = [(k, v) for k, v in patterns if v['total'] >= 3]
+    qualifying_patterns = [(k, v) for k, v in patterns if v['total'] >= 3]
     
-    if patterns_with_3:
+    if qualifying_patterns:
         # Sort by success rate
-        patterns_with_3.sort(key=lambda x: x[1]['success'] / x[1]['total'], reverse=True)
+        qualifying_patterns.sort(key=lambda x: x[1]['success'] / x[1]['total'], reverse=True)
         
-        for i, (pattern, stats) in enumerate(patterns_with_3[:5]):
+        for i, (pattern, stats) in enumerate(qualifying_patterns[:6]):
             success = stats['success'] / stats['total']
-            if success >= 0.7:
+            if success > 0.7:
                 st.success(f"✅ {pattern[:25]}...: {success:.0%} ({stats['success']}/{stats['total']})")
-            elif success <= 0.4:
+            elif success >= 0.6:
+                st.info(f"🔵 {pattern[:25]}...: {success:.0%} ({stats['success']}/{stats['total']})")
+            elif success < 0.4:
                 st.error(f"🎯 {pattern[:25]}...: {success:.0%} ({stats['success']}/{stats['total']})")
             else:
                 st.info(f"⚪ {pattern[:25]}...: {success:.0%} ({stats['success']}/{stats['total']})")
@@ -1182,13 +1321,16 @@ with st.sidebar:
     total_patterns = len(st.session_state.learning_system.pattern_memory)
     qualifying = len([v for v in st.session_state.learning_system.pattern_memory.values() if v['total'] >= 3])
     strong = len([v for v in st.session_state.learning_system.pattern_memory.values() 
-                 if v['total'] >= 3 and v['success']/v['total'] >= 0.7])
+                 if v['total'] >= 3 and v['success']/v['total'] > 0.7])
+    promising = len([v for v in st.session_state.learning_system.pattern_memory.values() 
+                    if v['total'] >= 3 and 0.6 <= v['success']/v['total'] <= 0.7])
     weak = len([v for v in st.session_state.learning_system.pattern_memory.values() 
-               if v['total'] >= 3 and v['success']/v['total'] <= 0.4])
+               if v['total'] >= 3 and v['success']/v['total'] < 0.4])
     
     st.write(f"Total patterns: {total_patterns}")
     st.write(f"Qualifying (≥3 matches): {qualifying}")
     st.write(f"Strong (>70%): {strong}")
+    st.write(f"Promising (60-70%): {promising}")
     st.write(f"Weak (<40%): {weak}")
     
     # Supabase status
@@ -1209,7 +1351,7 @@ if 'calculate_btn' in locals() and calculate_btn:
         away_stats = away_stats_df.loc[away_team]
         
         # Generate prediction
-        engine = SimpleFootballEngine(league_metrics, selected_league)
+        engine = ImprovedFootballEngine(league_metrics, selected_league)
         prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
         
         # Store for next time
@@ -1236,18 +1378,21 @@ col1, col2 = st.columns(2)
 
 with col1:
     winner_pred = prediction['winner']
+    color = winner_pred.get('color', '#6B7280')
     
-    # Determine colors based on betting action
+    # Determine icon and subtitle based on betting action
     if winner_pred['betting_action'] == 'BET_OPPOSITE':
-        card_color = "#7F1D1D"
-        text_color = "#EF4444"
         icon = "🎯"
         subtitle = "BET OPPOSITE!"
+        card_color = "#7F1D1D"
     elif winner_pred['betting_action'] == 'BET_STRONGLY':
-        card_color = "#14532D"
-        text_color = "#22C55E"
         icon = "✅"
         subtitle = "STRONG PATTERN"
+        card_color = "#14532D"
+    elif winner_pred['betting_action'] == 'PROMISING':
+        icon = "🔵"
+        subtitle = "PROMISING"
+        card_color = "#1E3A8A"
     else:
         if winner_pred['type'] == "HOME":
             icon = "🏠"
@@ -1258,23 +1403,19 @@ with col1:
         
         if winner_pred['confidence'] == "VERY HIGH":
             card_color = "#14532D"
-            text_color = "#22C55E"
         elif winner_pred['confidence'] == "HIGH":
             card_color = "#166534"
-            text_color = "#4ADE80"
         elif winner_pred['confidence'] == "MEDIUM":
             card_color = "#365314"
-            text_color = "#84CC16"
         else:
             card_color = "#1E293B"
-            text_color = "#94A3B8"
         
         subtitle = winner_pred['confidence']
     
     st.markdown(f"""
     <div style="background-color: {card_color}; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
         <h3 style="color: white; margin: 0;">PREDICTED WINNER</h3>
-        <div style="font-size: 36px; font-weight: bold; color: {text_color}; margin: 10px 0;">
+        <div style="font-size: 36px; font-weight: bold; color: {color}; margin: 10px 0;">
             {icon} {winner_pred['team']}
         </div>
         <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
@@ -1283,46 +1424,45 @@ with col1:
         <div style="font-size: 16px; color: white;">
             {subtitle} | Confidence: {winner_pred['confidence_score']:.0f}/100
         </div>
-        {f'<div style="font-size: 14px; color: #FCA5A5; margin-top: 10px;">🎯 BET OPPOSITE! (Algorithm predicted: {winner_pred["original_prediction"]})</div>' if winner_pred['betting_action'] == 'BET_OPPOSITE' else ''}
+        {f'<div style="font-size: 14px; color: #FCA5A5; margin-top: 10px;">🎯 {winner_pred["reason"]}</div>' if winner_pred['betting_action'] == 'BET_OPPOSITE' else ''}
         {f'<div style="font-size: 14px; color: #BBF7D0; margin-top: 10px;">✅ {winner_pred["reason"]}</div>' if winner_pred['betting_action'] == 'BET_STRONGLY' else ''}
+        {f'<div style="font-size: 14px; color: #BFDBFE; margin-top: 10px;">🔵 {winner_pred["reason"]}</div>' if winner_pred['betting_action'] == 'PROMISING' else ''}
     </div>
     """, unsafe_allow_html=True)
 
 with col2:
     totals_pred = prediction['totals']
+    color = totals_pred.get('color', '#6B7280')
     
-    # Determine colors based on betting action
+    # Determine icon and subtitle
     if totals_pred['betting_action'] == 'BET_OPPOSITE':
-        card_color = "#7F1D1D"
-        text_color = "#EF4444"
         icon = "🎯"
         subtitle = "BET OPPOSITE!"
+        card_color = "#7F1D1D"
     elif totals_pred['betting_action'] == 'BET_STRONGLY':
-        card_color = "#14532D"
-        text_color = "#22C55E"
         icon = "✅"
         subtitle = "STRONG PATTERN"
+        card_color = "#14532D"
+    elif totals_pred['betting_action'] == 'PROMISING':
+        icon = "🔵"
+        subtitle = "PROMISING"
+        card_color = "#1E3A8A"
     else:
         icon = "📈"
         if totals_pred['confidence'] == "VERY HIGH":
             card_color = "#14532D" if totals_pred['direction'] == "OVER" else "#7F1D1D"
-            text_color = "#22C55E" if totals_pred['direction'] == "OVER" else "#EF4444"
         elif totals_pred['confidence'] == "HIGH":
             card_color = "#166534" if totals_pred['direction'] == "OVER" else "#991B1B"
-            text_color = "#4ADE80" if totals_pred['direction'] == "OVER" else "#F87171"
         elif totals_pred['confidence'] == "MEDIUM":
             card_color = "#365314" if totals_pred['direction'] == "OVER" else "#78350F"
-            text_color = "#84CC16" if totals_pred['direction'] == "OVER" else "#F59E0B"
         else:
             card_color = "#1E293B"
-            text_color = "#94A3B8"
-        
         subtitle = totals_pred['confidence']
     
     st.markdown(f"""
     <div style="background-color: {card_color}; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
         <h3 style="color: white; margin: 0;">TOTAL GOALS</h3>
-        <div style="font-size: 36px; font-weight: bold; color: {text_color}; margin: 10px 0;">
+        <div style="font-size: 36px; font-weight: bold; color: {color}; margin: 10px 0;">
             {icon} {totals_pred['direction']} 2.5
         </div>
         <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
@@ -1331,8 +1471,9 @@ with col2:
         <div style="font-size: 16px; color: white;">
             {subtitle} | Confidence: {totals_pred['confidence_score']:.0f}/100
         </div>
-        {f'<div style="font-size: 14px; color: #FCA5A5; margin-top: 10px;">🎯 BET OPPOSITE! (Algorithm predicted: {totals_pred["original_direction"]} 2.5)</div>' if totals_pred['betting_action'] == 'BET_OPPOSITE' else ''}
+        {f'<div style="font-size: 14px; color: #FCA5A5; margin-top: 10px;">🎯 {totals_pred["reason"]}</div>' if totals_pred['betting_action'] == 'BET_OPPOSITE' else ''}
         {f'<div style="font-size: 14px; color: #BBF7D0; margin-top: 10px;">✅ {totals_pred["reason"]}</div>' if totals_pred['betting_action'] == 'BET_STRONGLY' else ''}
+        {f'<div style="font-size: 14px; color: #BFDBFE; margin-top: 10px;">🔵 {totals_pred["reason"]}</div>' if totals_pred['betting_action'] == 'PROMISING' else ''}
     </div>
     """, unsafe_allow_html=True)
 
@@ -1340,8 +1481,8 @@ with col2:
 st.divider()
 st.subheader("🎯 YOUR BETTING ADVICE")
 
-recommendation = SimpleBettingCard.get_recommendation(prediction)
-SimpleBettingCard.display_card(recommendation)
+recommendation = ImprovedBettingCard.get_recommendation(prediction)
+ImprovedBettingCard.display_card(recommendation)
 
 # ========== PATTERN EXPLANATION ==========
 st.divider()
@@ -1351,7 +1492,7 @@ col1, col2 = st.columns(2)
 
 with col1:
     winner_pred = prediction['winner']
-    winner_key = f"WINNER_{winner_pred['original_prediction']}_{winner_pred['confidence']}"
+    winner_key = f"WINNER_{winner_pred['original_prediction']}_{winner_pred['original_confidence']}"
     winner_stats = st.session_state.learning_system.get_pattern_stats(winner_key)
     
     st.write("**Winner Pattern:**")
@@ -1361,25 +1502,28 @@ with col1:
         success_rate = winner_stats['success'] / winner_stats['total']
         
         if winner_stats['total'] >= 3:
-            if success_rate >= 0.7:
+            if success_rate > 0.7:
                 st.success(f"✅ STRONG PATTERN: {winner_stats['success']}/{winner_stats['total']} ({success_rate:.0%}) wins")
-                st.write("→ **BET STRONGLY** on this prediction")
-            elif success_rate <= 0.4:
+                st.write("→ **BET STRONGLY** with boosted confidence")
+            elif success_rate >= 0.6:
+                st.info(f"🔵 PROMISING: {winner_stats['success']}/{winner_stats['total']} ({success_rate:.0%}) wins")
+                st.write("→ **Small confidence boost** for promising pattern")
+            elif success_rate < 0.4:
                 st.error(f"🎯 WEAK PATTERN: {winner_stats['success']}/{winner_stats['total']} ({success_rate:.0%}) wins")
                 st.write(f"→ **BET OPPOSITE!** Algorithm only wins {success_rate:.0%} of the time")
             else:
-                st.info(f"⚪ NEUTRAL PATTERN: {winner_stats['success']}/{winner_stats['total']} ({success_rate:.0%}) wins")
-                st.write("→ Use algorithm's prediction")
+                st.info(f"⚪ NEUTRAL: {winner_stats['success']}/{winner_stats['total']} ({success_rate:.0%}) wins")
+                st.write("→ **Use algorithm's prediction**")
         else:
             st.warning(f"⚠️ NEED MORE DATA: {winner_stats['total']}/3 matches")
-            st.write(f"→ Need {3 - winner_stats['total']} more match(es) to apply your rules")
+            st.write(f"→ Need {3 - winner_stats['total']} more match(es) to apply rules")
     else:
         st.info("🆕 NEW PATTERN")
         st.write("→ Record outcome to start tracking")
 
 with col2:
     totals_pred = prediction['totals']
-    totals_key = f"TOTALS_{totals_pred.get('finishing_alignment', 'N/A')}_{totals_pred.get('total_category', 'N/A')}"
+    totals_key = f"TOTALS_{totals_pred['original_finishing_alignment']}_{totals_pred['original_total_category']}"
     totals_stats = st.session_state.learning_system.get_pattern_stats(totals_key)
     
     st.write("**Totals Pattern:**")
@@ -1389,18 +1533,21 @@ with col2:
         success_rate = totals_stats['success'] / totals_stats['total']
         
         if totals_stats['total'] >= 3:
-            if success_rate >= 0.7:
+            if success_rate > 0.7:
                 st.success(f"✅ STRONG PATTERN: {totals_stats['success']}/{totals_stats['total']} ({success_rate:.0%}) wins")
-                st.write("→ **BET STRONGLY** on this prediction")
-            elif success_rate <= 0.4:
+                st.write("→ **BET STRONGLY** with boosted confidence")
+            elif success_rate >= 0.6:
+                st.info(f"🔵 PROMISING: {totals_stats['success']}/{totals_stats['total']} ({success_rate:.0%}) wins")
+                st.write("→ **Small confidence boost** for promising pattern")
+            elif success_rate < 0.4:
                 st.error(f"🎯 WEAK PATTERN: {totals_stats['success']}/{totals_stats['total']} ({success_rate:.0%}) wins")
                 st.write(f"→ **BET OPPOSITE!** Algorithm only wins {success_rate:.0%} of the time")
             else:
-                st.info(f"⚪ NEUTRAL PATTERN: {totals_stats['success']}/{totals_stats['total']} ({success_rate:.0%}) wins")
-                st.write("→ Use algorithm's prediction")
+                st.info(f"⚪ NEUTRAL: {totals_stats['success']}/{totals_stats['total']} ({success_rate:.0%}) wins")
+                st.write("→ **Use algorithm's prediction**")
         else:
             st.warning(f"⚠️ NEED MORE DATA: {totals_stats['total']}/3 matches")
-            st.write(f"→ Need {3 - totals_stats['total']} more match(es) to apply your rules")
+            st.write(f"→ Need {3 - totals_stats['total']} more match(es) to apply rules")
     else:
         st.info("🆕 NEW PATTERN")
         st.write("→ Record outcome to start tracking")
@@ -1410,16 +1557,22 @@ st.divider()
 st.subheader("🧠 Insights")
 
 if winner_pred['betting_action'] == 'BET_OPPOSITE':
-    st.error(f"🎯 **WINNER**: BET OPPOSITE! Algorithm predicted {winner_pred['original_prediction']} but this pattern only wins {winner_stats['success']}/{winner_stats['total']} times")
+    st.error(f"🎯 **WINNER**: {winner_pred['reason']}")
 
 if totals_pred['betting_action'] == 'BET_OPPOSITE':
-    st.error(f"🎯 **TOTALS**: BET OPPOSITE! Algorithm predicted {totals_pred['original_direction']} 2.5 but this pattern only wins {totals_stats['success']}/{totals_stats['total']} times")
+    st.error(f"🎯 **TOTALS**: {totals_pred['reason']}")
 
 if winner_pred['betting_action'] == 'BET_STRONGLY':
-    st.success(f"✅ **WINNER**: STRONG PATTERN! Algorithm wins {winner_stats['success']}/{winner_stats['total']} times with this pattern")
+    st.success(f"✅ **WINNER**: {winner_pred['reason']}")
 
 if totals_pred['betting_action'] == 'BET_STRONGLY':
-    st.success(f"✅ **TOTALS**: STRONG PATTERN! Algorithm wins {totals_stats['success']}/{totals_stats['total']} times with this pattern")
+    st.success(f"✅ **TOTALS**: {totals_pred['reason']}")
+
+if winner_pred['betting_action'] == 'PROMISING':
+    st.info(f"🔵 **WINNER**: {winner_pred['reason']}")
+
+if totals_pred['betting_action'] == 'PROMISING':
+    st.info(f"🔵 **TOTALS**: {totals_pred['reason']}")
 
 # Risk flags
 if prediction['totals']['risk_flags']:
@@ -1469,13 +1622,13 @@ with col3:
              delta=f"{'OVER' if total_xg > over_thresh else 'UNDER'} {over_thresh}")
 
 # ========== RECORD OUTCOME ==========
-record_outcome_simple(prediction)
+record_outcome_improved(prediction)
 
 # ========== EXPORT ==========
 st.divider()
 st.subheader("📤 Export")
 
-report = f"""⚽ FOOTBALL INTELLIGENCE ENGINE v5.1 - SIMPLE RULES
+report = f"""⚽ FOOTBALL INTELLIGENCE ENGINE v6.0 - YOUR IMPROVED RULES
 Match: {home_team} vs {away_team}
 League: {selected_league}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
@@ -1488,23 +1641,23 @@ Confidence: {recommendation['confidence']:.0f}/100
 
 🎯 WINNER:
 Bet on: {winner_pred['team']}
-Algorithm predicted: {winner_pred['original_prediction']}
+Original algorithm: {winner_pred['original_prediction']}
 Betting action: {winner_pred['betting_action']}
 Reason: {winner_pred['reason']}
 Probability: {winner_pred['probability']*100:.1f}%
 Confidence: {winner_pred['confidence']} ({winner_pred['confidence_score']:.0f}/100)
-Pattern: WINNER_{winner_pred['original_prediction']}_{winner_pred['confidence']}
-Pattern stats: {winner_stats['success']}/{winner_stats['total']} wins
+Pattern: WINNER_{winner_pred['original_prediction']}_{winner_pred['original_confidence']}
+Pattern stats: {winner_stats['success']}/{winner_stats['total']} wins ({winner_stats['success']/winner_stats['total']:.0% if winner_stats['total'] > 0 else 'N/A'})
 
 🎯 TOTALS:
 Bet on: {totals_pred['direction']} 2.5
-Algorithm predicted: {totals_pred['original_direction']} 2.5
+Original algorithm: {totals_pred['original_direction']} 2.5
 Betting action: {totals_pred['betting_action']}
 Reason: {totals_pred['reason']}
 Probability: {totals_pred['probability']*100:.1f}%
 Confidence: {totals_pred['confidence']} ({totals_pred['confidence_score']:.0f}/100)
-Pattern: TOTALS_{totals_pred.get('finishing_alignment', 'N/A')}_{totals_pred.get('total_category', 'N/A')}
-Pattern stats: {totals_stats['success']}/{totals_stats['total']} wins
+Pattern: TOTALS_{totals_pred['original_finishing_alignment']}_{totals_pred['original_total_category']}
+Pattern stats: {totals_stats['success']}/{totals_stats['total']} wins ({totals_stats['success']/totals_stats['total']:.0% if totals_stats['total'] > 0 else 'N/A'})
 
 📊 EXPECTED GOALS:
 {home_team}: {prediction['expected_goals']['home']:.2f} xG
@@ -1514,13 +1667,16 @@ Total: {prediction['expected_goals']['total']:.2f} xG
 ⚠️ RISK FLAGS: {', '.join(prediction['totals']['risk_flags']) if prediction['totals']['risk_flags'] else 'None'}
 
 ---
-YOUR SIMPLE RULES:
-1. Track each unique pattern (winner type + confidence, totals alignment + category)
-2. After 3 matches with same pattern:
-   - >70% success → BET STRONGLY with boosted confidence
-   - <40% success → BET OPPOSITE with 85% confidence!
-   - 40-70% success → Use algorithm with adjusted confidence
-3. Save all patterns to Supabase for learning
+YOUR IMPROVED RULES (based on your data):
+1. STRONG (>70% success, ≥3 matches) → ✅ BET STRONGLY with boosted confidence
+2. PROMISING (60-70% success, ≥3 matches) → 🔵 Small confidence boost
+3. NEUTRAL (40-60% success, ≥3 matches) → ⚪ Use algorithm's prediction
+4. WEAK (<40% success, ≥3 matches) → 🎯 BET OPPOSITE with 85% confidence!
+
+YOUR DATA SHOWS:
+- {len([v for v in st.session_state.learning_system.pattern_memory.values() if v['total'] >= 3 and v['success']/v['total'] > 0.7])} strong patterns (>70%)
+- {len([v for v in st.session_state.learning_system.pattern_memory.values() if v['total'] >= 3 and 0.6 <= v['success']/v['total'] <= 0.7])} promising patterns (60-70%)
+- {len([v for v in st.session_state.learning_system.pattern_memory.values() if v['total'] >= 3 and v['success']/v['total'] < 0.4])} weak patterns (<40%) → BET OPPOSITE!
 """
 
 st.code(report, language="text")
@@ -1528,7 +1684,7 @@ st.code(report, language="text")
 st.download_button(
     label="📥 Download Report",
     data=report,
-    file_name=f"simple_rules_{home_team}_vs_{away_team}.txt",
+    file_name=f"improved_rules_{home_team}_vs_{away_team}.txt",
     mime="text/plain",
     use_container_width=True
 )
