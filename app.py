@@ -78,12 +78,15 @@ class AdaptiveLearningSystem:
         self.load_learning()
     
     def save_learning(self):
-        """Save learning data to Supabase"""
+        """Save ALL learning data to Supabase"""
         try:
             if not self.supabase:
                 # Fallback to local storage
                 self._save_learning_local()
-                return
+                return False
+            
+            # Prepare all data for Supabase
+            supabase_data = []
             
             # Save each pattern to Supabase
             for pattern_key, stats in self.pattern_memory.items():
@@ -95,43 +98,50 @@ class AdaptiveLearningSystem:
                     "pattern_key": pattern_key,
                     "total_matches": stats['total'],
                     "successful_matches": stats['success'],
-                    "metadata": {
-                        "feature_weights": self.feature_weights,
-                        "last_updated": datetime.now().isoformat(),
-                        "success_rate": stats['success'] / stats['total'] if stats['total'] > 0 else 0
-                    }
+                    "last_updated": datetime.now().isoformat()
                 }
-                
-                # Upsert (insert or update) the pattern
-                try:
-                    self.supabase.table("football_learning").upsert(data, on_conflict="pattern_key").execute()
-                except Exception as e:
-                    st.error(f"Supabase upsert error: {e}")
-                    self._save_learning_local()
-                    return
+                supabase_data.append(data)
             
-            # Save outcomes as metadata
+            # Save outcomes as a separate record
             if self.outcomes:
                 outcomes_data = {
                     "pattern_key": "ALL_OUTCOMES",
                     "total_matches": len(self.outcomes),
                     "successful_matches": sum(1 for o in self.outcomes if o['winner_correct'] and o['totals_correct']),
-                    "metadata": {
+                    "metadata": json.dumps({
                         "outcomes": self.outcomes[-1000:],  # Keep last 1000 outcomes
                         "outcome_count": len(self.outcomes),
                         "feature_weights": self.feature_weights,
                         "saved_at": datetime.now().isoformat()
-                    }
+                    }, default=str)
                 }
+                supabase_data.append(outcomes_data)
+            
+            # Batch insert/update to Supabase
+            if supabase_data:
                 try:
-                    self.supabase.table("football_learning").upsert(outcomes_data, on_conflict="pattern_key").execute()
+                    # First, clear existing data
+                    self.supabase.table("football_learning").delete().neq("pattern_key", "dummy").execute()
+                    
+                    # Insert all new data
+                    response = self.supabase.table("football_learning").insert(supabase_data).execute()
+                    
+                    if hasattr(response, 'error') and response.error:
+                        raise Exception(f"Supabase error: {response.error}")
+                    
+                    return True
                 except Exception as e:
-                    st.error(f"Supabase outcomes save error: {e}")
+                    st.error(f"Supabase operation error: {e}")
+                    self._save_learning_local()
+                    return False
+            
+            return True
             
         except Exception as e:
             st.error(f"Error saving to Supabase: {e}")
             # Fallback to local storage
             self._save_learning_local()
+            return False
     
     def _save_learning_local(self):
         """Fallback local storage"""
@@ -142,23 +152,24 @@ class AdaptiveLearningSystem:
                     'feature_weights': self.feature_weights,
                     'outcomes': self.outcomes
                 }, f)
+            return True
         except Exception as e:
             st.error(f"Local save failed: {e}")
+            return False
     
     def load_learning(self):
         """Load learning data from Supabase"""
         try:
             if not self.supabase:
                 # Fallback to local storage
-                self._load_learning_local()
-                return
+                return self._load_learning_local()
             
             # Load patterns from Supabase
             response = self.supabase.table("football_learning").select("*").execute()
             
             if not response.data:
                 # Fresh start - no previous data
-                return
+                return True
             
             patterns_loaded = 0
             outcomes_loaded = 0
@@ -169,23 +180,28 @@ class AdaptiveLearningSystem:
                 if pattern_key == "ALL_OUTCOMES":
                     # Load outcomes
                     if 'metadata' in row and row['metadata']:
-                        metadata = row['metadata']
-                        if 'outcomes' in metadata:
-                            self.outcomes = metadata['outcomes']
-                            outcomes_loaded = len(self.outcomes)
-                        if 'feature_weights' in metadata:
-                            self.feature_weights.update(metadata['feature_weights'])
+                        try:
+                            metadata = json.loads(row['metadata'])
+                            if 'outcomes' in metadata:
+                                self.outcomes = metadata['outcomes']
+                                outcomes_loaded = len(self.outcomes)
+                            if 'feature_weights' in metadata:
+                                self.feature_weights.update(metadata['feature_weights'])
+                        except:
+                            pass
                 else:
                     # Load pattern stats
                     self.pattern_memory[pattern_key] = {
-                        'total': row['total_matches'],
-                        'success': row['successful_matches']
+                        'total': row['total_matches'] or 0,
+                        'success': row['successful_matches'] or 0
                     }
                     patterns_loaded += 1
             
+            return True
+            
         except Exception as e:
             # Fallback to local storage
-            self._load_learning_local()
+            return self._load_learning_local()
     
     def _load_learning_local(self):
         """Fallback local storage"""
@@ -196,11 +212,13 @@ class AdaptiveLearningSystem:
                     self.pattern_memory = defaultdict(lambda: {'total': 0, 'success': 0}, data['pattern_memory'])
                     self.feature_weights = data['feature_weights']
                     self.outcomes = data['outcomes']
+                return True
         except:
             pass
+        return False
     
     def record_outcome(self, prediction, pattern_indicators, actual_result, actual_score):
-        """Record a match outcome for learning"""
+        """Record a match outcome for learning and SAVE TO SUPABASE"""
         winner_pred = prediction['winner']
         totals_pred = prediction['totals']
         
@@ -221,7 +239,7 @@ class AdaptiveLearningSystem:
         
         # Store outcome
         outcome = {
-            'timestamp': datetime.now(),
+            'timestamp': datetime.now().isoformat(),
             'home_team': prediction.get('home_team', 'Unknown'),
             'away_team': prediction.get('away_team', 'Unknown'),
             'winner_pattern': pattern_indicators['winner']['type'],
@@ -262,10 +280,13 @@ class AdaptiveLearningSystem:
         # Adjust feature weights based on outcomes
         self._adjust_weights(outcome)
         
-        # AUTO-SAVE TO SUPABASE
-        self.save_learning()
+        # SAVE TO SUPABASE (with success/failure feedback)
+        save_success = self.save_learning()
         
-        return outcome
+        if save_success:
+            return outcome, True, "✅ Outcome recorded and saved to Supabase!"
+        else:
+            return outcome, False, "⚠️ Outcome recorded locally but Supabase save failed"
     
     def _adjust_weights(self, outcome):
         """Adjust feature weights based on outcome success"""
@@ -386,6 +407,12 @@ if 'last_outcome' not in st.session_state:
 
 if 'show_feedback_message' not in st.session_state:
     st.session_state.show_feedback_message = False
+
+if 'score_input' not in st.session_state:
+    st.session_state.score_input = ""
+
+if 'save_status' not in st.session_state:
+    st.session_state.save_status = None
 
 def factorial_cache(n):
     if n not in st.session_state.factorial_cache:
@@ -1493,70 +1520,58 @@ def calculate_league_metrics(df):
     
     return {'avg_goals_per_match': avg_goals_per_match}
 
-# ========== FEEDBACK SYSTEM ==========
+# ========== FIXED FEEDBACK SYSTEM ==========
 
-def add_feedback_section(prediction, pattern_indicators, home_team, away_team):
-    """Add section for recording actual outcomes"""
+def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away_team):
+    """Record outcome with proper feedback persistence - NO st.rerun()"""
+    
     st.divider()
     st.subheader("📝 Record Outcome for Learning")
     
-    # Show feedback message if needed
-    if st.session_state.show_feedback_message and st.session_state.last_outcome:
-        last_outcome = st.session_state.last_outcome
-        with st.container():
-            st.success(f"""
-            ✅ **Outcome Recorded!**  
-            **Match**: {last_outcome['home_team']} vs {last_outcome['away_team']}  
-            **Actual Score**: {last_outcome['actual_score']}  
-            **Winner**: {'✅ Correct' if last_outcome['winner_correct'] else '❌ Wrong'}  
-            **Totals**: {'✅ Correct' if last_outcome['totals_correct'] else '❌ Wrong'}
-            """)
-            
-            # Show what was learned
-            with st.expander("📈 What was learned?", expanded=False):
-                winner_pattern = f"WINNER_{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
-                totals_pattern = f"TOTALS_{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
-                
-                winner_success = st.session_state.learning_system.get_pattern_success_rate(
-                    "WINNER", f"{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
-                )
-                totals_success = st.session_state.learning_system.get_pattern_success_rate(
-                    "TOTALS", f"{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
-                )
-                
-                st.write(f"**Winner Pattern**: {winner_pattern}")
-                st.write(f"**Winner Success Rate**: {winner_success:.0%}")
-                st.write(f"**Totals Pattern**: {totals_pattern}")
-                st.write(f"**Totals Success Rate**: {totals_success:.0%}")
-                st.write(f"**Total Patterns Learned**: {len(st.session_state.learning_system.pattern_memory)}")
+    # Show previous feedback if exists
+    if st.session_state.save_status:
+        status_type, status_message = st.session_state.save_status
+        if status_type == "success":
+            st.success(status_message)
+        else:
+            st.error(status_message)
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        actual_score = st.text_input("Actual Score (e.g., 2-1)", "", 
-                                   help="Enter the actual match result. The system will learn from this outcome.",
-                                   key="actual_score_input")
+        # Use session state to persist input
+        score_input = st.text_input(
+            "Actual Score (e.g., 2-1)", 
+            value=st.session_state.score_input,
+            key="score_input_widget",
+            help="Enter the actual match result. The system will learn from this outcome."
+        )
+        
+        # Update session state
+        st.session_state.score_input = score_input
     
     with col2:
-        record_button = st.button("✅ Record Outcome & Learn", 
-                                type="primary", 
-                                use_container_width=True, 
-                                key="record_outcome_btn",
-                                disabled=not actual_score)
+        record_button = st.button(
+            "✅ Record Outcome & Save to Supabase", 
+            type="primary", 
+            use_container_width=True, 
+            key="record_outcome_btn",
+            disabled=not score_input
+        )
     
-    if record_button and actual_score:
-        if '-' in actual_score:
+    if record_button and score_input:
+        if '-' in score_input:
             try:
-                home_goals, away_goals = map(int, actual_score.split('-'))
+                home_goals, away_goals = map(int, score_input.split('-'))
                 
-                # Record outcome
-                outcome = st.session_state.learning_system.record_outcome(
-                    prediction, pattern_indicators, "", actual_score
+                # Record outcome and SAVE TO SUPABASE
+                outcome, save_success, save_message = st.session_state.learning_system.record_outcome(
+                    prediction, pattern_indicators, "", score_input
                 )
                 
                 # Store in session state for display
                 st.session_state.last_outcome = outcome
-                st.session_state.show_feedback_message = True
+                st.session_state.save_status = ("success" if save_success else "error", save_message)
                 
                 # Add to match history
                 st.session_state.match_history.append({
@@ -1564,13 +1579,45 @@ def add_feedback_section(prediction, pattern_indicators, home_team, away_team):
                     'home_team': home_team,
                     'away_team': away_team,
                     'prediction': prediction,
-                    'actual_score': actual_score,
+                    'actual_score': score_input,
                     'winner_correct': outcome['winner_correct'],
-                    'totals_correct': outcome['totals_correct']
+                    'totals_correct': outcome['totals_correct'],
+                    'save_status': save_success
                 })
                 
-                # Clear the input and force UI update
-                st.rerun()
+                # Clear the input for next use
+                st.session_state.score_input = ""
+                
+                # Show immediate success message
+                if save_success:
+                    st.success(save_message)
+                    
+                    # Show what was learned
+                    with st.expander("📈 What was learned?", expanded=True):
+                        winner_pattern = f"WINNER_{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
+                        totals_pattern = f"TOTALS_{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
+                        
+                        winner_success = st.session_state.learning_system.get_pattern_success_rate(
+                            "WINNER", f"{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
+                        )
+                        totals_success = st.session_state.learning_system.get_pattern_success_rate(
+                            "TOTALS", f"{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
+                        )
+                        
+                        st.write(f"**Winner Pattern**: {winner_pattern}")
+                        st.write(f"**Winner Success Rate**: {winner_success:.0%}")
+                        st.write(f"**Totals Pattern**: {totals_pattern}")
+                        st.write(f"**Totals Success Rate**: {totals_success:.0%}")
+                        st.write(f"**Total Patterns Learned**: {len(st.session_state.learning_system.pattern_memory)}")
+                        st.write(f"**Total Outcomes Recorded**: {len(st.session_state.learning_system.outcomes)}")
+                        
+                        # Show Supabase status
+                        if st.session_state.learning_system.supabase:
+                            st.success("✅ Saved to Supabase successfully!")
+                        else:
+                            st.warning("⚠️ Saved locally (Supabase not available)")
+                else:
+                    st.error(save_message)
                 
             except ValueError:
                 st.error("❌ Please enter score in format '2-1' (numbers only)")
@@ -1621,31 +1668,32 @@ with st.sidebar:
 
     # Learning System Section
     st.divider()
-    st.header("📚 Learning System")
+    st.header("📚 Learning System Status")
     
     # Supabase Status
-    st.write("🔄 **Storage**: Supabase")
+    if st.session_state.learning_system.supabase:
+        st.success("🔄 **Storage**: Connected to Supabase")
+    else:
+        st.warning("🔄 **Storage**: Local only (Supabase not available)")
+    
     st.write(f"📊 **Your Patterns**: {len(st.session_state.learning_system.pattern_memory)}")
     st.write(f"📈 **Your Outcomes**: {len(st.session_state.learning_system.outcomes)}")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("💾 Save Learning", use_container_width=True):
-            st.session_state.learning_system.save_learning()
-            st.success("Learning data saved to Supabase!")
+    # REMOVED the confusing "Save Learning" button
+    # Instead, add a "Refresh Data" button
+    if st.button("🔄 Refresh Learning Data", use_container_width=True):
+        # Reload learning data
+        success = st.session_state.learning_system.load_learning()
+        if success:
+            st.success("Learning data refreshed from Supabase!")
+        else:
+            st.warning("Could not refresh from Supabase")
     
-    with col2:
-        if st.button("🔄 Refresh Stats", use_container_width=True):
-            # Reload learning data
-            st.session_state.learning_system.load_learning()
-            st.success("Learning stats refreshed!")
-    
-    # Clear feedback message button
-    if st.session_state.show_feedback_message:
-        if st.button("🗑️ Clear Feedback", type="secondary", use_container_width=True):
-            st.session_state.show_feedback_message = False
-            st.session_state.last_outcome = None
-            st.rerun()
+    # Clear feedback button
+    if st.session_state.save_status:
+        if st.button("🗑️ Clear Status Message", type="secondary", use_container_width=True):
+            st.session_state.save_status = None
+            st.session_state.score_input = ""
     
     st.divider()
     
@@ -1694,7 +1742,7 @@ if 'calculate_btn' not in locals() or not calculate_btn:
         st.subheader("📊 Your Learning History")
         for hist in reversed(st.session_state.match_history[-10:]):
             with st.container():
-                col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 2])
                 with col1:
                     st.write(f"**{hist['home_team']} vs {hist['away_team']}**")
                     st.caption(f"{hist['timestamp'].strftime('%Y-%m-%d %H:%M')}")
@@ -1705,6 +1753,8 @@ if 'calculate_btn' not in locals() or not calculate_btn:
                     st.write(f"Winner: {'✅' if hist['winner_correct'] else '❌'}")
                 with col4:
                     st.write(f"Totals: {'✅' if hist['totals_correct'] else '❌'}")
+                with col5:
+                    st.write(f"Save: {'✅' if hist.get('save_status', False) else '❌'}")
                 st.divider()
     
     st.stop()
@@ -2055,8 +2105,8 @@ with col3:
     st.metric("Total xG", f"{total_xg:.2f}", 
              delta=f"{'OVER' if total_xg > over_thresh else 'UNDER'} {over_thresh}")
 
-# ========== FEEDBACK SECTION ==========
-add_feedback_section(prediction, pattern_indicators, home_team, away_team)
+# ========== FIXED FEEDBACK SECTION ==========
+record_outcome_with_feedback(prediction, pattern_indicators, home_team, away_team)
 
 # ========== DETAILED ANALYSIS ==========
 if show_details:
@@ -2105,7 +2155,7 @@ if st.session_state.show_history and st.session_state.match_history:
     st.subheader("📊 Your Learning History")
     for hist in reversed(st.session_state.match_history[-10:]):
         with st.container():
-            col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+            col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 2])
             with col1:
                 st.write(f"**{hist['home_team']} vs {hist['away_team']}**")
                 st.caption(f"{hist['timestamp'].strftime('%Y-%m-%d %H:%M')}")
@@ -2116,6 +2166,8 @@ if st.session_state.show_history and st.session_state.match_history:
                 st.write(f"Winner: {'✅' if hist['winner_correct'] else '❌'}")
             with col4:
                 st.write(f"Totals: {'✅' if hist['totals_correct'] else '❌'}")
+            with col5:
+                st.write(f"Save: {'✅' if hist.get('save_status', False) else '❌'}")
             st.divider()
 
 # ========== EXPORT REPORT ==========
@@ -2128,7 +2180,7 @@ report = f"""
 Match: {home_team} vs {away_team}
 League: {selected_league}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-Storage: Supabase Persistent
+Storage: {'Supabase Connected' if st.session_state.learning_system.supabase else 'Local Storage Only'}
 
 🎯 ADAPTIVE BETTING CARD (Based on YOUR Data)
 {recommendation['icon']} {recommendation['text']}
@@ -2177,7 +2229,7 @@ Total: {prediction['expected_goals']['total']:.2f} xG
 🧠 YOUR LEARNING SYSTEM STATS
 Your Outcomes Recorded: {len(st.session_state.learning_system.outcomes)}
 Your Patterns Learned: {len(st.session_state.learning_system.pattern_memory)}
-Storage: Supabase
+Storage Status: {'✅ Connected to Supabase' if st.session_state.learning_system.supabase else '⚠️ Local storage only'}
 
 ---
 YOUR ADAPTIVE LEARNING RULES:
