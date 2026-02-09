@@ -14,12 +14,12 @@ warnings.filterwarnings('ignore')
 
 # Page config
 st.set_page_config(
-    page_title="⚽ Football Intelligence Engine v8.0 - PROVEN PATTERN MASTER",
+    page_title="⚽ Football Intelligence Engine v8.1 - PROVEN PATTERN MASTER",
     page_icon="🎯",
     layout="wide"
 )
 
-st.title("🎯 Football Intelligence Engine v8.0 - PROVEN PATTERN MASTER")
+st.title("🎯 Football Intelligence Engine v8.1 - PROVEN PATTERN MASTER")
 st.markdown("""
     **DATA-DRIVEN OVERRIDES** - Based on 41-match empirical analysis
     *10 proven rules, 7 anti-patterns, 4 gold patterns*
@@ -199,11 +199,13 @@ class ProvenPatternSystem:
         self.load_learning()
     
     def save_learning(self):
-        """Save learning data"""
+        """Save learning data to Supabase (football_learning table)"""
         try:
             if not self.supabase:
+                st.warning("No Supabase connection. Saving locally only.")
                 return self._save_learning_local()
             
+            # Prepare data for Supabase
             supabase_data = []
             for pattern_key, stats in self.pattern_memory.items():
                 if stats['total'] == 0:
@@ -216,19 +218,45 @@ class ProvenPatternSystem:
                     "last_updated": datetime.now().isoformat(),
                     "metadata": json.dumps({
                         "success_rate": stats['success'] / stats['total'] if stats['total'] > 0 else 0,
-                        "strength": self._get_strength_category(stats)
+                        "strength": self._get_strength_category(stats),
+                        "last_updated": datetime.now().isoformat()
                     })
                 }
                 supabase_data.append(data)
             
             if supabase_data:
-                self.supabase.table("proven_patterns").delete().neq("pattern_key", "dummy").execute()
-                self.supabase.table("proven_patterns").insert(supabase_data).execute()
-                return True
+                # Try to update existing records first, then insert new ones
+                for data in supabase_data:
+                    try:
+                        # Check if pattern exists
+                        response = self.supabase.table("football_learning").select("*").eq("pattern_key", data['pattern_key']).execute()
+                        
+                        if response.data and len(response.data) > 0:
+                            # Update existing record
+                            self.supabase.table("football_learning").update({
+                                "total_matches": data['total_matches'],
+                                "successful_matches": data['successful_matches'],
+                                "last_updated": data['last_updated'],
+                                "metadata": data['metadata']
+                            }).eq("pattern_key", data['pattern_key']).execute()
+                            st.success(f"✅ Updated pattern: {data['pattern_key']}")
+                        else:
+                            # Insert new record
+                            self.supabase.table("football_learning").insert(data).execute()
+                            st.success(f"✅ Inserted pattern: {data['pattern_key']}")
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error saving pattern {data['pattern_key']}: {str(e)}")
+                        # Fallback to local storage
+                        return self._save_learning_local()
                 
-            return True
+                return True
+            else:
+                st.warning("No pattern data to save")
+                return True
             
         except Exception as e:
+            st.error(f"❌ Supabase save error: {str(e)}")
             return self._save_learning_local()
     
     def _get_strength_category(self, stats):
@@ -250,31 +278,39 @@ class ProvenPatternSystem:
             with open("proven_patterns_data.pkl", "wb") as f:
                 pickle.dump({
                     'pattern_memory': self.pattern_memory,
-                    'version': '8.0_proven'
+                    'version': '8.1_proven',
+                    'last_saved': datetime.now().isoformat()
                 }, f)
             return True
-        except:
+        except Exception as e:
+            st.error(f"❌ Local save error: {str(e)}")
             return False
     
     def load_learning(self):
-        """Load learning data"""
+        """Load learning data from Supabase (football_learning table)"""
         try:
             if not self.supabase:
+                st.warning("No Supabase connection. Loading local data only.")
                 return self._load_learning_local()
             
-            response = self.supabase.table("proven_patterns").select("*").execute()
+            # First try to load from Supabase
+            response = self.supabase.table("football_learning").select("*").execute()
             
             if response.data:
+                self.pattern_memory = {}
                 for row in response.data:
                     self.pattern_memory[row['pattern_key']] = {
                         'total': row['total_matches'] or 0,
                         'success': row['successful_matches'] or 0
                     }
+                st.success(f"✅ Loaded {len(response.data)} patterns from Supabase")
                 return True
-            
-            return True
+            else:
+                st.warning("No data in Supabase, trying local storage")
+                return self._load_learning_local()
             
         except Exception as e:
+            st.error(f"❌ Supabase load error: {str(e)}")
             return self._load_learning_local()
     
     def _load_learning_local(self):
@@ -284,13 +320,17 @@ class ProvenPatternSystem:
                 with open("proven_patterns_data.pkl", "rb") as f:
                     data = pickle.load(f)
                     self.pattern_memory = data.get('pattern_memory', {})
+                st.success(f"✅ Loaded {len(self.pattern_memory)} patterns from local storage")
                 return True
-        except:
-            pass
-        return False
+            else:
+                st.warning("No local pattern data found. Starting fresh.")
+                return True
+        except Exception as e:
+            st.error(f"❌ Local load error: {str(e)}")
+            return False
     
     def record_outcome(self, prediction, actual_score):
-        """Record match outcome"""
+        """Record match outcome - FIXED VERSION"""
         try:
             # Generate pattern keys
             winner_key = self._generate_winner_key(prediction['winner'])
@@ -310,13 +350,13 @@ class ProvenPatternSystem:
             total_goals = home_goals + away_goals
             actual_over = total_goals > 2.5
             
-            # Initialize patterns
+            # Initialize patterns if they don't exist
             if winner_key not in self.pattern_memory:
                 self.pattern_memory[winner_key] = {'total': 0, 'success': 0}
             if totals_key not in self.pattern_memory:
                 self.pattern_memory[totals_key] = {'total': 0, 'success': 0}
             
-            # Check predictions
+            # Check predictions against ORIGINAL predictions, not final ones
             winner_correct = prediction['winner']['original_prediction'] == actual_winner
             totals_correct = (prediction['totals']['original_direction'] == "OVER") == actual_over
             
@@ -327,7 +367,7 @@ class ProvenPatternSystem:
             self.pattern_memory[totals_key]['total'] += 1
             self.pattern_memory[totals_key]['success'] += 1 if totals_correct else 0
             
-            # Save
+            # Save to Supabase and local
             save_success = self.save_learning()
             
             return {
@@ -335,15 +375,18 @@ class ProvenPatternSystem:
                 'totals_correct': totals_correct,
                 'winner_key': winner_key,
                 'totals_key': totals_key,
-                'save_success': save_success
+                'save_success': save_success,
+                'winner_stats': self.pattern_memory[winner_key],
+                'totals_stats': self.pattern_memory[totals_key]
             }, "Outcome recorded!"
             
         except Exception as e:
-            return None, f"Error: {str(e)}"
+            return None, f"❌ Error: {str(e)}"
     
     def _generate_winner_key(self, winner_pred):
         """Generate winner pattern key"""
-        pred_type = winner_pred.get('original_prediction', winner_pred.get('type', 'UNKNOWN'))
+        # Use the original prediction for pattern key
+        original_pred = winner_pred.get('original_prediction', winner_pred.get('type', 'UNKNOWN'))
         confidence = winner_pred.get('original_confidence', winner_pred.get('confidence', '50'))
         
         # Standardize confidence
@@ -353,10 +396,14 @@ class ProvenPatternSystem:
         elif isinstance(confidence, float):
             confidence = str(int(confidence)) if confidence.is_integer() else f"{confidence:.1f}"
         
-        return f"WINNER_{winner_pred.get('confidence_category', 'MEDIUM')}_{confidence}"
+        # Use confidence category from prediction
+        confidence_category = winner_pred.get('confidence_category', 'MEDIUM')
+        
+        return f"WINNER_{confidence_category}_{confidence}"
     
     def _generate_totals_key(self, totals_pred):
         """Generate totals pattern key"""
+        # Use ORIGINAL finishing alignment and total category for pattern key
         finishing = totals_pred.get('original_finishing_alignment', 
                                   totals_pred.get('finishing_alignment', 'NEUTRAL'))
         total_cat = totals_pred.get('original_total_category', 
@@ -398,6 +445,7 @@ class ProvenPatternSystem:
         winner_confidence = winner_pred['confidence_score']
         winner_conf_str = f"{winner_confidence:.1f}"
         
+        # Check for specific confidence values in proven failures
         if f"WINNER_HIGH_{winner_conf_str}" in PROVEN_FAILURES:
             rule = PROVEN_FAILURES[f"WINNER_HIGH_{winner_conf_str}"]
             advice['winner']['action'] = rule['action']
@@ -981,7 +1029,8 @@ class ProvenFootballEngine:
                 'stake': betting_advice['winner']['stake'],
                 'color': self._get_color_for_action(betting_advice['winner']['action']),
                 'has_confidence_bug': winner_prediction.get('has_confidence_bug', False),
-                'variance_effect': betting_advice['winner'].get('variance_effect', 'NONE')
+                'variance_effect': betting_advice['winner'].get('variance_effect', 'NONE'),
+                'confidence_category': winner_prediction.get('confidence_category', 'MEDIUM')
             },
             
             'totals': {
@@ -1011,7 +1060,7 @@ class ProvenFootballEngine:
             'probabilities': probabilities,
             'expected_goals': {'home': home_xg, 'away': away_xg, 'total': home_xg + away_xg},
             'betting_advice': betting_advice,
-            'version': '8.0_proven',
+            'version': '8.1_proven',
             'league': self.league_name
         }
         
@@ -1388,7 +1437,7 @@ def calculate_league_metrics(df):
 # ========== FEEDBACK SYSTEM ==========
 
 def record_outcome_proven(prediction):
-    """Proven feedback system"""
+    """Proven feedback system with Supabase integration"""
     
     st.divider()
     st.subheader("📝 Record Outcome for Pattern Learning")
@@ -1440,44 +1489,61 @@ def record_outcome_proven(prediction):
                 st.error("Enter valid score like '2-1'")
             else:
                 try:
-                    with st.spinner("Saving pattern data..."):
+                    with st.spinner("Saving pattern data to Supabase..."):
                         result, message = st.session_state.proven_system.record_outcome(prediction, score)
                         
                         if result:
-                            if result['save_success']:
-                                st.success("✅ Pattern saved successfully!")
-                            else:
-                                st.warning("⚠️ Saved locally")
+                            col_success, col_stats = st.columns(2)
                             
+                            with col_success:
+                                if result['save_success']:
+                                    st.success("✅ Pattern saved to Supabase!")
+                                else:
+                                    st.warning("⚠️ Saved locally only (check Supabase connection)")
+                            
+                            with col_stats:
+                                st.write(f"**Winner:** {'✅ Correct' if result['winner_correct'] else '❌ Wrong'}")
+                                st.write(f"**Totals:** {'✅ Correct' if result['totals_correct'] else '❌ Wrong'}")
+                            
+                            # Show updated stats
+                            st.write("### 📊 Updated Pattern Stats:")
                             col1, col2 = st.columns(2)
                             
                             with col1:
-                                if result['winner_correct']:
-                                    st.success(f"✅ Winner correct!")
-                                else:
-                                    st.error(f"❌ Winner wrong!")
+                                new_winner_stats = result['winner_stats']
+                                success_rate = new_winner_stats['success'] / new_winner_stats['total'] if new_winner_stats['total'] > 0 else 0
+                                st.write(f"**{winner_key}**")
+                                st.write(f"Record: {new_winner_stats['success']}/{new_winner_stats['total']} ({success_rate:.0%})")
                             
                             with col2:
-                                if result['totals_correct']:
-                                    st.success(f"✅ Totals correct!")
-                                else:
-                                    st.error(f"❌ Totals wrong!")
+                                new_totals_stats = result['totals_stats']
+                                success_rate = new_totals_stats['success'] / new_totals_stats['total'] if new_totals_stats['total'] > 0 else 0
+                                st.write(f"**{totals_key}**")
+                                st.write(f"Record: {new_totals_stats['success']}/{new_totals_stats['total']} ({success_rate:.0%})")
                             
-                            # Update proven patterns if needed
-                            if not result['winner_correct'] and winner_key not in PROVEN_FAILURES and winner_stats['total'] >= 2:
-                                st.error(f"⚠️ Consider adding {winner_key} to PROVEN_FAILURES")
+                            # Check for pattern significance
+                            if new_winner_stats['total'] >= 3:
+                                success_rate = new_winner_stats['success'] / new_winner_stats['total']
+                                if success_rate < 0.4 and winner_key not in PROVEN_FAILURES:
+                                    st.error(f"⚠️ **Consider adding to PROVEN_FAILURES:** {winner_key} ({new_winner_stats['success']}/{new_winner_stats['total']})")
+                                elif success_rate > 0.7 and winner_key not in PROVEN_SUCCESSES:
+                                    st.success(f"⚠️ **Consider adding to PROVEN_SUCCESSES:** {winner_key} ({new_winner_stats['success']}/{new_winner_stats['total']})")
                             
-                            if result['totals_correct'] and totals_key not in PROVEN_SUCCESSES and totals_stats['total'] >= 3:
-                                st.success(f"⚠️ Consider adding {totals_key} to PROVEN_SUCCESSES")
+                            if new_totals_stats['total'] >= 3:
+                                success_rate = new_totals_stats['success'] / new_totals_stats['total']
+                                if success_rate < 0.4 and totals_key not in PROVEN_FAILURES:
+                                    st.error(f"⚠️ **Consider adding to PROVEN_FAILURES:** {totals_key} ({new_totals_stats['success']}/{new_totals_stats['total']})")
+                                elif success_rate > 0.7 and totals_key not in PROVEN_SUCCESSES:
+                                    st.success(f"⚠️ **Consider adding to PROVEN_SUCCESSES:** {totals_key} ({new_totals_stats['success']}/{new_totals_stats['total']})")
                             
                             st.rerun()
                         else:
-                            st.error(message)
+                            st.error(f"❌ {message}")
                             
                 except ValueError:
                     st.error("Enter numbers like '2-1'")
                 except Exception as e:
-                    st.error(f"Error: {str(e)}")
+                    st.error(f"❌ Error: {str(e)}")
 
 # ========== STREAMLIT UI ==========
 
@@ -1667,7 +1733,7 @@ else:
 
 # ========== DISPLAY PREDICTION ==========
 st.header(f"🎯 {home_team} vs {away_team}")
-st.caption(f"League: {selected_league} | Version: {prediction.get('version', '8.0')} | Empirical Rules Applied")
+st.caption(f"League: {selected_league} | Version: {prediction.get('version', '8.1')} | Empirical Rules Applied")
 
 # Prediction cards
 col1, col2 = st.columns(2)
@@ -1951,11 +2017,11 @@ totals_stats = st.session_state.proven_system.get_pattern_stats(totals_key)
 winner_success_rate = winner_stats['success'] / winner_stats['total'] if winner_stats['total'] > 0 else 0
 totals_success_rate = totals_stats['success'] / totals_stats['total'] if totals_stats['total'] > 0 else 0
 
-report = f"""🎯 FOOTBALL INTELLIGENCE ENGINE v8.0 - EMPIRICAL PATTERN MASTER
+report = f"""🎯 FOOTBALL INTELLIGENCE ENGINE v8.1 - EMPIRICAL PATTERN MASTER
 Match: {home_team} vs {away_team}
 League: {selected_league}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-Version: 8.0 (Empirical proven rules)
+Version: 8.1 (Empirical proven rules)
 
 🎯 EMPIRICAL BETTING ADVICE:
 {recommendation['icon']} {recommendation['text']}
