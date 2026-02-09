@@ -1523,109 +1523,103 @@ def calculate_league_metrics(df):
 # ========== FIXED FEEDBACK SYSTEM ==========
 
 def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away_team):
-    """Record outcome with proper feedback persistence - NO st.rerun()"""
+    """Record outcome with proper feedback persistence - using form to prevent reruns"""
     
     st.divider()
     st.subheader("📝 Record Outcome for Learning")
     
     # Show previous feedback if exists
-    if st.session_state.save_status:
+    if st.session_state.get('save_status'):
         status_type, status_message = st.session_state.save_status
         if status_type == "success":
             st.success(status_message)
         else:
             st.error(status_message)
     
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        # Use session state to persist input
-        score_input = st.text_input(
-            "Actual Score (e.g., 2-1)", 
-            value=st.session_state.score_input,
-            key="score_input_widget",
-            help="Enter the actual match result. The system will learn from this outcome."
-        )
+    # Use a FORM to prevent automatic reruns
+    with st.form(key="record_outcome_form", clear_on_submit=True):
+        col1, col2 = st.columns([2, 1])
         
-        # Update session state
-        st.session_state.score_input = score_input
-    
-    with col2:
-        record_button = st.button(
-            "✅ Record Outcome & Save to Supabase", 
-            type="primary", 
-            use_container_width=True, 
-            key="record_outcome_btn",
-            disabled=not score_input
-        )
-    
-    if record_button and score_input:
-        if '-' in score_input:
-            try:
-                home_goals, away_goals = map(int, score_input.split('-'))
-                
-                # Record outcome and SAVE TO SUPABASE
-                outcome, save_success, save_message = st.session_state.learning_system.record_outcome(
-                    prediction, pattern_indicators, "", score_input
-                )
-                
-                # Store in session state for display
-                st.session_state.last_outcome = outcome
-                st.session_state.save_status = ("success" if save_success else "error", save_message)
-                
-                # Add to match history
-                st.session_state.match_history.append({
-                    'timestamp': datetime.now(),
-                    'home_team': home_team,
-                    'away_team': away_team,
-                    'prediction': prediction,
-                    'actual_score': score_input,
-                    'winner_correct': outcome['winner_correct'],
-                    'totals_correct': outcome['totals_correct'],
-                    'save_status': save_success
-                })
-                
-                # Clear the input for next use
-                st.session_state.score_input = ""
-                
-                # Show immediate success message
-                if save_success:
-                    st.success(save_message)
+        with col1:
+            score_input = st.text_input(
+                "Actual Score (e.g., 2-1)", 
+                value="",
+                help="Enter the actual match result. The system will learn from this outcome."
+            )
+        
+        with col2:
+            # Submit button inside the form
+            submit_button = st.form_submit_button(
+                "✅ Record Outcome & Save to Supabase", 
+                type="primary", 
+                use_container_width=True,
+                disabled=not score_input
+            )
+        
+        if submit_button and score_input:
+            if '-' in score_input:
+                try:
+                    home_goals, away_goals = map(int, score_input.split('-'))
                     
-                    # Show what was learned
-                    with st.expander("📈 What was learned?", expanded=True):
-                        winner_pattern = f"WINNER_{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
-                        totals_pattern = f"TOTALS_{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
+                    # Record outcome and SAVE TO SUPABASE
+                    outcome, save_success, save_message = st.session_state.learning_system.record_outcome(
+                        prediction, pattern_indicators, "", score_input
+                    )
+                    
+                    # Store in session state for display
+                    st.session_state.last_outcome = outcome
+                    st.session_state.save_status = ("success" if save_success else "error", save_message)
+                    
+                    # Add to match history
+                    st.session_state.match_history.append({
+                        'timestamp': datetime.now(),
+                        'home_team': home_team,
+                        'away_team': away_team,
+                        'prediction': prediction,
+                        'actual_score': score_input,
+                        'winner_correct': outcome['winner_correct'],
+                        'totals_correct': outcome['totals_correct'],
+                        'save_status': save_success
+                    })
+                    
+                    # Show immediate success message
+                    if save_success:
+                        st.success(save_message)
                         
-                        winner_success = st.session_state.learning_system.get_pattern_success_rate(
-                            "WINNER", f"{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
-                        )
-                        totals_success = st.session_state.learning_system.get_pattern_success_rate(
-                            "TOTALS", f"{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
-                        )
-                        
-                        st.write(f"**Winner Pattern**: {winner_pattern}")
-                        st.write(f"**Winner Success Rate**: {winner_success:.0%}")
-                        st.write(f"**Totals Pattern**: {totals_pattern}")
-                        st.write(f"**Totals Success Rate**: {totals_success:.0%}")
-                        st.write(f"**Total Patterns Learned**: {len(st.session_state.learning_system.pattern_memory)}")
-                        st.write(f"**Total Outcomes Recorded**: {len(st.session_state.learning_system.outcomes)}")
-                        
-                        # Show Supabase status
-                        if st.session_state.learning_system.supabase:
-                            st.success("✅ Saved to Supabase successfully!")
-                        else:
-                            st.warning("⚠️ Saved locally (Supabase not available)")
-                else:
-                    st.error(save_message)
-                
-            except ValueError:
-                st.error("❌ Please enter score in format '2-1' (numbers only)")
-        else:
-            st.error("❌ Please enter a valid score format '2-1'")
+                        # Show what was learned
+                        with st.expander("📈 What was learned?", expanded=True):
+                            winner_pattern = f"WINNER_{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
+                            totals_pattern = f"TOTALS_{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
+                            
+                            winner_success = st.session_state.learning_system.get_pattern_success_rate(
+                                "WINNER", f"{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
+                            )
+                            totals_success = st.session_state.learning_system.get_pattern_success_rate(
+                                "TOTALS", f"{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
+                            )
+                            
+                            st.write(f"**Winner Pattern**: {winner_pattern}")
+                            st.write(f"**Winner Success Rate**: {winner_success:.0%}")
+                            st.write(f"**Totals Pattern**: {totals_pattern}")
+                            st.write(f"**Totals Success Rate**: {totals_success:.0%}")
+                            st.write(f"**Total Patterns Learned**: {len(st.session_state.learning_system.pattern_memory)}")
+                            st.write(f"**Total Outcomes Recorded**: {len(st.session_state.learning_system.outcomes)}")
+                            
+                            # Show Supabase status
+                            if st.session_state.learning_system.supabase:
+                                st.success("✅ Saved to Supabase successfully!")
+                            else:
+                                st.warning("⚠️ Saved locally (Supabase not available)")
+                    else:
+                        st.error(save_message)
+                    
+                except ValueError:
+                    st.error("❌ Please enter score in format '2-1' (numbers only)")
+            else:
+                st.error("❌ Please enter a valid score format '2-1'")
     
     st.caption("💡 **Tip**: Enter the actual match result to help the system learn. Come back after the match to record outcomes!")
-
+    
 # ========== STREAMLIT UI ==========
 
 # Sidebar
