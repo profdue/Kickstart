@@ -1628,6 +1628,14 @@ record_outcome_improved(prediction)
 st.divider()
 st.subheader("📤 Export")
 
+# Get current stats safely
+winner_stats = st.session_state.learning_system.get_pattern_stats(winner_key)
+totals_stats = st.session_state.learning_system.get_pattern_stats(totals_key)
+
+# Calculate success rates safely
+winner_success_rate = winner_stats['success'] / winner_stats['total'] if winner_stats['total'] > 0 else 0
+totals_success_rate = totals_stats['success'] / totals_stats['total'] if totals_stats['total'] > 0 else 0
+
 report = f"""⚽ FOOTBALL INTELLIGENCE ENGINE v6.0 - YOUR IMPROVED RULES
 Match: {home_team} vs {away_team}
 League: {selected_league}
@@ -1647,7 +1655,7 @@ Reason: {winner_pred['reason']}
 Probability: {winner_pred['probability']*100:.1f}%
 Confidence: {winner_pred['confidence']} ({winner_pred['confidence_score']:.0f}/100)
 Pattern: WINNER_{winner_pred['original_prediction']}_{winner_pred['original_confidence']}
-Pattern stats: {winner_stats['success']}/{winner_stats['total']} wins ({winner_stats['success']/winner_stats['total']:.0% if winner_stats['total'] > 0 else 'N/A'})
+Pattern stats: {winner_stats['success']}/{winner_stats['total']} wins ({winner_success_rate:.0%})
 
 🎯 TOTALS:
 Bet on: {totals_pred['direction']} 2.5
@@ -1657,7 +1665,7 @@ Reason: {totals_pred['reason']}
 Probability: {totals_pred['probability']*100:.1f}%
 Confidence: {totals_pred['confidence']} ({totals_pred['confidence_score']:.0f}/100)
 Pattern: TOTALS_{totals_pred['original_finishing_alignment']}_{totals_pred['original_total_category']}
-Pattern stats: {totals_stats['success']}/{totals_stats['total']} wins ({totals_stats['success']/totals_stats['total']:.0% if totals_stats['total'] > 0 else 'N/A'})
+Pattern stats: {totals_stats['success']}/{totals_stats['total']} wins ({totals_success_rate:.0%})
 
 📊 EXPECTED GOALS:
 {home_team}: {prediction['expected_goals']['home']:.2f} xG
