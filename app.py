@@ -258,9 +258,14 @@ class SurgicalLearningSystem:
         if totals_key not in self.pattern_memory:
             self.pattern_memory[totals_key] = {'total': 0, 'success': 0}
         
-        # Check predictions
-        winner_correct = prediction['winner']['original_prediction'] == actual_winner
-        totals_correct = (prediction['totals']['original_direction'] == "OVER") == actual_over
+        # Check predictions - use type instead of original_prediction if needed
+        winner_pred = prediction['winner']
+        winner_original = winner_pred.get('original_prediction', winner_pred.get('type', 'UNKNOWN'))
+        totals_pred = prediction['totals']
+        totals_original = totals_pred.get('original_direction', totals_pred.get('direction', 'UNKNOWN'))
+        
+        winner_correct = winner_original == actual_winner
+        totals_correct = (totals_original == "OVER") == actual_over
         
         # Update patterns
         self.pattern_memory[winner_key]['total'] += 1
@@ -281,22 +286,31 @@ class SurgicalLearningSystem:
         }, "Outcome recorded with surgical precision!"
     
     def generate_standardized_keys(self, prediction):
-        """Generate standardized pattern keys"""
+        """Generate standardized pattern keys with fallback logic"""
         winner_pred = prediction['winner']
         totals_pred = prediction['totals']
         
-        # Winner key
-        orig_conf = str(winner_pred['original_confidence'])
+        # Winner key with fallbacks
+        orig_conf = str(winner_pred.get('original_confidence', winner_pred.get('confidence', '50.0')))
         if orig_conf.endswith('.0'):
             orig_conf = orig_conf[:-2]
-        winner_key = f"WINNER_{winner_pred['original_prediction']}_{orig_conf}"
+        
+        # Get original prediction with fallback
+        orig_pred = winner_pred.get('original_prediction', winner_pred.get('type', 'UNKNOWN'))
+        
+        winner_key = f"WINNER_{orig_pred}_{orig_conf}"
         winner_key = self.standardize_pattern_key(winner_key)
         
-        # Totals key
-        finishing = totals_pred['original_finishing_alignment']
+        # Totals key with fallbacks
+        finishing = totals_pred.get('original_finishing_alignment', 
+                                  totals_pred.get('finishing_alignment', 'NEUTRAL'))
         if finishing.endswith("_OVERRIDDEN"):
             finishing = finishing[:-11]
-        totals_key = f"TOTALS_{finishing}_{totals_pred['original_total_category']}"
+        
+        total_cat = totals_pred.get('original_total_category', 
+                                   totals_pred.get('total_category', 'MODERATE_LOW'))
+        
+        totals_key = f"TOTALS_{finishing}_{total_cat}"
         totals_key = self.standardize_pattern_key(totals_key)
         
         return winner_key, totals_key
@@ -304,7 +318,7 @@ class SurgicalLearningSystem:
     def get_surgical_advice(self, winner_pred, totals_pred):
         """APPLY SURGICAL RULES with anti-pattern overrides"""
         
-        # Generate pattern keys
+        # Generate pattern keys with fallbacks
         winner_key, totals_key = self.generate_standardized_keys({
             'winner': winner_pred,
             'totals': totals_pred
@@ -328,8 +342,13 @@ class SurgicalLearningSystem:
         
         # ====== APPLY ANTI-PATTERN OVERRIDES FIRST ======
         
-        # 1. Check for KNOWN ANTI-PATTERNS
-        anti_pattern_key = f"TOTALS_{totals_pred.get('original_finishing_alignment', 'N/A')}_{totals_pred.get('original_total_category', 'N/A')}"
+        # 1. Check for KNOWN ANTI-PATTERNS in totals
+        finishing = totals_pred.get('original_finishing_alignment', 
+                                  totals_pred.get('finishing_alignment', 'NEUTRAL'))
+        total_cat = totals_pred.get('original_total_category', 
+                                   totals_pred.get('total_category', 'MODERATE_LOW'))
+        
+        anti_pattern_key = f"TOTALS_{finishing}_{total_cat}"
         anti_pattern_key = self.standardize_pattern_key(anti_pattern_key)
         
         if anti_pattern_key in ANTI_PATTERNS:
@@ -340,6 +359,11 @@ class SurgicalLearningSystem:
                 advice['totals']['confidence'] = rule['confidence']
                 advice['totals']['reason'] = f"🎯 ANTI-PATTERN: {rule['reason']}"
                 advice['totals']['color'] = '#DC2626'
+            elif rule['action'] == 'DERATE':
+                advice['totals']['action'] = 'REDUCED_STAKE'
+                advice['totals']['confidence'] = totals_pred['confidence_score'] * rule.get('confidence_multiplier', 0.7)
+                advice['totals']['reason'] = f"⚠️ DERATED: {rule['reason']}"
+                advice['totals']['color'] = '#F59E0B'
         
         # 2. Check for 70% confidence bug in winner
         if winner_pred['confidence'] == "HIGH" and 68 <= winner_pred['confidence_score'] <= 72:
