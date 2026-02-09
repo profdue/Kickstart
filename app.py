@@ -217,8 +217,9 @@ class SurgicalLearningSystem:
     
     def standardize_pattern_key(self, pattern_key):
         """Standardize pattern keys - remove .0 decimals"""
-        if not pattern_key:
-            return pattern_key
+        if not pattern_key or pattern_key is None:
+            return {'total': 0, 'success': 0}
+        return self.pattern_memory.get(pattern_key, {'total': 0, 'success': 0})
         
         parts = pattern_key.split('_')
         if len(parts) >= 3:
@@ -285,35 +286,52 @@ class SurgicalLearningSystem:
             'save_success': save_success
         }, "Outcome recorded with surgical precision!"
     
-    def generate_standardized_keys(self, prediction):
-        """Generate standardized pattern keys with fallback logic"""
-        winner_pred = prediction['winner']
-        totals_pred = prediction['totals']
+def generate_standardized_keys(self, prediction):
+    """Generate standardized pattern keys with robust fallback logic"""
+    try:
+        winner_pred = prediction.get('winner', {})
+        totals_pred = prediction.get('totals', {})
         
-        # Winner key with fallbacks
-        orig_conf = str(winner_pred.get('original_confidence', winner_pred.get('confidence', '50.0')))
+        # Winner key with robust fallbacks
+        orig_pred = winner_pred.get('original_prediction', 
+                                   winner_pred.get('type', 
+                                                   winner_pred.get('prediction', 'UNKNOWN')))
+        
+        # Handle confidence with multiple fallbacks
+        orig_conf = winner_pred.get('original_confidence', 
+                                   winner_pred.get('confidence', '50.0'))
+        if isinstance(orig_conf, (int, float)):
+            orig_conf = str(float(orig_conf))
+        elif not isinstance(orig_conf, str):
+            orig_conf = '50.0'
+        
+        # Remove .0 decimal if present
         if orig_conf.endswith('.0'):
             orig_conf = orig_conf[:-2]
-        
-        # Get original prediction with fallback
-        orig_pred = winner_pred.get('original_prediction', winner_pred.get('type', 'UNKNOWN'))
         
         winner_key = f"WINNER_{orig_pred}_{orig_conf}"
         winner_key = self.standardize_pattern_key(winner_key)
         
-        # Totals key with fallbacks
+        # Totals key with robust fallbacks
         finishing = totals_pred.get('original_finishing_alignment', 
-                                  totals_pred.get('finishing_alignment', 'NEUTRAL'))
+                                  totals_pred.get('finishing_alignment',
+                                                 totals_pred.get('alignment', 'NEUTRAL')))
         if finishing.endswith("_OVERRIDDEN"):
             finishing = finishing[:-11]
         
         total_cat = totals_pred.get('original_total_category', 
-                                   totals_pred.get('total_category', 'MODERATE_LOW'))
+                                   totals_pred.get('total_category',
+                                                  totals_pred.get('category', 'MODERATE_LOW')))
         
         totals_key = f"TOTALS_{finishing}_{total_cat}"
         totals_key = self.standardize_pattern_key(totals_key)
         
         return winner_key, totals_key
+        
+    except Exception as e:
+        # If anything fails, return default keys
+        st.error(f"Error generating pattern keys: {e}")
+        return "WINNER_UNKNOWN_50", "TOTALS_NEUTRAL_MODERATE_LOW"
     
     def get_surgical_advice(self, winner_pred, totals_pred):
         """APPLY SURGICAL RULES with anti-pattern overrides"""
@@ -1324,8 +1342,14 @@ def record_outcome_surgical(prediction):
     # Show current patterns
     winner_key, totals_key = st.session_state.learning_system.generate_standardized_keys(prediction)
     
-    winner_stats = st.session_state.learning_system.get_pattern_stats(winner_key)
-    totals_stats = st.session_state.learning_system.get_pattern_stats(totals_key)
+    # Get pattern stats safely
+    winner_stats = {'total': 0, 'success': 0}
+    totals_stats = {'total': 0, 'success': 0}
+    
+    if winner_key:
+        winner_stats = st.session_state.learning_system.get_pattern_stats(winner_key)
+    if totals_key:
+        totals_stats = st.session_state.learning_system.get_pattern_stats(totals_key)
     
     col1, col2 = st.columns(2)
     
