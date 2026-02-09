@@ -1868,7 +1868,7 @@ with st.expander("🎯 Winner Rules Applied", expanded=False):
             st.write(f"→ Record: 4/5 success at 100% confidence")
             st.write(f"→ Action: Boost confidence by 10%")
 
-# Totals rules
+# Totals rules - FIXED VERSION
 with st.expander("📈 Totals Rules Applied", expanded=False):
     col1, col2 = st.columns(2)
     
@@ -1900,9 +1900,10 @@ with st.expander("📈 Totals Rules Applied", expanded=False):
             st.write(f"→ Record: {PROVEN_SUCCESSES[totals_key]['record']}")
             st.write(f"→ Boost: +{PROVEN_SUCCESSES[totals_key]['boost']}%")
         
-        # Check for high variance
-        home_finish = prediction['totals']['home_finishing']
-        away_finish = prediction['totals']['away_finishing']
+        # Check for high variance - SAFELY access home_finishing
+        # Use .get() method with default value to avoid KeyError
+        home_finish = prediction['totals'].get('home_finishing', 0)
+        away_finish = prediction['totals'].get('away_finishing', 0)
         
         if home_finish > HIGH_VARIANCE_RULES["OVERPERFORMER"]["threshold"] or away_finish > HIGH_VARIANCE_RULES["OVERPERFORMER"]["threshold"]:
             st.info(f"**High Variance - Overperformer:**")
@@ -1925,6 +1926,11 @@ with st.expander("📈 Totals Rules Applied", expanded=False):
                 st.write(f"→ Action: REDUCE OVER")
                 st.write(f"→ Penalty: {HIGH_VARIANCE_RULES['UNDERPERFORMER']['over_penalty']}% confidence")
                 st.write(f"→ Reason: {HIGH_VARIANCE_RULES['UNDERPERFORMER']['over_reason']}")
+        
+        # Also show the actual finishing values for transparency
+        st.write(f"**Finishing Stats:**")
+        st.write(f"→ Home: {home_finish:.3f} goals vs xG")
+        st.write(f"→ Away: {away_finish:.3f} goals vs xG")
 
 # ========== FEEDBACK ==========
 record_outcome_proven(prediction)
