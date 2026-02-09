@@ -99,29 +99,22 @@ class AdaptiveLearningSystem:
                 }
                 supabase_data.append(data)
             
-            # Save outcomes as a separate record - FIX JSON SERIALIZATION
+            # Save outcomes as a separate record
             if self.outcomes:
-                # Convert datetime objects to strings for JSON serialization
-                serializable_outcomes = []
-                for outcome in self.outcomes[-1000:]:  # Keep last 1000 outcomes
-                    serialized_outcome = {}
-                    for key, value in outcome.items():
-                        if isinstance(value, datetime):
-                            serialized_outcome[key] = value.isoformat()
-                        else:
-                            serialized_outcome[key] = value
-                    serializable_outcomes.append(serialized_outcome)
+                # Outcomes are already in ISO format from record_outcome method
+                # Keep only last 1000 outcomes to avoid payload size issues
+                recent_outcomes = self.outcomes[-1000:] if len(self.outcomes) > 1000 else self.outcomes
                 
                 outcomes_data = {
                     "pattern_key": "ALL_OUTCOMES",
                     "total_matches": len(self.outcomes),
-                    "successful_matches": sum(1 for o in self.outcomes if o['winner_correct'] and o['totals_correct']),
-                    "metadata": json.dumps({
-                        "outcomes": serializable_outcomes,
+                    "successful_matches": sum(1 for o in self.outcomes if o.get('winner_correct') and o.get('totals_correct')),
+                    "metadata": {
+                        "outcomes": recent_outcomes,
                         "outcome_count": len(self.outcomes),
                         "feature_weights": self.feature_weights,
                         "saved_at": datetime.now().isoformat()
-                    })
+                    }
                 }
                 supabase_data.append(outcomes_data)
             
@@ -147,20 +140,20 @@ class AdaptiveLearningSystem:
         except Exception as e:
             st.error(f"Error saving to Supabase: {e}")
             return self._save_learning_local()
-        
-        def _save_learning_local(self):
-            """Fallback local storage"""
-            try:
-                with open("learning_data.pkl", "wb") as f:
-                    pickle.dump({
-                        'pattern_memory': dict(self.pattern_memory),
-                        'feature_weights': self.feature_weights,
-                        'outcomes': self.outcomes
-                    }, f)
-                return True
-            except Exception as e:
-                st.error(f"Local save failed: {e}")
-                return False
+    
+    def _save_learning_local(self):
+        """Fallback local storage"""
+        try:
+            with open("learning_data.pkl", "wb") as f:
+                pickle.dump({
+                    'pattern_memory': dict(self.pattern_memory),
+                    'feature_weights': self.feature_weights,
+                    'outcomes': self.outcomes
+                }, f)
+            return True
+        except Exception as e:
+            st.error(f"Local save failed: {e}")
+            return False
     
     def load_learning(self):
         """Load learning data from Supabase"""
@@ -183,13 +176,14 @@ class AdaptiveLearningSystem:
                     # Load outcomes
                     if 'metadata' in row and row['metadata']:
                         try:
-                            metadata = json.loads(row['metadata'])
-                            if 'outcomes' in metadata:
-                                self.outcomes = metadata['outcomes']
-                            if 'feature_weights' in metadata:
-                                self.feature_weights.update(metadata['feature_weights'])
-                        except:
-                            pass
+                            metadata = row['metadata']  # Supabase already parses JSON
+                            if isinstance(metadata, dict):
+                                if 'outcomes' in metadata:
+                                    self.outcomes = metadata['outcomes']
+                                if 'feature_weights' in metadata:
+                                    self.feature_weights.update(metadata['feature_weights'])
+                        except Exception as e:
+                            st.error(f"Error parsing metadata: {e}")
                 else:
                     # Load pattern stats
                     self.pattern_memory[pattern_key] = {
@@ -237,7 +231,7 @@ class AdaptiveLearningSystem:
         total_goals = home_goals + away_goals
         actual_over = total_goals > 2.5
         
-        # Store outcome
+        # Store outcome - USE ISO FORMAT FOR DATETIME
         outcome = {
             'timestamp': datetime.now().isoformat(),
             'home_team': prediction.get('home_team', 'Unknown'),
@@ -1650,11 +1644,9 @@ def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away
                     
                 # Force a rerun to show the message
                 st.rerun()
-                    
-            except ValueError:
-                st.error("❌ Please enter score in format '2-1' (numbers only)")
-        else:
-            st.error("❌ Please enter a valid score format '2-1'")
+                
+        except ValueError:
+            st.error("❌ Please enter score in format '2-1' (numbers only)")
     
     # Clear messages button
     if st.session_state.get('save_status'):
