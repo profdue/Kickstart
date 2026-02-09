@@ -81,7 +81,6 @@ class AdaptiveLearningSystem:
         """Save ALL learning data to Supabase"""
         try:
             if not self.supabase:
-                # Fallback to local storage
                 return self._save_learning_local()
             
             # Prepare all data for Supabase
@@ -89,7 +88,6 @@ class AdaptiveLearningSystem:
             
             # Save each pattern to Supabase
             for pattern_key, stats in self.pattern_memory.items():
-                # Skip if no data
                 if stats['total'] == 0:
                     continue
                     
@@ -101,18 +99,29 @@ class AdaptiveLearningSystem:
                 }
                 supabase_data.append(data)
             
-            # Save outcomes as a separate record
+            # Save outcomes as a separate record - FIX JSON SERIALIZATION
             if self.outcomes:
+                # Convert datetime objects to strings for JSON serialization
+                serializable_outcomes = []
+                for outcome in self.outcomes[-1000:]:  # Keep last 1000 outcomes
+                    serialized_outcome = {}
+                    for key, value in outcome.items():
+                        if isinstance(value, datetime):
+                            serialized_outcome[key] = value.isoformat()
+                        else:
+                            serialized_outcome[key] = value
+                    serializable_outcomes.append(serialized_outcome)
+                
                 outcomes_data = {
                     "pattern_key": "ALL_OUTCOMES",
                     "total_matches": len(self.outcomes),
                     "successful_matches": sum(1 for o in self.outcomes if o['winner_correct'] and o['totals_correct']),
                     "metadata": json.dumps({
-                        "outcomes": self.outcomes[-1000:],  # Keep last 1000 outcomes
+                        "outcomes": serializable_outcomes,
                         "outcome_count": len(self.outcomes),
                         "feature_weights": self.feature_weights,
                         "saved_at": datetime.now().isoformat()
-                    }, default=str)
+                    })
                 }
                 supabase_data.append(outcomes_data)
             
@@ -138,20 +147,20 @@ class AdaptiveLearningSystem:
         except Exception as e:
             st.error(f"Error saving to Supabase: {e}")
             return self._save_learning_local()
-    
-    def _save_learning_local(self):
-        """Fallback local storage"""
-        try:
-            with open("learning_data.pkl", "wb") as f:
-                pickle.dump({
-                    'pattern_memory': dict(self.pattern_memory),
-                    'feature_weights': self.feature_weights,
-                    'outcomes': self.outcomes
-                }, f)
-            return True
-        except Exception as e:
-            st.error(f"Local save failed: {e}")
-            return False
+        
+        def _save_learning_local(self):
+            """Fallback local storage"""
+            try:
+                with open("learning_data.pkl", "wb") as f:
+                    pickle.dump({
+                        'pattern_memory': dict(self.pattern_memory),
+                        'feature_weights': self.feature_weights,
+                        'outcomes': self.outcomes
+                    }, f)
+                return True
+            except Exception as e:
+                st.error(f"Local save failed: {e}")
+                return False
     
     def load_learning(self):
         """Load learning data from Supabase"""
@@ -1582,15 +1591,37 @@ def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away
             st.error("❌ Please enter a score first")
             return
         
-        if '-' in score_input:
-            try:
-                home_goals, away_goals = map(int, score_input.split('-'))
-                
-                # Record outcome and SAVE TO SUPABASE
-                with st.spinner("⏳ Saving to Supabase..."):
-                    outcome, save_success, save_message = st.session_state.learning_system.record_outcome(
-                        prediction, pattern_indicators, "", score_input
-                    )
+        # Clean and validate the score input
+        score_input = score_input.strip()
+        
+        # Check if it contains a dash
+        if '-' not in score_input:
+            st.error("❌ Please enter score in format '2-1' (needs a dash)")
+            return
+        
+        # Split and validate
+        parts = score_input.split('-')
+        if len(parts) != 2:
+            st.error("❌ Please enter score in format '2-1' (exactly one dash)")
+            return
+        
+        try:
+            home_goals = int(parts[0].strip())
+            away_goals = int(parts[1].strip())
+            
+            # Validate they're reasonable numbers
+            if home_goals < 0 or away_goals < 0:
+                st.error("❌ Goals cannot be negative")
+                return
+            if home_goals > 20 or away_goals > 20:  # Reasonable upper limit
+                st.error("❌ That's an unrealistic score!")
+                return
+            
+            # Record outcome and SAVE TO SUPABASE
+            with st.spinner("⏳ Saving to Supabase..."):
+                outcome, save_success, save_message = st.session_state.learning_system.record_outcome(
+                    prediction, pattern_indicators, "", f"{home_goals}-{away_goals}"
+                )
                 
                 # Store results
                 st.session_state.last_outcome = outcome
