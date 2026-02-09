@@ -91,30 +91,53 @@ class AdaptiveLearningSystem:
                 if stats['total'] == 0:
                     continue
                     
+                success_rate = stats['success'] / stats['total'] if stats['total'] > 0 else 0
+                
                 data = {
                     "pattern_key": pattern_key,
                     "total_matches": stats['total'],
                     "successful_matches": stats['success'],
-                    "last_updated": datetime.now().isoformat()
+                    "last_updated": datetime.now().isoformat(),
+                    "metadata": json.dumps({  # Convert to JSON string
+                        "last_updated": datetime.now().isoformat(),
+                        "success_rate": success_rate,
+                        "feature_weights": self.feature_weights
+                    })
                 }
                 supabase_data.append(data)
             
             # Save outcomes as a separate record
             if self.outcomes:
-                # Outcomes are already in ISO format from record_outcome method
-                # Keep only last 1000 outcomes to avoid payload size issues
-                recent_outcomes = self.outcomes[-1000:] if len(self.outcomes) > 1000 else self.outcomes
+                # Make sure all timestamps are strings (not datetime objects)
+                serializable_outcomes = []
+                for outcome in self.outcomes[-1000:]:  # Keep last 1000 outcomes
+                    # Create a new outcome with all strings
+                    serialized_outcome = {}
+                    for key, value in outcome.items():
+                        if key == 'timestamp' and isinstance(value, datetime):
+                            serialized_outcome[key] = value.isoformat()
+                        elif isinstance(value, list):
+                            serialized_outcome[key] = value
+                        elif isinstance(value, dict):
+                            serialized_outcome[key] = value
+                        elif isinstance(value, (str, int, float, bool)):
+                            serialized_outcome[key] = value
+                        else:
+                            # Convert anything else to string
+                            serialized_outcome[key] = str(value)
+                    serializable_outcomes.append(serialized_outcome)
                 
                 outcomes_data = {
                     "pattern_key": "ALL_OUTCOMES",
                     "total_matches": len(self.outcomes),
                     "successful_matches": sum(1 for o in self.outcomes if o.get('winner_correct') and o.get('totals_correct')),
-                    "metadata": {
-                        "outcomes": recent_outcomes,
+                    "last_updated": datetime.now().isoformat(),
+                    "metadata": json.dumps({  # Convert to JSON string
+                        "outcomes": serializable_outcomes,
                         "outcome_count": len(self.outcomes),
                         "feature_weights": self.feature_weights,
                         "saved_at": datetime.now().isoformat()
-                    }
+                    })
                 }
                 supabase_data.append(outcomes_data)
             
@@ -1613,40 +1636,46 @@ def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away
             
             # Record outcome and SAVE TO SUPABASE
             with st.spinner("⏳ Saving to Supabase..."):
-                outcome, save_success, save_message = st.session_state.learning_system.record_outcome(
-                    prediction, pattern_indicators, "", f"{home_goals}-{away_goals}"
-                )
-                
-                # Store results
-                st.session_state.last_outcome = outcome
-                st.session_state.save_status = ("success" if save_success else "error", save_message)
-                
-                # Clear the input
-                st.session_state[score_key] = ""
-                
-                # Add to history
-                st.session_state.match_history.append({
-                    'timestamp': datetime.now(),
-                    'home_team': home_team,
-                    'away_team': away_team,
-                    'prediction': prediction,
-                    'actual_score': score_input,
-                    'winner_correct': outcome['winner_correct'],
-                    'totals_correct': outcome['totals_correct'],
-                    'save_status': save_success
-                })
-                
-                # Show message
-                if save_success:
-                    st.success(save_message)
-                else:
-                    st.error(save_message)
+                try:
+                    outcome, save_success, save_message = st.session_state.learning_system.record_outcome(
+                        prediction, pattern_indicators, "", f"{home_goals}-{away_goals}"
+                    )
                     
-                # Force a rerun to show the message
-                st.rerun()
+                    # Store results
+                    st.session_state.last_outcome = outcome
+                    st.session_state.save_status = ("success" if save_success else "error", save_message)
+                    
+                    # Clear the input
+                    st.session_state[score_key] = ""
+                    
+                    # Add to history - ensure timestamp is serializable
+                    history_entry = {
+                        'timestamp': datetime.now().isoformat(),  # Use isoformat here
+                        'home_team': home_team,
+                        'away_team': away_team,
+                        'prediction': prediction,
+                        'actual_score': score_input,
+                        'winner_correct': outcome['winner_correct'],
+                        'totals_correct': outcome['totals_correct'],
+                        'save_status': save_success
+                    }
+                    st.session_state.match_history.append(history_entry)
+                    
+                    # Show message
+                    if save_success:
+                        st.success(save_message)
+                    else:
+                        st.error(save_message)
+                        
+                    # Force a rerun to show the message
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"❌ Error saving to Supabase: {str(e)}")
+                    return
                 
         except ValueError:
-            st.error("❌ Please enter score in format '2-1' (numbers only)")
+            st.error("❌ Please enter numbers only (e.g., '2-0' or '3-1')")
     
     # Clear messages button
     if st.session_state.get('save_status'):
