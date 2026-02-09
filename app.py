@@ -81,9 +81,10 @@ class AdaptiveLearningSystem:
         """Save ALL learning data to Supabase"""
         try:
             if not self.supabase:
-                # Fallback to local storage
-                self._save_learning_local()
-                return False
+                st.warning("No Supabase connection - using local storage")
+                return self._save_learning_local()
+            
+            st.info(f"Starting Supabase save... Patterns: {len(self.pattern_memory)}, Outcomes: {len(self.outcomes)}")
             
             # Prepare all data for Supabase
             supabase_data = []
