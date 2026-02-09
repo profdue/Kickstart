@@ -21,8 +21,8 @@ st.set_page_config(
 
 st.title("⚽ Football Intelligence Engine v4.0")
 st.markdown("""
-    **ADAPTIVE LEARNING SYSTEM** - Learns from historical outcomes to improve predictions
-    *Pure Learning from Your Recorded Outcomes*
+    **ADAPTIVE BETTING SYSTEM** - Uses YOUR historical results to make profitable bets
+    *Bet what actually wins, not what the algorithm predicts*
 """)
 
 # ========== SUPABASE INITIALIZATION ==========
@@ -55,10 +55,10 @@ LEAGUE_ADJUSTMENTS = {
     "RFPL": {"over_threshold": 2.5, "under_threshold": 2.2, "avg_goals": 2.53}
 }
 
-# ========== LEARNING SYSTEM ==========
+# ========== BETTING SYSTEM ==========
 
-class AdaptiveLearningSystem:
-    """Machine Learning system that adapts based on YOUR historical results"""
+class AdaptiveBettingSystem:
+    """Betting system that makes decisions based on YOUR actual results"""
     
     def __init__(self):
         self.pattern_memory = defaultdict(lambda: {'total': 0, 'success': 0})
@@ -74,8 +74,90 @@ class AdaptiveLearningSystem:
         self.outcomes = []
         self.supabase = init_supabase()
         
-        # Load ONLY from Supabase (NO pre-loaded test data)
+        # Load from Supabase
         self.load_learning()
+    
+    def _get_opposite_prediction(self, prediction):
+        """Get opposite of prediction"""
+        if prediction == "HOME":
+            return "AWAY"
+        elif prediction == "AWAY":
+            return "HOME"
+        elif prediction == "DRAW":
+            return "HOME"  # Default opposite for draw
+        elif prediction == "OVER":
+            return "UNDER"
+        elif prediction == "UNDER":
+            return "OVER"
+        elif isinstance(prediction, str) and "HOME" in prediction:
+            return prediction.replace("HOME", "AWAY")
+        elif isinstance(prediction, str) and "AWAY" in prediction:
+            return prediction.replace("AWAY", "HOME")
+        return prediction
+    
+    def get_betting_decision(self, algorithm_prediction, pattern_type, pattern_subtype, original_confidence, algorithm_details=None):
+        """
+        RETURNS WHAT TO ACTUALLY BET BASED ON REAL RESULTS
+        
+        pattern_type: "WINNER" or "TOTALS"
+        pattern_subtype: e.g., "VERY_HIGH_90" or "MED_UNDER_VERY_HIGH"
+        algorithm_prediction: What the algorithm predicts
+        original_confidence: Algorithm's confidence score
+        """
+        
+        # Get historical success for this EXACT pattern
+        pattern_key = f"{pattern_type}_{pattern_subtype}"
+        
+        # Check if we have enough data
+        if pattern_key in self.pattern_memory:
+            stats = self.pattern_memory[pattern_key]
+            
+            if stats['total'] >= 3:  # Minimum reliable sample
+                success_rate = stats['success'] / stats['total']
+                
+                # RULE 1: Pattern WINS consistently → BET IT
+                if success_rate >= 0.7:
+                    return {
+                        'bet': algorithm_prediction,
+                        'confidence': min(95, original_confidence + 20),
+                        'reason': f"YOUR PROVEN PATTERN: {success_rate:.0%} SUCCESS ({stats['success']}/{stats['total']})",
+                        'type': 'PROVEN_WINNER',
+                        'success_rate': success_rate,
+                        'sample_size': stats['total']
+                    }
+                
+                # RULE 2: Pattern LOSES consistently → BET OPPOSITE
+                elif success_rate <= 0.3:
+                    opposite = self._get_opposite_prediction(algorithm_prediction)
+                    return {
+                        'bet': opposite,
+                        'confidence': min(95, 100 - original_confidence + 20),
+                        'reason': f"YOUR FAILING PATTERN: {success_rate:.0%} SUCCESS → BET OPPOSITE",
+                        'type': 'PROVEN_LOSER',
+                        'success_rate': success_rate,
+                        'sample_size': stats['total']
+                    }
+                
+                # RULE 3: Pattern is mediocre → Use algorithm but with caution
+                else:
+                    return {
+                        'bet': algorithm_prediction,
+                        'confidence': max(40, original_confidence - 10),
+                        'reason': f"Mixed results: {success_rate:.0%} success ({stats['success']}/{stats['total']})",
+                        'type': 'UNCLEAR_PATTERN',
+                        'success_rate': success_rate,
+                        'sample_size': stats['total']
+                    }
+        
+        # RULE 4: Not enough data → Use algorithm
+        return {
+            'bet': algorithm_prediction,
+            'confidence': original_confidence,
+            'reason': "No historical data yet (using algorithm prediction)",
+            'type': 'NEW_PATTERN',
+            'success_rate': 0.5,
+            'sample_size': 0
+        }
     
     def save_learning(self):
         """Save ALL learning data to Supabase"""
@@ -98,7 +180,7 @@ class AdaptiveLearningSystem:
                     "total_matches": stats['total'],
                     "successful_matches": stats['success'],
                     "last_updated": datetime.now().isoformat(),
-                    "metadata": json.dumps({  # Convert to JSON string
+                    "metadata": json.dumps({
                         "last_updated": datetime.now().isoformat(),
                         "success_rate": success_rate,
                         "feature_weights": self.feature_weights
@@ -108,10 +190,9 @@ class AdaptiveLearningSystem:
             
             # Save outcomes as a separate record
             if self.outcomes:
-                # Make sure all timestamps are strings (not datetime objects)
+                # Make sure all timestamps are strings
                 serializable_outcomes = []
-                for outcome in self.outcomes[-1000:]:  # Keep last 1000 outcomes
-                    # Create a new outcome with all strings
+                for outcome in self.outcomes[-1000:]:
                     serialized_outcome = {}
                     for key, value in outcome.items():
                         if key == 'timestamp' and isinstance(value, datetime):
@@ -123,7 +204,6 @@ class AdaptiveLearningSystem:
                         elif isinstance(value, (str, int, float, bool)):
                             serialized_outcome[key] = value
                         else:
-                            # Convert anything else to string
                             serialized_outcome[key] = str(value)
                     serializable_outcomes.append(serialized_outcome)
                 
@@ -132,7 +212,7 @@ class AdaptiveLearningSystem:
                     "total_matches": len(self.outcomes),
                     "successful_matches": sum(1 for o in self.outcomes if o.get('winner_correct') and o.get('totals_correct')),
                     "last_updated": datetime.now().isoformat(),
-                    "metadata": json.dumps({  # Convert to JSON string
+                    "metadata": json.dumps({
                         "outcomes": serializable_outcomes,
                         "outcome_count": len(self.outcomes),
                         "feature_weights": self.feature_weights,
@@ -182,14 +262,12 @@ class AdaptiveLearningSystem:
         """Load learning data from Supabase"""
         try:
             if not self.supabase:
-                # Fallback to local storage
                 return self._load_learning_local()
             
             # Load patterns from Supabase
             response = self.supabase.table("football_learning").select("*").execute()
             
             if not response.data:
-                # Fresh start - no previous data
                 return True
             
             for row in response.data:
@@ -199,7 +277,7 @@ class AdaptiveLearningSystem:
                     # Load outcomes
                     if 'metadata' in row and row['metadata']:
                         try:
-                            metadata = row['metadata']  # Supabase already parses JSON
+                            metadata = row['metadata']
                             if isinstance(metadata, dict):
                                 if 'outcomes' in metadata:
                                     self.outcomes = metadata['outcomes']
@@ -217,7 +295,6 @@ class AdaptiveLearningSystem:
             return True
             
         except Exception as e:
-            # Fallback to local storage
             return self._load_learning_local()
     
     def _load_learning_local(self):
@@ -235,14 +312,13 @@ class AdaptiveLearningSystem:
         return False
     
     def record_outcome(self, prediction, pattern_indicators, actual_result, actual_score):
-        """Record a match outcome for learning and SAVE TO SUPABASE"""
+        """Record a match outcome for learning"""
         winner_pred = prediction['winner']
         totals_pred = prediction['totals']
         
         # Determine actual outcomes
         home_goals, away_goals = map(int, actual_score.split('-'))
         
-        # Winner outcome
         if home_goals > away_goals:
             actual_winner = "HOME"
         elif away_goals > home_goals:
@@ -250,11 +326,10 @@ class AdaptiveLearningSystem:
         else:
             actual_winner = "DRAW"
         
-        # Totals outcome
         total_goals = home_goals + away_goals
         actual_over = total_goals > 2.5
         
-        # Store outcome - USE ISO FORMAT FOR DATETIME
+        # Store outcome
         outcome = {
             'timestamp': datetime.now().isoformat(),
             'home_team': prediction.get('home_team', 'Unknown'),
@@ -277,7 +352,7 @@ class AdaptiveLearningSystem:
         
         self.outcomes.append(outcome)
         
-        # Create pattern keys based on YOUR match
+        # Create pattern keys
         winner_key = f"WINNER_{winner_pred['confidence']}_{winner_pred['confidence_score']//10*10}"
         totals_key = f"TOTALS_{totals_pred.get('finishing_alignment', 'N/A')}_{totals_pred.get('total_category', 'N/A')}"
         
@@ -297,7 +372,7 @@ class AdaptiveLearningSystem:
         # Adjust feature weights based on outcomes
         self._adjust_weights(outcome)
         
-        # SAVE TO SUPABASE (with success/failure feedback)
+        # Save to Supabase
         save_success = self.save_learning()
         
         if save_success:
@@ -307,7 +382,6 @@ class AdaptiveLearningSystem:
     
     def _adjust_weights(self, outcome):
         """Adjust feature weights based on outcome success"""
-        # If prediction was wrong, reduce weight of relevant features
         if not outcome['totals_correct']:
             if 'HIGH_OVER' in str(outcome.get('finishing_alignment', '')):
                 self.feature_weights['finishing_alignment'] *= 0.9
@@ -316,7 +390,6 @@ class AdaptiveLearningSystem:
             if outcome['totals_confidence'] < 50:
                 self.feature_weights['confidence_score'] *= 1.1
         
-        # If prediction was correct, increase weight of relevant features
         if outcome['totals_correct']:
             if 'MED_OVER' in str(outcome.get('finishing_alignment', '')):
                 self.feature_weights['finishing_alignment'] *= 1.05
@@ -330,7 +403,6 @@ class AdaptiveLearningSystem:
         key = f"{pattern_type}_{pattern_subtype}" if pattern_subtype else pattern_type
         memory = self.pattern_memory
         
-        # Look for exact matches first
         exact_keys = [k for k in memory if key in k]
         if exact_keys:
             total = sum(memory[k]['total'] for k in exact_keys)
@@ -338,7 +410,6 @@ class AdaptiveLearningSystem:
             if total > 0:
                 return success / total
         
-        # Look for similar patterns
         similar_keys = [k for k in memory if pattern_type in k]
         if similar_keys:
             total = sum(memory[k]['total'] for k in similar_keys)
@@ -348,25 +419,12 @@ class AdaptiveLearningSystem:
         
         return 0.5
     
-    def adjust_confidence(self, original_confidence, pattern_type, context):
-        """Adjust confidence based on historical performance"""
-        base_success = self.get_pattern_success_rate(pattern_type, context.get('subtype'))
-        
-        if base_success > 0.7:
-            adjustment = min(20, (base_success - 0.7) * 100)
-            return min(100, original_confidence + adjustment)
-        elif base_success < 0.4:
-            adjustment = min(30, (0.4 - base_success) * 100)
-            return max(10, original_confidence - adjustment)
-        else:
-            return original_confidence
-    
     def generate_learned_insights(self):
         """Generate insights based on learned patterns"""
         insights = []
         
         if not self.outcomes:
-            return ["🔄 **Learning System**: No historical data yet - record outcomes to start learning"]
+            return ["🔄 **Betting System**: No historical data yet - record outcomes to start learning"]
         
         # Analyze last 20 outcomes
         recent = self.outcomes[-20:] if len(self.outcomes) > 20 else self.outcomes
@@ -389,15 +447,15 @@ class AdaptiveLearningSystem:
             if stats['total'] >= 3:
                 success_rate = stats['success'] / stats['total']
                 if success_rate >= 0.8:
-                    insights.append(f"✅ **YOUR STRONG PATTERN**: {pattern} - {stats['success']}/{stats['total']} correct")
-                elif success_rate <= 0.3:
-                    insights.append(f"❌ **YOUR WEAK PATTERN**: {pattern} - {stats['success']}/{stats['total']} correct")
+                    insights.append(f"✅ **YOUR BETTING EDGE**: {pattern} - {stats['success']}/{stats['total']} correct")
+                elif success_rate <= 0.2:
+                    insights.append(f"💣 **YOUR REVERSE EDGE**: {pattern} - {stats['success']}/{stats['total']} correct → BET OPPOSITE")
         
-        # Confidence level analysis
-        high_conf = [o for o in recent if o['totals_confidence'] >= 70]
-        if high_conf:
-            high_conf_success = sum(1 for o in high_conf if o['totals_correct']) / len(high_conf)
-            insights.append(f"🎯 **Your High Confidence (70+)**: {high_conf_success:.0%} success rate")
+        # Betting decision performance
+        high_confidence_decisions = [o for o in recent if o['totals_confidence'] >= 70]
+        if high_confidence_decisions:
+            high_conf_success = sum(1 for o in high_confidence_decisions if o['totals_correct']) / len(high_confidence_decisions)
+            insights.append(f"🎯 **Your High Confidence Bets**: {high_conf_success:.0%} success rate")
         
         return insights[:5]
 
@@ -408,8 +466,8 @@ if 'prediction_history' not in st.session_state:
 if 'factorial_cache' not in st.session_state:
     st.session_state.factorial_cache = {}
 
-if 'learning_system' not in st.session_state:
-    st.session_state.learning_system = AdaptiveLearningSystem()
+if 'betting_system' not in st.session_state:
+    st.session_state.betting_system = AdaptiveBettingSystem()
 
 if 'match_history' not in st.session_state:
     st.session_state.match_history = []
@@ -417,7 +475,6 @@ if 'match_history' not in st.session_state:
 if 'show_history' not in st.session_state:
     st.session_state.show_history = False
 
-# Prediction persistence states
 if 'last_prediction' not in st.session_state:
     st.session_state.last_prediction = None
 
@@ -433,7 +490,6 @@ if 'last_league' not in st.session_state:
 if 'last_engine' not in st.session_state:
     st.session_state.last_engine = None
 
-# Feedback states
 if 'show_feedback_message' not in st.session_state:
     st.session_state.show_feedback_message = False
 
@@ -457,7 +513,7 @@ def poisson_pmf(k, lam):
 # ========== CORE CLASSES ==========
 
 class ExpectedGoalsPredictor:
-    """OUR LOGIC: Expected goals calculation"""
+    """Expected goals calculation"""
     
     def __init__(self, league_metrics, league_name):
         self.league_metrics = league_metrics
@@ -465,21 +521,21 @@ class ExpectedGoalsPredictor:
         self.league_name = league_name
     
     def predict_expected_goals(self, home_stats, away_stats):
-        """OUR LOGIC: Step 1 - Adjusted Team Strength"""
+        """Step 1 - Adjusted Team Strength"""
         home_adjGF = home_stats['goals_for_pm'] + 0.6 * home_stats['goals_vs_xg_pm']
         home_adjGA = home_stats['goals_against_pm'] + 0.6 * home_stats['goals_allowed_vs_xga_pm']
         
         away_adjGF = away_stats['goals_for_pm'] + 0.6 * away_stats['goals_vs_xg_pm']
         away_adjGA = away_stats['goals_against_pm'] + 0.6 * away_stats['goals_allowed_vs_xga_pm']
         
-        # OUR LOGIC: Dynamic Venue Factor
+        # Dynamic Venue Factor
         venue_factor_home = 1 + 0.05 * (home_stats['points_pm'] - away_stats['points_pm']) / 3
         venue_factor_away = 1 + 0.05 * (away_stats['points_pm'] - home_stats['points_pm']) / 3
         
         venue_factor_home = max(0.8, min(1.2, venue_factor_home))
         venue_factor_away = max(0.8, min(1.2, venue_factor_away))
         
-        # OUR LOGIC: Expected Goals Calculation
+        # Expected Goals Calculation
         home_xg = (home_adjGF + away_adjGA) / 2 * venue_factor_home
         away_xg = (away_adjGF + home_adjGA) / 2 * venue_factor_away
         
@@ -501,10 +557,10 @@ class ExpectedGoalsPredictor:
         }
 
 class WinnerPredictor:
-    """FIXED LOGIC: Accounts for finishing ability in winner determination"""
+    """Winner determination"""
     
     def predict_winner(self, home_xg, away_xg, home_stats, away_stats):
-        """OUR IMPROVED LOGIC: Winner determination with finishing adjustment"""
+        """Winner determination with finishing adjustment"""
         
         # Get finishing trends
         home_finishing = home_stats['goals_vs_xg_pm']
@@ -514,14 +570,14 @@ class WinnerPredictor:
         home_defense = home_stats['goals_allowed_vs_xga_pm']
         away_defense = away_stats['goals_allowed_vs_xga_pm']
         
-        # ========== KEY FIX: ADJUST xG FOR FINISHING ABILITY ==========
+        # Adjust xG for finishing ability
         home_adjusted_xg = home_xg + home_finishing - away_defense
         away_adjusted_xg = away_xg + away_finishing - home_defense
         
         # Calculate adjusted delta
         delta = home_adjusted_xg - away_adjusted_xg
         
-        # ========== DETERMINE VOLATILITY FLAG ==========
+        # Determine volatility flag
         volatility_high = False
         if abs(home_finishing) > 0.3 and abs(away_finishing) > 0.3:
             volatility_high = True
@@ -530,7 +586,7 @@ class WinnerPredictor:
         elif home_finishing < -0.3 and away_finishing < -0.3:
             volatility_high = True
         
-        # ========== WINNER DETERMINATION ==========
+        # Winner determination
         if delta > 1.2:
             predicted_winner = "HOME"
             winner_strength = "STRONG"
@@ -573,7 +629,7 @@ class WinnerPredictor:
             if volatility_high:
                 winner_strength = "CLOSE_HIGH_VOL"
         
-        # ========== CONFIDENCE CALCULATION ==========
+        # Confidence calculation
         base_confidence = min(100, abs(delta) / max(home_adjusted_xg, away_adjusted_xg, 0.5) * 150)
         
         # Add bonuses
@@ -621,14 +677,14 @@ class WinnerPredictor:
         }
 
 class TotalsPredictor:
-    """OUR IMPROVED LOGIC: Totals prediction with defense quality rules"""
+    """Totals prediction with defense quality rules"""
     
     def __init__(self, league_name):
         self.league_name = league_name
         self.league_adjustments = LEAGUE_ADJUSTMENTS.get(league_name, LEAGUE_ADJUSTMENTS["Premier League"])
     
     def categorize_finishing(self, value):
-        """OUR LOGIC: Categorize finishing strength"""
+        """Categorize finishing strength"""
         if value > 0.3:
             return "STRONG_OVERPERFORM"
         elif value > 0.1:
@@ -641,7 +697,7 @@ class TotalsPredictor:
             return "STRONG_UNDERPERFORM"
     
     def get_finishing_alignment(self, home_finish, away_finish):
-        """OUR LOGIC: Finishing trend alignment matrix"""
+        """Finishing trend alignment matrix"""
         home_cat = self.categorize_finishing(home_finish)
         away_cat = self.categorize_finishing(away_finish)
         
@@ -686,7 +742,7 @@ class TotalsPredictor:
         return alignment_matrix[home_cat][away_cat]
     
     def categorize_total_xg(self, total_xg):
-        """OUR LOGIC: Total xG categories"""
+        """Total xG categories"""
         if total_xg > 3.3:
             return "VERY_HIGH"
         elif total_xg > 3.0:
@@ -701,7 +757,7 @@ class TotalsPredictor:
             return "VERY_LOW"
     
     def check_defense_quality_rules(self, home_stats, away_stats):
-        """NEW: Defense quality rules based on proven patterns"""
+        """Defense quality rules"""
         home_def = home_stats['goals_allowed_vs_xga_pm']
         away_def = away_stats['goals_allowed_vs_xga_pm']
         
@@ -724,7 +780,6 @@ class TotalsPredictor:
         
         # RULE 2: Good defense present = UNDER 2.5
         if home_def <= -0.5 or away_def <= -0.5:
-            # Check if both have good defense
             if home_def <= -0.5 and away_def <= -0.5:
                 confidence = 85
                 reason = f"DOUBLE GOOD DEFENSE: Home({home_def:.2f}) + Away({away_def:.2f}) = Low scoring guaranteed"
@@ -745,12 +800,11 @@ class TotalsPredictor:
         return None
     
     def check_risk_flags(self, home_stats, away_stats, total_xg):
-        """OUR IMPROVED LOGIC: Risk flag system"""
+        """Risk flag system"""
         risk_flags = []
         home_finish = home_stats['goals_vs_xg_pm']
         away_finish = away_stats['goals_vs_xg_pm']
         
-        # NEW RISK FLAG: Volatile overperformers
         if home_finish > 0.35 and away_finish > 0.35:
             risk_flags.append("VOLATILE_OVER_BOTH")
         
@@ -772,19 +826,19 @@ class TotalsPredictor:
         if lower_thresh < total_xg < upper_thresh:
             risk_flags.append("CLOSE_TO_THRESHOLD")
         
-        # NEW: Bundesliga specific adjustment
+        # Bundesliga specific adjustment
         if self.league_name == "Bundesliga" and total_xg < 3.3:
             risk_flags.append("BUNDESLIGA_LOW_SCORING")
         
         return risk_flags
     
     def predict_totals(self, home_xg, away_xg, home_stats, away_stats):
-        """OUR IMPROVED LOGIC: Complete totals prediction with defense rules"""
+        """Complete totals prediction with defense rules"""
         total_xg = home_xg + away_xg
         home_finish = home_stats['goals_vs_xg_pm']
         away_finish = away_stats['goals_vs_xg_pm']
         
-        # ========== NEW: CHECK DEFENSE QUALITY RULES FIRST ==========
+        # Check defense quality rules first
         defense_rule = self.check_defense_quality_rules(home_stats, away_stats)
         if defense_rule:
             direction = defense_rule['direction']
@@ -792,7 +846,6 @@ class TotalsPredictor:
             rule_reason = defense_rule['reason']
             rule_triggered = defense_rule['rule_triggered']
             
-            # Still calculate finishing alignment for insights
             finishing_alignment = self.get_finishing_alignment(home_finish, away_finish)
             total_category = self.categorize_total_xg(total_xg)
             risk_flags = self.check_risk_flags(home_stats, away_stats, total_xg)
@@ -836,18 +889,16 @@ class TotalsPredictor:
                 'defense_rule_reason': rule_reason
             }
         
-        # ========== ORIGINAL LOGIC ==========
+        # Original logic
         over_threshold = self.league_adjustments['over_threshold']
         base_direction = "OVER" if total_xg > over_threshold else "UNDER"
         
-        # OUR LOGIC: Finishing alignment
         finishing_alignment = self.get_finishing_alignment(home_finish, away_finish)
         total_category = self.categorize_total_xg(total_xg)
         
-        # OUR LOGIC: Risk flags
         risk_flags = self.check_risk_flags(home_stats, away_stats, total_xg)
         
-        # ========== PROVEN PATTERN 1 ==========
+        # PROVEN PATTERN 1
         if finishing_alignment == "NEUTRAL" and total_xg > 3.0:
             return {
                 'direction': "UNDER",
@@ -1025,7 +1076,7 @@ class PoissonProbabilityEngine:
         }
 
 class InsightsGenerator:
-    """OUR IMPROVED LOGIC: Generate enhanced insights with defense rules"""
+    """Generate enhanced insights with defense rules"""
     
     @staticmethod
     def generate_insights(winner_prediction, totals_prediction):
@@ -1035,7 +1086,7 @@ class InsightsGenerator:
         if winner_prediction.get('winner_confidence_category') == "VERY HIGH":
             insights.append(f"🎯 **High Confidence Winner**: Model strongly favors {winner_prediction.get('predicted_winner', 'N/A')}")
         elif winner_prediction.get('winner_confidence_category') == "LOW":
-            insights.append(f"⚠️ **Low Confidence Winner**: Exercise caution on {winner_prediction.get('predicted_winner', 'N/A')} prediction (0/3 in backtests)")
+            insights.append(f"⚠️ **Low Confidence Winner**: Exercise caution on {winner_prediction.get('predicted_winner', 'N/A')} prediction")
         
         # Defense rule insights
         defense_rule = totals_prediction.get('defense_rule_triggered')
@@ -1044,14 +1095,14 @@ class InsightsGenerator:
         elif defense_rule == 'GOOD_DEFENSE_PRESENT':
             insights.append(f"🛡️ **GOOD DEFENSE PRESENT**: At least one team limits goals well → LOW SCORING likely")
         elif defense_rule == 'NEUTRAL_HIGH_XG_UNDER':
-            insights.append(f"📉 **PROVEN PATTERN**: NEUTRAL finishing + HIGH xG = UNDER (3/3 in tests)")
+            insights.append(f"📉 **PROVEN PATTERN**: NEUTRAL finishing + HIGH xG = UNDER")
         
         # Volatility insight
         home_finish = totals_prediction.get('home_finishing', 0)
         away_finish = totals_prediction.get('away_finishing', 0)
         
         if home_finish > 0.35 and away_finish > 0.35:
-            insights.append("⚠️ **Both teams strong overperformers** - High volatility expected (1/3 OVER in 17-match test)")
+            insights.append("⚠️ **Both teams strong overperformers** - High volatility expected")
         
         # PROVEN PATTERN INSIGHTS
         alignment = totals_prediction.get('finishing_alignment', 'NEUTRAL')
@@ -1059,9 +1110,9 @@ class InsightsGenerator:
         total_xg = totals_prediction.get('total_xg', 0)
         
         if alignment == "NEUTRAL" and total_xg > 3.0:
-            insights.append("✅ **PROVEN PATTERN**: NEUTRAL + HIGH_xG (xG>3.0) = UNDER (3/3 in test)")
+            insights.append("✅ **PROVEN PATTERN**: NEUTRAL + HIGH_xG (xG>3.0) = UNDER")
         elif alignment == "MED_UNDER" and total_xg > 3.0:
-            insights.append("✅ **PROVEN PATTERN**: MED_UNDER + HIGH_xG (xG>3.0) = OVER (3/3 in test)")
+            insights.append("✅ **PROVEN PATTERN**: MED_UNDER + HIGH_xG (xG>3.0) = OVER")
         
         # Finishing trend insights
         if home_finish > 0.3:
@@ -1076,9 +1127,9 @@ class InsightsGenerator:
         
         # Finishing alignment insights
         if alignment == "HIGH_OVER":
-            insights.append("⚠️ **HIGH_OVER pattern**: 17-match test shows 1/3 success rate (caution advised)")
+            insights.append("⚠️ **HIGH_OVER pattern**: Be cautious with this pattern")
         elif alignment == "MED_OVER":
-            insights.append("✅ **MED_OVER pattern**: Proven 5/5 OVER in backtests")
+            insights.append("✅ **MED_OVER pattern**: Historically strong pattern")
         
         # Risk flag insights
         risk_flags = totals_prediction.get('risk_flags', [])
@@ -1098,15 +1149,14 @@ class InsightsGenerator:
         
         return insights[:8]
 
-# ========== ADAPTIVE FOOTBALL ENGINE ==========
+# ========== FOOTBALL ENGINE ==========
 
-class AdaptiveFootballIntelligenceEngineV4:
-    """Version 4 with adaptive learning capabilities"""
+class FootballIntelligenceEngine:
+    """Football prediction engine"""
     
-    def __init__(self, league_metrics, league_name, learning_system=None):
+    def __init__(self, league_metrics, league_name):
         self.league_metrics = league_metrics
         self.league_name = league_name
-        self.learning_system = learning_system or AdaptiveLearningSystem()
         
         # Initialize predictors
         self.xg_predictor = ExpectedGoalsPredictor(league_metrics, league_name)
@@ -1116,7 +1166,7 @@ class AdaptiveFootballIntelligenceEngineV4:
         self.insights_generator = InsightsGenerator()
     
     def predict_match(self, home_team, away_team, home_stats, away_stats):
-        """Generate prediction with adaptive learning adjustments"""
+        """Generate prediction"""
         
         # Get base prediction
         home_xg, away_xg, calc_details = self.xg_predictor.predict_expected_goals(
@@ -1135,14 +1185,8 @@ class AdaptiveFootballIntelligenceEngineV4:
             home_xg, away_xg, home_stats, away_stats
         )
         
-        # Apply learning adjustments
-        winner_prediction = self._adjust_with_learning(winner_prediction, 'winner', home_stats, away_stats)
-        totals_prediction = self._adjust_with_learning(totals_prediction, 'totals', home_stats, away_stats)
-        
-        # Generate insights including learned patterns
+        # Generate insights
         insights = self.insights_generator.generate_insights(winner_prediction, totals_prediction)
-        learned_insights = self.learning_system.generate_learned_insights()
-        insights.extend(learned_insights)
         
         # Determine final probabilities
         if winner_prediction['predicted_winner'] == "HOME":
@@ -1196,74 +1240,24 @@ class AdaptiveFootballIntelligenceEngineV4:
             'insights': insights,
             'calculation_details': calc_details
         }
-    
-    def _adjust_with_learning(self, prediction, pred_type, home_stats, away_stats):
-        """Apply learning-based adjustments to predictions"""
-        if not self.learning_system:
-            return prediction
-        
-        if pred_type == 'totals':
-            context = {
-                'finishing_alignment': prediction.get('finishing_alignment'),
-                'total_category': prediction.get('total_category'),
-                'subtype': f"{prediction.get('finishing_alignment', 'N/A')}_{prediction.get('total_category', 'N/A')}"
-            }
-            
-            original_conf = prediction.get('confidence_score', 50)
-            adjusted_conf = self.learning_system.adjust_confidence(
-                original_conf, 
-                prediction.get('finishing_alignment', 'NEUTRAL'),
-                context
-            )
-            
-            prediction['confidence_score'] = adjusted_conf
-            
-            if adjusted_conf >= 75:
-                prediction['confidence'] = "VERY HIGH"
-            elif adjusted_conf >= 65:
-                prediction['confidence'] = "HIGH"
-            elif adjusted_conf >= 55:
-                prediction['confidence'] = "MEDIUM"
-            elif adjusted_conf >= 45:
-                prediction['confidence'] = "LOW"
-            else:
-                prediction['confidence'] = "VERY LOW"
-        
-        elif pred_type == 'winner':
-            if prediction.get('volatility_high', False):
-                original_conf = prediction.get('confidence_score', 50)
-                prediction['confidence_score'] = max(30, original_conf - 15)
-                
-                if prediction['confidence_score'] >= 75:
-                    prediction['winner_confidence_category'] = "VERY HIGH"
-                elif prediction['confidence_score'] >= 65:
-                    prediction['winner_confidence_category'] = "HIGH"
-                elif prediction['confidence_score'] >= 55:
-                    prediction['winner_confidence_category'] = "MEDIUM"
-                elif prediction['confidence_score'] >= 45:
-                    prediction['winner_confidence_category'] = "LOW"
-                else:
-                    prediction['winner_confidence_category'] = "VERY LOW"
-        
-        return prediction
 
-# ========== ADAPTIVE PATTERN INDICATORS ==========
+# ========== PATTERN INDICATORS ==========
 
-class AdaptivePatternIndicators:
-    """Generate pattern indicators with learned adjustments"""
+class PatternIndicators:
+    """Generate pattern indicators"""
     
-    def __init__(self, learning_system):
-        self.learning_system = learning_system
+    def __init__(self, betting_system):
+        self.betting_system = betting_system
     
     def generate_indicators(self, prediction):
-        """Generate pattern indicators with learned success rates"""
+        """Generate pattern indicators"""
         indicators = {'winner': None, 'totals': None}
         
         winner_pred = prediction['winner']
         totals_pred = prediction['totals']
         
-        # WINNER INDICATORS with learning
-        winner_success_rate = self.learning_system.get_pattern_success_rate(
+        # WINNER INDICATORS
+        winner_success_rate = self.betting_system.get_pattern_success_rate(
             "WINNER", 
             f"{winner_pred['confidence']}_{winner_pred['confidence_score']//10*10}"
         )
@@ -1283,7 +1277,7 @@ class AdaptivePatternIndicators:
                 'explanation': f'Your historical failure: {winner_success_rate:.0%} success rate'
             }
         elif winner_pred.get('volatility_high', False):
-            vol_success = self.learning_system.get_pattern_success_rate("VOLATILE", "HIGH_VOLATILITY")
+            vol_success = self.betting_system.get_pattern_success_rate("VOLATILE", "HIGH_VOLATILITY")
             indicators['winner'] = {
                 'type': 'WARNING',
                 'color': 'yellow',
@@ -1298,22 +1292,22 @@ class AdaptivePatternIndicators:
                 'explanation': f'Your historical success: {winner_success_rate:.0%}'
             }
         
-        # TOTALS INDICATORS with learning
+        # TOTALS INDICATORS
         finishing_alignment = totals_pred.get('finishing_alignment', 'NEUTRAL')
         total_category = totals_pred.get('total_category', 'N/A')
         
         pattern_key = f"{finishing_alignment}_{total_category}"
-        pattern_success = self.learning_system.get_pattern_success_rate("TOTALS", pattern_key)
+        pattern_success = self.betting_system.get_pattern_success_rate("TOTALS", pattern_key)
         
         # Determine based on YOUR success rates
-        if pattern_success > 0.7 and self.learning_system.pattern_memory.get(pattern_key, {}).get('total', 0) >= 3:
+        if pattern_success > 0.7 and self.betting_system.pattern_memory.get(pattern_key, {}).get('total', 0) >= 3:
             indicators['totals'] = {
                 'type': 'MET',
                 'color': 'green',
                 'text': f'YOUR STRONG PATTERN - {totals_pred["direction"]} 2.5',
                 'explanation': f'Your historical success: {pattern_success:.0%} for this pattern'
             }
-        elif pattern_success < 0.4 and self.learning_system.pattern_memory.get(pattern_key, {}).get('total', 0) >= 3:
+        elif pattern_success < 0.4 and self.betting_system.pattern_memory.get(pattern_key, {}).get('total', 0) >= 3:
             indicators['totals'] = {
                 'type': 'AVOID',
                 'color': 'red',
@@ -1337,103 +1331,68 @@ class AdaptivePatternIndicators:
         
         return indicators
 
-# ========== ADAPTIVE BETTING CARD ==========
+# ========== BETTING CARD ==========
 
-class AdaptiveBettingCard:
-    """Betting card that adapts based on learned patterns"""
+class BettingCard:
+    """Betting card with betting decisions"""
     
-    def __init__(self, learning_system):
-        self.learning_system = learning_system
+    def __init__(self, betting_system):
+        self.betting_system = betting_system
     
-    def get_recommendation(self, prediction, pattern_indicators):
-        """Get betting recommendation with learned adjustments"""
+    def get_recommendation(self, prediction, winner_decision, totals_decision):
+        """Get betting recommendation based on decisions"""
         
-        winner_pred = prediction['winner']
-        totals_pred = prediction['totals']
+        # Calculate combined confidence
+        combined_confidence = (winner_decision['confidence'] + totals_decision['confidence']) / 2
         
-        # Calculate expected value based on learned success rates
-        winner_ev = self._calculate_expected_value(winner_pred, pattern_indicators['winner'], 'winner')
-        totals_ev = self._calculate_expected_value(totals_pred, pattern_indicators['totals'], 'totals')
-        
-        # Determine best bet based on expected value
-        if winner_ev > 0.1 and totals_ev > 0.1:
-            min_conf = min(winner_pred['confidence_score'], totals_pred['confidence_score'])
+        # Determine recommendation type
+        if winner_decision['type'] in ['PROVEN_WINNER', 'PROVEN_LOSER'] and totals_decision['type'] in ['PROVEN_WINNER', 'PROVEN_LOSER']:
             return {
                 'type': 'combo',
-                'text': f"🎯 {winner_pred['team']} + 📈 {totals_pred['direction']} 2.5",
-                'confidence': min_conf,
+                'text': f"🎯 {winner_decision['bet']} + 📈 {totals_decision['bet']} 2.5",
+                'confidence': combined_confidence,
                 'color': '#10B981',
                 'icon': '🎯',
-                'subtext': 'DOUBLE BET (HIGH EV)',
-                'reason': f'Winner EV: {winner_ev:.2f} | Totals EV: {totals_ev:.2f}',
-                'expected_value': (winner_ev + totals_ev) / 2
+                'subtext': 'DOUBLE BET (PROVEN PATTERNS)',
+                'reason': f"Winner: {winner_decision['reason']} | Totals: {totals_decision['reason']}",
+                'expected_value': combined_confidence / 100
             }
-        elif winner_ev > 0.15:
+        elif winner_decision['type'] in ['PROVEN_WINNER', 'PROVEN_LOSER']:
             return {
                 'type': 'single',
-                'text': f"🏆 {winner_pred['team']} to win",
-                'confidence': winner_pred['confidence_score'],
+                'text': f"🏆 {winner_decision['bet']} to win",
+                'confidence': winner_decision['confidence'],
                 'color': '#3B82F6',
                 'icon': '🏆',
                 'subtext': 'WINNER BET',
-                'reason': f'Expected Value: {winner_ev:.2f}',
-                'expected_value': winner_ev
+                'reason': winner_decision['reason'],
+                'expected_value': winner_decision['confidence'] / 100
             }
-        elif totals_ev > 0.15:
+        elif totals_decision['type'] in ['PROVEN_WINNER', 'PROVEN_LOSER']:
             return {
                 'type': 'single',
-                'text': f"📈 {totals_pred['direction']} 2.5 Goals",
-                'confidence': totals_pred['confidence_score'],
+                'text': f"📈 {totals_decision['bet']} 2.5 Goals",
+                'confidence': totals_decision['confidence'],
                 'color': '#8B5CF6',
                 'icon': '📈',
                 'subtext': 'TOTALS BET',
-                'reason': f'Expected Value: {totals_ev:.2f}',
-                'expected_value': totals_ev
+                'reason': totals_decision['reason'],
+                'expected_value': totals_decision['confidence'] / 100
             }
         else:
             return {
                 'type': 'none',
-                'text': "🚫 No Value Bet",
-                'confidence': max(winner_pred['confidence_score'], totals_pred['confidence_score']),
+                'text': "🚫 No Proven Pattern",
+                'confidence': combined_confidence,
                 'color': '#6B7280',
                 'icon': '🤔',
                 'subtext': 'NO BET',
-                'reason': f'Insufficient expected value (Winner: {winner_ev:.2f}, Totals: {totals_ev:.2f})',
+                'reason': 'No proven patterns with enough data',
                 'expected_value': 0
             }
     
-    def _calculate_expected_value(self, prediction, pattern_indicator, market_type):
-        """Calculate expected value based on learned probabilities"""
-        if pattern_indicator['type'] == 'AVOID':
-            return -0.5
-        
-        # Get historical success rate
-        if market_type == 'winner':
-            success_rate = self.learning_system.get_pattern_success_rate(
-                "WINNER", 
-                f"{prediction['confidence']}_{prediction['confidence_score']//10*10}"
-            )
-            implied_odds = 1 / prediction['probability'] if prediction['probability'] > 0 else 3.0
-        else:
-            finishing_alignment = prediction.get('finishing_alignment', 'NEUTRAL')
-            total_category = prediction.get('total_category', 'N/A')
-            success_rate = self.learning_system.get_pattern_success_rate(
-                "TOTALS", 
-                f"{finishing_alignment}_{total_category}"
-            )
-            implied_odds = 1.9
-        
-        # Calculate expected value
-        ev = (success_rate * (implied_odds - 1)) - ((1 - success_rate) * 1)
-        
-        # Adjust for confidence
-        confidence_factor = prediction['confidence_score'] / 100
-        ev *= confidence_factor
-        
-        return ev
-    
     def display_card(self, recommendation):
-        """Display the adaptive betting card"""
+        """Display the betting card"""
         ev = recommendation.get('expected_value', 0)
         
         # Color based on expected value
@@ -1466,7 +1425,7 @@ class AdaptiveBettingCard:
                 {recommendation['subtext']}
             </div>
             <div style="font-size: 18px; color: #9CA3AF; margin-bottom: 15px;">
-                Confidence: {recommendation['confidence']:.0f}/100 | EV: {ev:.3f}
+                Confidence: {recommendation['confidence']:.0f}/100 | Expected Value: {ev:.3f}
             </div>
             <div style="font-size: 16px; color: #D1D5DB; padding: 10px; background: rgba(59, 130, 246, 0.1); border-radius: 10px;">
                 {recommendation['reason']}
@@ -1532,8 +1491,8 @@ def calculate_league_metrics(df):
 
 # ========== FIXED FEEDBACK SYSTEM ==========
 
-def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away_team):
-    """Fixed feedback system that doesn't disappear"""
+def record_outcome_with_feedback(prediction, winner_decision, totals_decision, home_team, away_team):
+    """Fixed feedback system"""
     
     st.divider()
     st.subheader("📝 Record Outcome for Learning")
@@ -1550,28 +1509,22 @@ def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away
                     outcome = st.session_state.last_outcome
                     st.write(f"**Match**: {outcome['home_team']} vs {outcome['away_team']}")
                     st.write(f"**Actual Score**: {outcome['actual_score']}")
-                    st.write(f"**Winner Prediction**: {'✅ Correct' if outcome['winner_correct'] else '❌ Wrong'}")
-                    st.write(f"**Totals Prediction**: {'✅ Correct' if outcome['totals_correct'] else '❌ Wrong'}")
+                    st.write(f"**Betting Decision**: {winner_decision['bet']} & {totals_decision['bet']} 2.5")
+                    st.write(f"**Winner Bet**: {'✅ Correct' if outcome['winner_correct'] else '❌ Wrong'}")
+                    st.write(f"**Totals Bet**: {'✅ Correct' if outcome['totals_correct'] else '❌ Wrong'}")
                     
                     winner_pattern = f"WINNER_{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
                     totals_pattern = f"TOTALS_{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
                     
-                    winner_success = st.session_state.learning_system.get_pattern_success_rate(
-                        "WINNER", f"{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
-                    )
-                    totals_success = st.session_state.learning_system.get_pattern_success_rate(
-                        "TOTALS", f"{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
-                    )
-                    
                     st.write(f"**Winner Pattern**: {winner_pattern}")
-                    st.write(f"**Winner Success Rate**: {winner_success:.0%}")
+                    st.write(f"**Winner Decision Type**: {winner_decision['type']}")
                     st.write(f"**Totals Pattern**: {totals_pattern}")
-                    st.write(f"**Totals Success Rate**: {totals_success:.0%}")
-                    st.write(f"**Total Patterns Learned**: {len(st.session_state.learning_system.pattern_memory)}")
-                    st.write(f"**Total Outcomes Recorded**: {len(st.session_state.learning_system.outcomes)}")
+                    st.write(f"**Totals Decision Type**: {totals_decision['type']}")
+                    st.write(f"**Total Patterns Learned**: {len(st.session_state.betting_system.pattern_memory)}")
+                    st.write(f"**Total Outcomes Recorded**: {len(st.session_state.betting_system.outcomes)}")
                     
                     # Show Supabase status
-                    if st.session_state.learning_system.supabase:
+                    if st.session_state.betting_system.supabase:
                         st.success("✅ Saved to Supabase successfully!")
                     else:
                         st.warning("⚠️ Saved locally (Supabase not available)")
@@ -1630,14 +1583,20 @@ def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away
             if home_goals < 0 or away_goals < 0:
                 st.error("❌ Goals cannot be negative")
                 return
-            if home_goals > 20 or away_goals > 20:  # Reasonable upper limit
+            if home_goals > 20 or away_goals > 20:
                 st.error("❌ That's an unrealistic score!")
                 return
+            
+            # Create pattern indicators for recording
+            pattern_indicators = {
+                'winner': {'type': winner_decision['type']},
+                'totals': {'type': totals_decision['type']}
+            }
             
             # Record outcome and SAVE TO SUPABASE
             with st.spinner("⏳ Saving to Supabase..."):
                 try:
-                    outcome, save_success, save_message = st.session_state.learning_system.record_outcome(
+                    outcome, save_success, save_message = st.session_state.betting_system.record_outcome(
                         prediction, pattern_indicators, "", f"{home_goals}-{away_goals}"
                     )
                     
@@ -1648,12 +1607,12 @@ def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away
                     # Clear the input
                     st.session_state[score_key] = ""
                     
-                    # Add to history - ensure timestamp is serializable
+                    # Add to history
                     history_entry = {
-                        'timestamp': datetime.now().isoformat(),  # Use isoformat here
+                        'timestamp': datetime.now().isoformat(),
                         'home_team': home_team,
                         'away_team': away_team,
-                        'prediction': prediction,
+                        'betting_decision': f"{winner_decision['bet']} & {totals_decision['bet']} 2.5",
                         'actual_score': score_input,
                         'winner_correct': outcome['winner_correct'],
                         'totals_correct': outcome['totals_correct'],
@@ -1685,7 +1644,7 @@ def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away
                 st.session_state[score_key] = ""
             st.rerun()
     
-    st.caption("💡 **Tip**: Enter the actual match result to help the system learn.")
+    st.caption("💡 **Tip**: Enter the actual match result to improve the betting system.")
 
 # ========== STREAMLIT UI ==========
 
@@ -1727,35 +1686,44 @@ with st.sidebar:
             st.error("Could not prepare team data")
             st.stop()
 
-    # Learning System Section
+    # Betting System Section
     st.divider()
-    st.header("📚 Learning System Status")
+    st.header("💰 Betting System Status")
     
     # Supabase Status
-    if st.session_state.learning_system.supabase:
+    if st.session_state.betting_system.supabase:
         st.success("🔄 **Storage**: Connected to Supabase")
     else:
         st.warning("🔄 **Storage**: Local only (Supabase not available)")
     
-    st.write(f"📊 **Your Patterns**: {len(st.session_state.learning_system.pattern_memory)}")
-    st.write(f"📈 **Your Outcomes**: {len(st.session_state.learning_system.outcomes)}")
+    st.write(f"🎯 **Your Patterns**: {len(st.session_state.betting_system.pattern_memory)}")
+    st.write(f"📈 **Your Outcomes**: {len(st.session_state.betting_system.outcomes)}")
+    
+    # Show proven patterns
+    if st.session_state.betting_system.pattern_memory:
+        proven_patterns = [
+            (k, v) for k, v in st.session_state.betting_system.pattern_memory.items() 
+            if v['total'] >= 3 and v['success']/v['total'] >= 0.7
+        ]
+        if proven_patterns:
+            st.write(f"✅ **Proven Patterns**: {len(proven_patterns)}")
     
     # Refresh data button
-    if st.button("🔄 Refresh Learning Data", use_container_width=True):
-        success = st.session_state.learning_system.load_learning()
+    if st.button("🔄 Refresh Betting Data", use_container_width=True):
+        success = st.session_state.betting_system.load_learning()
         if success:
-            st.success("Learning data refreshed!")
+            st.success("Betting data refreshed!")
         else:
             st.warning("Could not refresh from Supabase")
         st.rerun()
     
     st.divider()
     
-    # Show learning statistics
-    st.subheader("Your Learning Statistics")
-    total_outcomes = len(st.session_state.learning_system.outcomes)
+    # Show betting statistics
+    st.subheader("Your Betting Statistics")
+    total_outcomes = len(st.session_state.betting_system.outcomes)
     if total_outcomes > 0:
-        recent = st.session_state.learning_system.outcomes[-10:] if len(st.session_state.learning_system.outcomes) >= 10 else st.session_state.learning_system.outcomes
+        recent = st.session_state.betting_system.outcomes[-10:] if len(st.session_state.betting_system.outcomes) >= 10 else st.session_state.betting_system.outcomes
         if recent:
             winner_acc = sum(1 for o in recent if o['winner_correct']) / len(recent)
             totals_acc = sum(1 for o in recent if o['totals_correct']) / len(recent)
@@ -1763,18 +1731,6 @@ with st.sidebar:
             st.metric("Your Total Matches", total_outcomes)
             st.metric("Your Recent Winner Acc", f"{winner_acc:.0%}")
             st.metric("Your Recent Totals Acc", f"{totals_acc:.0%}")
-            
-            # Show top patterns
-            st.subheader("Your Top Patterns")
-            patterns = dict(st.session_state.learning_system.pattern_memory)
-            sorted_patterns = sorted(
-                [(k, v['success']/v['total']) for k, v in patterns.items() if v['total'] >= 3],
-                key=lambda x: x[1],
-                reverse=True
-            )[:5]
-            
-            for pattern, success in sorted_patterns:
-                st.caption(f"`{pattern[:30]}...`: {success:.0%}")
     else:
         st.info("No outcomes recorded yet. Record your first match outcome!")
 
@@ -1783,18 +1739,16 @@ if df is None:
     st.stop()
 
 # ========== CHECK IF WE SHOULD SHOW PREDICTION ==========
-# This is the key fix: persist prediction across reruns
-
-# Check if we have a prediction to show (either new or from last time)
 show_prediction = False
 prediction = None
 pattern_indicators = None
 engine = None
+winner_decision = None
+totals_decision = None
 
 # Option 1: User just clicked "Generate Prediction"
 if 'calculate_btn' in locals() and calculate_btn:
     show_prediction = True
-    # We'll generate the prediction below
     
 # Option 2: We have a stored prediction from last time
 elif (st.session_state.last_prediction is not None and 
@@ -1805,35 +1759,19 @@ elif (st.session_state.last_prediction is not None and
     prediction = st.session_state.last_prediction
     pattern_indicators = st.session_state.last_pattern_indicators
     engine = st.session_state.last_engine
+    winner_decision = st.session_state.get('last_winner_decision')
+    totals_decision = st.session_state.get('last_totals_decision')
     home_team, away_team = st.session_state.last_teams
 
 # If no prediction to show
 if not show_prediction:
     st.info("👈 Select teams and click 'Generate Prediction'")
     
-    # Show learning insights
-    with st.expander("🧠 Learning System Insights", expanded=True):
-        insights = st.session_state.learning_system.generate_learned_insights()
+    # Show betting insights
+    with st.expander("💰 Betting System Insights", expanded=True):
+        insights = st.session_state.betting_system.generate_learned_insights()
         for insight in insights:
             st.write(f"• {insight}")
-    
-    # Show history if requested
-    if st.session_state.show_history and st.session_state.match_history:
-        st.subheader("📊 Your Learning History")
-        for hist in reversed(st.session_state.match_history[-10:]):
-            with st.container():
-                col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
-                with col1:
-                    st.write(f"**{hist['home_team']} vs {hist['away_team']}**")
-                    st.caption(f"{hist['timestamp'].strftime('%Y-%m-%d %H:%M')}")
-                with col2:
-                    st.write(f"Predicted: {hist['prediction']['winner']['team']}")
-                    st.caption(f"Actual: {hist['actual_score']}")
-                with col3:
-                    st.write(f"Winner: {'✅' if hist['winner_correct'] else '❌'}")
-                with col4:
-                    st.write(f"Totals: {'✅' if hist['totals_correct'] else '❌'}")
-                st.divider()
     
     st.stop()
 
@@ -1846,19 +1784,33 @@ if 'calculate_btn' in locals() and calculate_btn:
         away_stats = away_stats_df.loc[away_team]
         
         # Generate prediction
-        engine = AdaptiveFootballIntelligenceEngineV4(
-            league_metrics, 
-            selected_league, 
-            st.session_state.learning_system
+        engine = FootballIntelligenceEngine(league_metrics, selected_league)
+        prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
+        
+        # Generate betting decisions
+        winner_decision = st.session_state.betting_system.get_betting_decision(
+            prediction['winner']['type'],
+            "WINNER",
+            f"{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}",
+            prediction['winner']['confidence_score']
         )
         
-        prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
-        pattern_generator = AdaptivePatternIndicators(st.session_state.learning_system)
+        totals_decision = st.session_state.betting_system.get_betting_decision(
+            prediction['totals']['direction'],
+            "TOTALS", 
+            f"{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}",
+            prediction['totals']['confidence_score']
+        )
+        
+        # Generate pattern indicators
+        pattern_generator = PatternIndicators(st.session_state.betting_system)
         pattern_indicators = pattern_generator.generate_indicators(prediction)
         
         # Store in session state for next time
         st.session_state.last_prediction = prediction
         st.session_state.last_pattern_indicators = pattern_indicators
+        st.session_state.last_winner_decision = winner_decision
+        st.session_state.last_totals_decision = totals_decision
         st.session_state.last_teams = (home_team, away_team)
         st.session_state.last_league = selected_league
         st.session_state.last_engine = engine
@@ -1867,114 +1819,145 @@ if 'calculate_btn' in locals() and calculate_btn:
         st.error(f"Team data error: {e}")
         st.stop()
 
-# ========== DISPLAY THE PREDICTION ==========
-st.header(f"🎯 {home_team} vs {away_team}")
-st.caption(f"League: {selected_league} | League Avg Goals: {league_metrics['avg_goals_per_match']:.2f}")
+# ========== DISPLAY THE BETTING DECISION ==========
+st.header(f"💰 BETTING DECISION: {home_team} vs {away_team}")
+st.caption(f"League: {selected_league} | Based on YOUR historical results")
 
-# Main prediction cards
+# Display betting decisions
 col1, col2 = st.columns(2)
 
 with col1:
-    # Winner prediction
-    winner_pred = prediction['winner']
-    winner_conf = winner_pred['confidence']
-    winner_conf_score = winner_pred['confidence_score']
+    # Winner betting decision
+    decision_type = winner_decision['type']
+    bet = winner_decision['bet']
+    confidence = winner_decision['confidence']
+    reason = winner_decision['reason']
     
-    if winner_pred['type'] == "HOME":
-        winner_color = "#22C55E" if winner_conf in ["VERY HIGH", "HIGH"] else "#4ADE80" if winner_conf == "MEDIUM" else "#84CC16"
-        icon = "🏠"
-    elif winner_pred['type'] == "AWAY":
-        winner_color = "#22C55E" if winner_conf in ["VERY HIGH", "HIGH"] else "#4ADE80" if winner_conf == "MEDIUM" else "#84CC16"
-        icon = "✈️"
+    # Color coding for decision types
+    if decision_type == 'PROVEN_WINNER':
+        card_color = '#14532D'
+        text_color = '#22C55E'
+        icon = '✅'
+        title = 'PROVEN WINNER PATTERN'
+    elif decision_type == 'PROVEN_LOSER':
+        card_color = '#7F1D1D'
+        text_color = '#EF4444'
+        icon = '🔄'
+        title = 'REVERSE BET (Pattern fails)'
+    elif decision_type == 'UNCLEAR_PATTERN':
+        card_color = '#78350F'
+        text_color = '#F59E0B'
+        icon = '⚠️'
+        title = 'MIXED RESULTS'
     else:
-        winner_color = "#F59E0B"
-        icon = "🤝"
+        card_color = '#1E293B'
+        text_color = '#94A3B8'
+        icon = '🆕'
+        title = 'NEW PATTERN'
     
-    # Color based on confidence
-    if winner_conf == "VERY HIGH":
-        card_color = "#14532D"
-    elif winner_conf == "HIGH":
-        card_color = "#166534"
-    elif winner_conf == "MEDIUM":
-        card_color = "#365314"
-    elif winner_conf == "LOW":
-        card_color = "#3F6212"
+    # Map bet to display name
+    if bet == "HOME":
+        bet_display = home_team
+        bet_icon = "🏠"
+    elif bet == "AWAY":
+        bet_display = away_team
+        bet_icon = "✈️"
     else:
-        card_color = "#1E293B"
+        bet_display = "DRAW"
+        bet_icon = "🤝"
     
     st.markdown(f"""
-    <div style="background-color: {card_color}; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
-        <h3 style="color: white; margin: 0;">PREDICTED WINNER</h3>
-        <div style="font-size: 36px; font-weight: bold; color: {winner_color}; margin: 10px 0;">
-            {icon} {winner_pred['team']}
+    <div style="background-color: {card_color}; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0; border: 2px solid {text_color};">
+        <div style="font-size: 14px; color: {text_color}; font-weight: bold; margin-bottom: 10px;">
+            {icon} {title}
         </div>
-        <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
-            {winner_pred['probability']*100:.1f}%
+        <div style="font-size: 24px; font-weight: bold; color: white; margin: 10px 0;">
+            {bet_icon} {bet_display}
         </div>
-        <div style="font-size: 16px; color: white;">
-            Strength: {winner_pred['strength']} | Confidence: {winner_conf} ({winner_conf_score:.0f}/100)
+        <div style="font-size: 36px; font-weight: bold; color: {text_color}; margin: 10px 0;">
+            {confidence:.0f}%
+        </div>
+        <div style="font-size: 14px; color: #D1D5DB; margin-top: 10px; padding: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 8px;">
+            {reason}
         </div>
     </div>
     """, unsafe_allow_html=True)
 
 with col2:
-    # Totals prediction
-    totals_pred = prediction['totals']
-    direction = totals_pred['direction']
-    confidence = totals_pred['confidence']
-    conf_score = totals_pred['confidence_score']
+    # Totals betting decision
+    decision_type = totals_decision['type']
+    bet = totals_decision['bet']
+    confidence = totals_decision['confidence']
+    reason = totals_decision['reason']
     
-    if direction == "OVER":
-        if confidence == "VERY HIGH":
-            card_color = "#14532D"
-            text_color = "#22C55E"
-        elif confidence == "HIGH":
-            card_color = "#166534"
-            text_color = "#4ADE80"
-        elif confidence == "MEDIUM":
-            card_color = "#365314"
-            text_color = "#84CC16"
-        elif confidence == "LOW":
-            card_color = "#3F6212"
-            text_color = "#A3E635"
-        else:
-            card_color = "#1E293B"
-            text_color = "#94A3B8"
+    # Color coding for decision types
+    if decision_type == 'PROVEN_WINNER':
+        card_color = '#14532D'
+        text_color = '#22C55E'
+        icon = '✅'
+        title = 'PROVEN PATTERN'
+    elif decision_type == 'PROVEN_LOSER':
+        card_color = '#7F1D1D'
+        text_color = '#EF4444'
+        icon = '🔄'
+        title = 'REVERSE BET (Pattern fails)'
+    elif decision_type == 'UNCLEAR_PATTERN':
+        card_color = '#78350F'
+        text_color = '#F59E0B'
+        icon = '⚠️'
+        title = 'MIXED RESULTS'
     else:
-        if confidence == "VERY HIGH":
-            card_color = "#7F1D1D"
-            text_color = "#EF4444"
-        elif confidence == "HIGH":
-            card_color = "#991B1B"
-            text_color = "#F87171"
-        elif confidence == "MEDIUM":
-            card_color = "#78350F"
-            text_color = "#F59E0B"
-        elif confidence == "LOW":
-            card_color = "#92400E"
-            text_color = "#FBBF24"
-        else:
-            card_color = "#1E293B"
-            text_color = "#94A3B8"
+        card_color = '#1E293B'
+        text_color = '#94A3B8'
+        icon = '🆕'
+        title = 'NEW PATTERN'
     
     st.markdown(f"""
-    <div style="background-color: {card_color}; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
-        <h3 style="color: white; margin: 0;">TOTAL GOALS</h3>
+    <div style="background-color: {card_color}; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0; border: 2px solid {text_color};">
+        <div style="font-size: 14px; color: {text_color}; font-weight: bold; margin-bottom: 10px;">
+            {icon} {title}
+        </div>
+        <div style="font-size: 24px; font-weight: bold; color: white; margin: 10px 0;">
+            {bet} 2.5
+        </div>
         <div style="font-size: 36px; font-weight: bold; color: {text_color}; margin: 10px 0;">
-            {direction} 2.5
+            {confidence:.0f}%
         </div>
-        <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
-            {prediction['probabilities'][f'{direction.lower()}_2_5_probability']*100:.1f}%
-        </div>
-        <div style="font-size: 16px; color: white;">
-            Confidence: {confidence} ({conf_score:.0f}/100)
+        <div style="font-size: 14px; color: #D1D5DB; margin-top: 10px; padding: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 8px;">
+            {reason}
         </div>
     </div>
     """, unsafe_allow_html=True)
 
+# ========== BETTING CARD RECOMMENDATION ==========
+st.divider()
+st.subheader("🎯 BETTING CARD RECOMMENDATION")
+
+# Generate betting card recommendation
+betting_card = BettingCard(st.session_state.betting_system)
+recommendation = betting_card.get_recommendation(prediction, winner_decision, totals_decision)
+
+# Display the card
+betting_card.display_card(recommendation)
+
+# ========== ALGORITHM PREDICTION (FOR REFERENCE) ==========
+with st.expander("🤖 Algorithm Prediction (For Reference)", expanded=False):
+    st.write(f"**Algorithm originally predicted:**")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric(f"{prediction['winner']['team']} to win", 
+                 f"{prediction['winner']['probability']*100:.1f}%",
+                 f"Confidence: {prediction['winner']['confidence']} ({prediction['winner']['confidence_score']:.0f}/100)")
+    with col2:
+        st.metric(f"{prediction['totals']['direction']} 2.5",
+                 f"{prediction['probabilities'][f'{prediction['totals']['direction'].lower()}_2_5_probability']*100:.1f}%",
+                 f"Confidence: {prediction['totals']['confidence']} ({prediction['totals']['confidence_score']:.0f}/100)")
+    
+    st.caption("Note: Betting decisions above override algorithm predictions based on your historical results")
+
 # ========== PATTERN INDICATORS ==========
 st.divider()
-st.subheader("🎯 Your Pattern Indicators")
+st.subheader("🎯 Your Pattern Analysis")
 
 col1, col2 = st.columns(2)
 
@@ -2083,18 +2066,7 @@ with col2:
         </div>
         """, unsafe_allow_html=True)
 
-st.caption("💡 **Your Learning System**: Green = Your strong pattern | Red = Your weak pattern | Blue = Promising | Gray = No pattern yet")
-
-# ========== ADAPTIVE BETTING CARD ==========
-st.divider()
-st.subheader("🎯 ADAPTIVE BETTING CARD (Based on YOUR Data)")
-
-# Generate adaptive betting recommendation
-betting_card = AdaptiveBettingCard(st.session_state.learning_system)
-recommendation = betting_card.get_recommendation(prediction, pattern_indicators)
-
-# Display the card
-betting_card.display_card(recommendation)
+st.caption("💡 **Pattern Analysis**: Shows how your historical results influence betting decisions")
 
 # ========== INSIGHTS ==========
 if prediction['insights']:
@@ -2105,24 +2077,6 @@ if prediction['insights']:
 # ========== RISK FLAGS ==========
 if prediction['totals']['risk_flags']:
     st.warning(f"⚠️ **Risk Flags Detected**: {', '.join(prediction['totals']['risk_flags'])}")
-
-# ========== FINISHING TREND ANALYSIS ==========
-st.subheader("📊 Finishing Trend Analysis")
-col1, col2 = st.columns(2)
-
-with col1:
-    home_finish = prediction['totals']['home_finishing']
-    finish_cat = engine.totals_predictor.categorize_finishing(home_finish)
-    st.metric(f"{home_team} Finishing", f"{home_finish:+.2f}", finish_cat)
-
-with col2:
-    away_finish = prediction['totals']['away_finishing']
-    finish_cat = engine.totals_predictor.categorize_finishing(away_finish)
-    st.metric(f"{away_team} Finishing", f"{away_finish:+.2f}", finish_cat)
-
-finishing_alignment = prediction['totals'].get('finishing_alignment', 'N/A')
-total_category = prediction['totals'].get('total_category', 'N/A')
-st.info(f"**Finishing Alignment**: {finishing_alignment} | **Total xG Category**: {total_category}")
 
 # ========== DETAILED PROBABILITIES ==========
 st.subheader("🎲 Detailed Probabilities")
@@ -2166,114 +2120,102 @@ with col3:
              delta=f"{'OVER' if total_xg > over_thresh else 'UNDER'} {over_thresh}")
 
 # ========== FIXED FEEDBACK SECTION ==========
-record_outcome_with_feedback(prediction, pattern_indicators, home_team, away_team)
+record_outcome_with_feedback(prediction, winner_decision, totals_decision, home_team, away_team)
 
-# ========== DETAILED ANALYSIS ==========
-if show_details:
-    with st.expander("🔍 Detailed Analysis", expanded=False):
-        st.write("### Winner Prediction Analysis")
-        st.write(f"- Expected Goals Difference: {prediction['winner'].get('strength', 'N/A')}")
-        st.write(f"- Adjusted Delta: {prediction['winner'].get('adjusted_delta', 'N/A'):.2f}")
-        st.write(f"- Confidence Level: {prediction['winner']['confidence']}")
-        st.write(f"- Volatility High: {prediction['winner'].get('volatility_high', False)}")
-        
-        st.write("### Totals Prediction Analysis")
-        st.write(f"- Total xG: {prediction['totals']['total_xg']:.2f}")
-        st.write(f"- Finishing Alignment: {prediction['totals'].get('finishing_alignment', 'N/A')}")
-        st.write(f"- Total Category: {prediction['totals'].get('total_category', 'N/A')}")
-        st.write(f"- League-adjusted threshold: {LEAGUE_ADJUSTMENTS.get(selected_league, LEAGUE_ADJUSTMENTS['Premier League'])['over_threshold']}")
-        
-        if prediction['totals'].get('defense_rule_triggered'):
-            st.write(f"- Defense Rule Triggered: {prediction['totals']['defense_rule_triggered']}")
-        
-        if prediction['totals']['risk_flags']:
-            st.write("### Risk Analysis")
-            for flag in prediction['totals']['risk_flags']:
-                st.write(f"- {flag}")
-
-# ========== LEARNING INSIGHTS PANEL ==========
-with st.expander("🧠 Your Learning System Insights", expanded=True):
-    insights = st.session_state.learning_system.generate_learned_insights()
+# ========== BETTING SYSTEM INSIGHTS ==========
+with st.expander("💰 Your Betting System Insights", expanded=True):
+    insights = st.session_state.betting_system.generate_learned_insights()
     for insight in insights:
         st.write(f"• {insight}")
     
     # Show strongest learned patterns
-    st.subheader("📊 Your Strongest Patterns")
-    patterns = dict(st.session_state.learning_system.pattern_memory)
-    strong_patterns = [(k, v) for k, v in patterns.items() if v['total'] >= 3 and v['success']/v['total'] >= 0.75]
+    st.subheader("📊 Your Proven Patterns")
+    patterns = dict(st.session_state.betting_system.pattern_memory)
+    proven_patterns = sorted(
+        [(k, v['success']/v['total']) for k, v in patterns.items() if v['total'] >= 3 and v['success']/v['total'] >= 0.7],
+        key=lambda x: x[1],
+        reverse=True
+    )[:5]
     
-    if strong_patterns:
-        for pattern, stats in strong_patterns[:5]:
-            success_rate = stats['success'] / stats['total']
-            st.info(f"**{pattern[:40]}...**: {stats['success']}/{stats['total']} ({success_rate:.0%})")
-    else:
-        st.caption("Record more outcomes to identify your strong patterns")
+    if proven_patterns:
+        for pattern, success in proven_patterns:
+            st.success(f"**{pattern[:40]}...**: {success:.0%} success ({patterns[pattern]['success']}/{patterns[pattern]['total']})")
+    
+    # Show failing patterns
+    failing_patterns = sorted(
+        [(k, v['success']/v['total']) for k, v in patterns.items() if v['total'] >= 3 and v['success']/v['total'] <= 0.3],
+        key=lambda x: x[1]
+    )[:5]
+    
+    if failing_patterns:
+        st.subheader("💣 Your Failing Patterns (Bet Opposite!)")
+        for pattern, success in failing_patterns:
+            st.error(f"**{pattern[:40]}...**: {success:.0%} success → BET OPPOSITE")
 
 # ========== EXPORT REPORT ==========
 st.divider()
-st.subheader("📤 Export Prediction Report")
+st.subheader("📤 Export Betting Report")
 
 report = f"""
-⚽ FOOTBALL INTELLIGENCE ENGINE v4.0 - YOUR PERSONAL LEARNING SYSTEM
+💰 FOOTBALL BETTING SYSTEM - YOUR PERSONAL EDGE
 Match: {home_team} vs {away_team}
 League: {selected_league}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-Storage: {'Supabase Connected' if st.session_state.learning_system.supabase else 'Local Storage Only'}
+Storage: {'Supabase Connected' if st.session_state.betting_system.supabase else 'Local Storage Only'}
 
-🎯 ADAPTIVE BETTING CARD (Based on YOUR Data)
+🎯 BETTING DECISIONS (Based on YOUR Results):
+Winner: {winner_decision['bet']} ({winner_decision['confidence']:.0f}% confidence)
+Reason: {winner_decision['reason']}
+Decision Type: {winner_decision['type']}
+
+Totals: {totals_decision['bet']} 2.5 ({totals_decision['confidence']:.0f}% confidence)
+Reason: {totals_decision['reason']}
+Decision Type: {totals_decision['type']}
+
+🎯 BETTING CARD RECOMMENDATION:
 {recommendation['icon']} {recommendation['text']}
 Type: {recommendation['subtext']}
 Confidence: {recommendation['confidence']:.0f}/100
 Expected Value: {recommendation.get('expected_value', 0):.3f}
 Reason: {recommendation['reason']}
 
-📊 YOUR PATTERN ANALYSIS:
+🤖 ALGORITHM PREDICTION (For Reference):
+Winner: {prediction['winner']['team']} ({prediction['winner']['probability']*100:.1f}%)
+Confidence: {prediction['winner']['confidence']} ({prediction['winner']['confidence_score']:.0f}/100)
+
+Totals: {prediction['totals']['direction']} 2.5 ({prediction['probabilities'][f'{prediction['totals']['direction'].lower()}_2_5_probability']*100:.1f}%)
+Confidence: {prediction['totals']['confidence']} ({prediction['totals']['confidence_score']:.0f}/100)
+
+📊 PATTERN ANALYSIS:
 Winner Pattern: {pattern_indicators['winner']['text']}
 Winner Explanation: {pattern_indicators['winner']['explanation']}
-Winner Confidence: {prediction['winner']['confidence_score']:.0f}/100 ({prediction['winner']['confidence']})
-Winner Volatility: {'HIGH' if prediction['winner'].get('volatility_high') else 'NORMAL'}
 
 Totals Pattern: {pattern_indicators['totals']['text']}
 Totals Explanation: {pattern_indicators['totals']['explanation']}
-Totals Confidence: {prediction['totals']['confidence_score']:.0f}/100 ({prediction['totals']['confidence']})
 
-🎯 WINNER PREDICTION
-Predicted Winner: {prediction['winner']['team']}
-Probability: {prediction['winner']['probability']*100:.1f}%
-Strength: {prediction['winner']['strength']}
-Confidence: {prediction['winner']['confidence']} ({prediction['winner']['confidence_score']:.0f}/100)
-Most Likely Score: {prediction['winner']['most_likely_score']}
-
-🎯 TOTALS PREDICTION  
-Direction: {prediction['totals']['direction']} 2.5
-Probability: {prediction['probabilities'][f'{prediction["totals"]["direction"].lower()}_2_5_probability']*100:.1f}%
-Confidence: {prediction['totals']['confidence']} ({prediction['totals']['confidence_score']:.0f}/100)
-Total Expected Goals: {prediction['expected_goals']['total']:.2f}
-Finishing Alignment: {prediction['totals'].get('finishing_alignment', 'N/A')}
-Total xG Category: {prediction['totals'].get('total_category', 'N/A')}
-
-📊 EXPECTED GOALS
+⚽ EXPECTED GOALS:
 {home_team}: {prediction['expected_goals']['home']:.2f} xG
 {away_team}: {prediction['expected_goals']['away']:.2f} xG
 Total: {prediction['expected_goals']['total']:.2f} xG
 
-📊 FINISHING TRENDS
+📊 FINISHING TRENDS:
 {home_team}: {prediction['totals']['home_finishing']:+.2f} goals_vs_xg/game
 {away_team}: {prediction['totals']['away_finishing']:+.2f} goals_vs_xg/game
 
-⚠️ RISK FLAGS
+⚠️ RISK FLAGS:
 {', '.join(prediction['totals']['risk_flags']) if prediction['totals']['risk_flags'] else 'None'}
 
-🧠 YOUR LEARNING SYSTEM STATS
-Your Outcomes Recorded: {len(st.session_state.learning_system.outcomes)}
-Your Patterns Learned: {len(st.session_state.learning_system.pattern_memory)}
-Storage Status: {'✅ Connected to Supabase' if st.session_state.learning_system.supabase else '⚠️ Local storage only'}
+💰 YOUR BETTING SYSTEM STATS:
+Your Outcomes Recorded: {len(st.session_state.betting_system.outcomes)}
+Your Patterns Learned: {len(st.session_state.betting_system.pattern_memory)}
+Storage Status: {'✅ Connected to Supabase' if st.session_state.betting_system.supabase else '⚠️ Local storage only'}
 
 ---
-YOUR ADAPTIVE LEARNING RULES:
-1. Strong Patterns (>70% success with ≥3 matches) → BET
-2. Weak Patterns (<40% success with ≥3 matches) → AVOID
-3. Decision based on Expected Value (EV > 0.15 for single, > 0.10 for double)
+YOUR BETTING RULES:
+1. Proven Patterns (≥70% success with ≥3 matches) → BET
+2. Failing Patterns (≤30% success with ≥3 matches) → BET OPPOSITE
+3. New/Mixed Patterns → Use algorithm with caution
+4. All decisions based on YOUR actual historical results
 """
 
 st.code(report, language="text")
@@ -2283,7 +2225,7 @@ with col1:
     st.download_button(
         label="📥 Download Report",
         data=report,
-        file_name=f"adaptive_{home_team}_vs_{away_team}.txt",
+        file_name=f"betting_{home_team}_vs_{away_team}.txt",
         mime="text/plain",
         use_container_width=True
     )
@@ -2295,8 +2237,11 @@ with col2:
             'home_team': home_team,
             'away_team': away_team,
             'league': selected_league,
-            'prediction': prediction,
-            'pattern_indicators': pattern_indicators,
-            'adaptive_recommendation': recommendation
+            'betting_decisions': {
+                'winner': winner_decision,
+                'totals': totals_decision
+            },
+            'algorithm_prediction': prediction,
+            'betting_card': recommendation
         })
         st.success("Added to prediction history!")
