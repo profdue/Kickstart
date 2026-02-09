@@ -1538,34 +1538,46 @@ def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away
             st.error(status_message)
     
     # Use a FORM to prevent automatic reruns
-    with st.form(key="record_outcome_form", clear_on_submit=True):
+    with st.form(key="record_outcome_form", clear_on_submit=False):  # Changed to False
         col1, col2 = st.columns([2, 1])
         
         with col1:
+            # Use a unique key for this input
             score_input = st.text_input(
                 "Actual Score (e.g., 2-1)", 
                 value="",
-                help="Enter the actual match result. The system will learn from this outcome."
+                help="Enter the actual match result. The system will learn from this outcome.",
+                key=f"score_input_{home_team}_{away_team}"  # Unique key
             )
         
         with col2:
-            # Submit button inside the form
+            # Submit button inside the form - REMOVE DISABLED parameter
             submit_button = st.form_submit_button(
                 "✅ Record Outcome & Save to Supabase", 
                 type="primary", 
-                use_container_width=True,
-                disabled=not score_input
+                use_container_width=True
+                # REMOVED: disabled=not score_input
             )
         
-        if submit_button and score_input:
+        if submit_button:
+            if not score_input or score_input.strip() == "":
+                st.error("❌ Please enter a score first")
+                st.stop()
+            
             if '-' in score_input:
                 try:
                     home_goals, away_goals = map(int, score_input.split('-'))
+                    
+                    # Show processing message
+                    processing_msg = st.info("⏳ Recording outcome and saving to Supabase...")
                     
                     # Record outcome and SAVE TO SUPABASE
                     outcome, save_success, save_message = st.session_state.learning_system.record_outcome(
                         prediction, pattern_indicators, "", score_input
                     )
+                    
+                    # Clear processing message
+                    processing_msg.empty()
                     
                     # Store in session state for display
                     st.session_state.last_outcome = outcome
@@ -1613,6 +1625,10 @@ def record_outcome_with_feedback(prediction, pattern_indicators, home_team, away
                                 st.warning("⚠️ Saved locally (Supabase not available)")
                     else:
                         st.error(save_message)
+                    
+                    # Force a small delay to show messages
+                    import time
+                    time.sleep(0.5)
                     
                 except ValueError:
                     st.error("❌ Please enter score in format '2-1' (numbers only)")
