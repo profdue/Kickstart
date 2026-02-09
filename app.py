@@ -12,16 +12,6 @@ import os
 from supabase import create_client, Client
 warnings.filterwarnings('ignore')
 
-# ========== STATE MANAGEMENT ==========
-if 'current_prediction' not in st.session_state:
-    st.session_state.current_prediction = None
-
-if 'current_teams' not in st.session_state:
-    st.session_state.current_teams = None
-
-if 'prediction_made' not in st.session_state:
-    st.session_state.prediction_made = False
-
 # Page config
 st.set_page_config(
     page_title="⚽ Football Intelligence Engine v4.0",
@@ -1506,30 +1496,56 @@ def calculate_league_metrics(df):
 # ========== FEEDBACK SYSTEM ==========
 
 def add_feedback_section(prediction, pattern_indicators, home_team, away_team):
-    """Add section for recording actual outcomes WITHOUT page refresh"""
+    """Add section for recording actual outcomes"""
     st.divider()
     st.subheader("📝 Record Outcome for Learning")
     
-    # Create a unique container for feedback
-    feedback_container = st.container()
+    # Show feedback message if needed
+    if st.session_state.show_feedback_message and st.session_state.last_outcome:
+        last_outcome = st.session_state.last_outcome
+        with st.container():
+            st.success(f"""
+            ✅ **Outcome Recorded!**  
+            **Match**: {last_outcome['home_team']} vs {last_outcome['away_team']}  
+            **Actual Score**: {last_outcome['actual_score']}  
+            **Winner**: {'✅ Correct' if last_outcome['winner_correct'] else '❌ Wrong'}  
+            **Totals**: {'✅ Correct' if last_outcome['totals_correct'] else '❌ Wrong'}
+            """)
+            
+            # Show what was learned
+            with st.expander("📈 What was learned?", expanded=False):
+                winner_pattern = f"WINNER_{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
+                totals_pattern = f"TOTALS_{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
+                
+                winner_success = st.session_state.learning_system.get_pattern_success_rate(
+                    "WINNER", f"{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
+                )
+                totals_success = st.session_state.learning_system.get_pattern_success_rate(
+                    "TOTALS", f"{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
+                )
+                
+                st.write(f"**Winner Pattern**: {winner_pattern}")
+                st.write(f"**Winner Success Rate**: {winner_success:.0%}")
+                st.write(f"**Totals Pattern**: {totals_pattern}")
+                st.write(f"**Totals Success Rate**: {totals_success:.0%}")
+                st.write(f"**Total Patterns Learned**: {len(st.session_state.learning_system.pattern_memory)}")
     
-    # Use columns for layout
     col1, col2 = st.columns([2, 1])
     
     with col1:
         actual_score = st.text_input("Actual Score (e.g., 2-1)", "", 
-                                   help="Enter the actual match result",
-                                   key=f"score_{home_team}_{away_team}")
+                                   help="Enter the actual match result. The system will learn from this outcome.",
+                                   key="actual_score_input")
     
     with col2:
         record_button = st.button("✅ Record Outcome & Learn", 
                                 type="primary", 
-                                use_container_width=True,
-                                key=f"record_{home_team}_{away_team}")
+                                use_container_width=True, 
+                                key="record_outcome_btn",
+                                disabled=not actual_score)
     
-    # Handle button click WITHOUT using forms
-    if record_button:
-        if actual_score and '-' in actual_score:
+    if record_button and actual_score:
+        if '-' in actual_score:
             try:
                 home_goals, away_goals = map(int, actual_score.split('-'))
                 
@@ -1538,7 +1554,7 @@ def add_feedback_section(prediction, pattern_indicators, home_team, away_team):
                     prediction, pattern_indicators, "", actual_score
                 )
                 
-                # Store in session state
+                # Store in session state for display
                 st.session_state.last_outcome = outcome
                 st.session_state.show_feedback_message = True
                 
@@ -1553,52 +1569,15 @@ def add_feedback_section(prediction, pattern_indicators, home_team, away_team):
                     'totals_correct': outcome['totals_correct']
                 })
                 
-                # Show success in the feedback container
-                with feedback_container:
-                    st.success(f"""
-                    ✅ **Outcome Recorded!**  
-                    **Match**: {home_team} vs {away_team}  
-                    **Actual Score**: {actual_score}  
-                    **Winner**: {'✅ Correct' if outcome['winner_correct'] else '❌ Wrong'}  
-                    **Totals**: {'✅ Correct' if outcome['totals_correct'] else '❌ Wrong'}
-                    """)
-                    
-                    # Show learning update
-                    with st.expander("📈 What was learned?", expanded=True):
-                        winner_success = st.session_state.learning_system.get_pattern_success_rate(
-                            "WINNER", f"{prediction['winner']['confidence']}_{prediction['winner']['confidence_score']//10*10}"
-                        )
-                        totals_success = st.session_state.learning_system.get_pattern_success_rate(
-                            "TOTALS", f"{prediction['totals'].get('finishing_alignment', 'N/A')}_{prediction['totals'].get('total_category', 'N/A')}"
-                        )
-                        
-                        st.write(f"**Winner Pattern**: {prediction['winner']['confidence']} confidence")
-                        st.write(f"**Winner Success Rate**: {winner_success:.0%}")
-                        st.write(f"**Totals Pattern**: {prediction['totals'].get('finishing_alignment', 'N/A')} + {prediction['totals'].get('total_category', 'N/A')}")
-                        st.write(f"**Totals Success Rate**: {totals_success:.0%}")
-                        st.write(f"**Patterns in Database**: {len(st.session_state.learning_system.pattern_memory)}")
-                        st.write(f"**Total Outcomes**: {len(st.session_state.learning_system.outcomes)}")
-                
-                # Force Streamlit to stop and show results
-                st.stop()  # This prevents the page from going back to start
+                # Clear the input and force UI update
+                st.rerun()
                 
             except ValueError:
                 st.error("❌ Please enter score in format '2-1' (numbers only)")
         else:
             st.error("❌ Please enter a valid score format '2-1'")
     
-    # Show previous feedback if exists
-    elif st.session_state.show_feedback_message and st.session_state.last_outcome:
-        last_outcome = st.session_state.last_outcome
-        with feedback_container:
-            st.info(f"""
-            📝 **Last Recorded Outcome**:  
-            {last_outcome['home_team']} {last_outcome['actual_score']} {last_outcome['away_team']}  
-            Winner: {'✅' if last_outcome['winner_correct'] else '❌'}  
-            Totals: {'✅' if last_outcome['totals_correct'] else '❌'}
-            """)
-    
-    st.caption("💡 **Tip**: Enter the actual match result to help the system learn.")
+    st.caption("💡 **Tip**: Enter the actual match result to help the system learn. Come back after the match to record outcomes!")
 
 # ========== STREAMLIT UI ==========
 
@@ -1632,31 +1611,10 @@ with st.sidebar:
             st.markdown("### 🎯 Prediction Settings")
             show_details = st.checkbox("Show Detailed Analysis", value=True)
             
-            # Store teams in session state
-            if home_team and away_team:
-                st.session_state.selected_teams = (home_team, away_team)
-                st.session_state.selected_league = selected_league
-            
-            # Generate Prediction button
             if st.button("🚀 Generate Prediction", type="primary", use_container_width=True):
-                # Set flags to show prediction
-                st.session_state.generate_clicked = True
-                st.session_state.show_prediction = True
-                # Store the team selections
-                st.session_state.current_home_team = home_team
-                st.session_state.current_away_team = away_team
-                st.session_state.current_league = selected_league
-                # Rerun to show prediction
-                st.rerun()
-            
-            # Check if we should load a stored prediction
-            load_stored_prediction = (
-                st.session_state.get('show_prediction', False) and 
-                st.session_state.get('current_prediction') is not None and
-                home_team == st.session_state.get('current_home_team') and
-                away_team == st.session_state.get('current_away_team')
-            )
-            
+                calculate_btn = True
+            else:
+                calculate_btn = False
         else:
             st.error("Could not prepare team data")
             st.stop()
@@ -1678,12 +1636,12 @@ with st.sidebar:
     
     with col2:
         if st.button("🔄 Refresh Stats", use_container_width=True):
-            # Just update the stats without rerun
+            # Reload learning data
             st.session_state.learning_system.load_learning()
-            st.success("✅ Learning stats updated from Supabase!")
+            st.success("Learning stats refreshed!")
     
     # Clear feedback message button
-    if st.session_state.get('show_feedback_message', False):
+    if st.session_state.show_feedback_message:
         if st.button("🗑️ Clear Feedback", type="secondary", use_container_width=True):
             st.session_state.show_feedback_message = False
             st.session_state.last_outcome = None
@@ -1722,64 +1680,7 @@ if df is None:
     st.error("Please add CSV files to the 'leagues' folder")
     st.stop()
 
-# ========== DECIDE WHAT TO DISPLAY ==========
-
-# Check if we should show prediction or start screen
-show_prediction = st.session_state.get('show_prediction', False)
-has_stored_prediction = 'current_prediction' in st.session_state and st.session_state.current_prediction is not None
-
-# If we have a stored prediction and the same teams are selected, show it
-if has_stored_prediction and show_prediction:
-    # Use stored prediction
-    prediction = st.session_state.current_prediction
-    home_team = st.session_state.current_home_team
-    away_team = st.session_state.current_away_team
-    selected_league = st.session_state.current_league
-    
-    # Get stats for display
-    home_stats = home_stats_df.loc[home_team]
-    away_stats = away_stats_df.loc[away_team]
-    
-    # Generate pattern indicators
-    pattern_generator = AdaptivePatternIndicators(st.session_state.learning_system)
-    pattern_indicators = pattern_generator.generate_indicators(prediction)
-    
-    # Show the prediction
-    display_prediction = True
-    
-elif st.session_state.get('generate_clicked', False):
-    # User just clicked "Generate Prediction" - create new prediction
-    try:
-        home_stats = home_stats_df.loc[home_team]
-        away_stats = away_stats_df.loc[away_team]
-    except KeyError as e:
-        st.error(f"Team data error: {e}")
-        st.stop()
-    
-    # Generate prediction
-    engine = AdaptiveFootballIntelligenceEngineV4(
-        league_metrics, 
-        selected_league, 
-        st.session_state.learning_system
-    )
-    
-    prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
-    
-    # STORE THE PREDICTION
-    st.session_state.current_prediction = prediction
-    st.session_state.current_home_team = home_team
-    st.session_state.current_away_team = away_team
-    st.session_state.current_league = selected_league
-    st.session_state.show_prediction = True
-    
-    # Generate pattern indicators
-    pattern_generator = AdaptivePatternIndicators(st.session_state.learning_system)
-    pattern_indicators = pattern_generator.generate_indicators(prediction)
-    
-    display_prediction = True
-    
-else:
-    # Show start screen
+if 'calculate_btn' not in locals() or not calculate_btn:
     st.info("👈 Select teams and click 'Generate Prediction'")
     
     # Show learning insights even when no prediction
@@ -1789,7 +1690,7 @@ else:
             st.write(f"• {insight}")
     
     # Show history if requested
-    if st.session_state.get('show_history', False) and st.session_state.match_history:
+    if st.session_state.show_history and st.session_state.match_history:
         st.subheader("📊 Your Learning History")
         for hist in reversed(st.session_state.match_history[-10:]):
             with st.container():
@@ -1808,11 +1709,29 @@ else:
     
     st.stop()
 
-# ========== DISPLAY PREDICTION (ONLY REACHED IF display_prediction = True) ==========
+try:
+    home_stats = home_stats_df.loc[home_team]
+    away_stats = away_stats_df.loc[away_team]
+except KeyError as e:
+    st.error(f"Team data error: {e}")
+    st.stop()
 
 # Generate prediction
 st.header(f"🎯 {home_team} vs {away_team}")
 st.caption(f"League: {selected_league} | League Avg Goals: {league_metrics['avg_goals_per_match']:.2f}")
+
+# Use adaptive engine
+engine = AdaptiveFootballIntelligenceEngineV4(
+    league_metrics, 
+    selected_league, 
+    st.session_state.learning_system
+)
+
+prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
+
+# Generate adaptive pattern indicators
+pattern_generator = AdaptivePatternIndicators(st.session_state.learning_system)
+pattern_indicators = pattern_generator.generate_indicators(prediction)
 
 # ========== DISPLAY RESULTS ==========
 
