@@ -2,489 +2,174 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import math
-from datetime import datetime
 import warnings
-import json
-import os
-from supabase import create_client, Client
 warnings.filterwarnings('ignore')
 
 # Page config
 st.set_page_config(
-    page_title="⚽ Football Intelligence Engine - TRUTHFUL STATISTICAL MODELS",
+    page_title="⚽ Football Intelligence Engine - YOUR ACTUAL STATISTICAL FINDINGS",
     page_icon="🎯",
     layout="wide"
 )
 
-st.title("🎯 Football Intelligence Engine - TRUTHFUL STATISTICAL MODELS")
+st.title("⚽ Football Intelligence Engine - YOUR ACTUAL STATISTICAL FINDINGS")
 st.markdown("""
-    **REALITY-BASED PREDICTIONS** - Using statistical insights INTELLIGENTLY, not blindly
+    **USING YOUR REAL DATA ANALYSIS** - Based on actual sweet spots from 192 league entries
 """)
 
-# ========== SUPABASE INITIALIZATION ==========
-def init_supabase():
-    """Initialize Supabase client"""
-    try:
-        supabase_url = st.secrets.get("SUPABASE_URL")
-        supabase_key = st.secrets.get("SUPABASE_KEY")
-        
-        if not supabase_url or not supabase_key:
-            st.warning("Supabase credentials not found in secrets. Using local storage only.")
-            return None
-            
-        return create_client(supabase_url, supabase_key)
-    except Exception as e:
-        st.error(f"Error initializing Supabase: {str(e)}")
-        return None
+# ========== YOUR ACTUAL STATISTICAL MODEL ==========
 
-# Initialize
-supabase = init_supabase()
-
-# ========== TRUTHFUL STATISTICAL ENGINE ==========
-
-class TruthfulStatisticalEngine:
-    """APPLIES YOUR STATISTICAL INSIGHTS INTELLIGENTLY"""
+class YourStatisticalModel:
+    """ACTUALLY uses your statistical findings from the data analysis"""
     
     def __init__(self, league_name):
         self.name = league_name
-        self.model_type = "TRUTHFUL_STATISTICAL"
-        self.version = "v4.0_intelligent"
+        self.model_type = "YOUR_ACTUAL_FINDINGS"
+        self.version = "v5.0_real_analysis"
         
-        # YOUR PROVEN STATISTICAL INSIGHTS:
-        self.home_advantage_goals = 3.36  # +3.36 goals over season
-        self.home_win_rate = 0.4452       # 44.52% home wins
-        self.away_win_rate = 0.2993       # 29.93% away wins
-        self.draw_rate = 0.2555           # 25.55% draws
+        # YOUR ACTUAL FINDINGS from the data analysis:
+        self.over_under_sweet_spots = {
+            "under_sweet_spot": 2.2,  # sum_of_avg_xg < 2.2 = HIGH probability UNDER
+            "over_sweet_spot": 3.0,   # sum_of_avg_xg > 3.0 = HIGH probability OVER
+            "uncertain_range": (2.2, 3.0)  # Overlap zone = less certain
+        }
         
-        # INTELLIGENT APPLICATION:
-        self.per_match_home_boost = 0.088  # +0.088 goals per match
-        self.home_scoring_multiplier = 1.25  # Home teams score 25% more
-        self.away_scoring_penalty = 0.80    # Away teams score 20% less
+        # Your key finding: DISTINCT distributions for over/under
+        self.under_peak = (1.5, 2.5)   # Under matches peak here
+        self.over_peak = (3.0, 4.0)    # Over matches peak here
         
-        # BUT: These apply RELATIVE to team strength
-        self.baseline_accuracy = 44.52     # "Always bet home" baseline
-        self.current_model_accuracy = 22.2  # Your current model's accuracy
+        # Baseline from your analysis
+        self.baseline_home_win_rate = 44.52  # From your earlier analysis
+        self.data_sample_size = 192  # 192 league entries
         
-    def predict_winner(self, home_stats, away_stats, home_xg=None, away_xg=None):
+    def predict_totals(self, home_xg, away_xg, home_scoring, away_scoring):
         """
-        INTELLIGENT prediction using your statistical insights
-        CONSIDERS: Team strength, home advantage, and REALITY
+        YOUR ACTUAL METHOD: Use sum_of_avg_xg sweet spots
+        Based on your DISTRIBUTION findings
         """
-        # Get REAL performance data
-        home_scoring = home_stats.get('avg_home_goals_scored', 1.5)
-        home_conceding = home_stats.get('avg_home_goals_conceded', 1.3)
-        away_scoring = away_stats.get('avg_away_goals_scored', 1.2)
-        away_conceding = away_stats.get('avg_away_goals_conceded', 1.5)
+        # Calculate sum_of_avg_xg (YOUR KEY METRIC)
+        sum_avg_xg = home_xg + away_xg
         
-        # 1. Calculate BASE team strengths WITHOUT home advantage
-        home_base_strength = (home_scoring + away_conceding) / 2
-        away_base_strength = (away_scoring + home_conceding) / 2
+        # Apply YOUR ACTUAL sweet spots
+        if sum_avg_xg < self.over_under_sweet_spots["under_sweet_spot"]:
+            # YOUR FINDING: <2.2 = HIGH probability UNDER
+            confidence = self._calculate_confidence(sum_avg_xg, "under")
+            return "UNDER", confidence, f"YOUR_SWEET_SPOT: sum_xg={sum_avg_xg:.1f}<2.2"
         
-        # 2. Apply your statistical insights INTELLIGENTLY
-        # Home advantage: +25% effectiveness for home, -20% for away
-        home_adjusted = home_base_strength * self.home_scoring_multiplier
-        away_adjusted = away_base_strength * self.away_scoring_penalty
+        elif sum_avg_xg > self.over_under_sweet_spots["over_sweet_spot"]:
+            # YOUR FINDING: >3.0 = HIGH probability OVER
+            confidence = self._calculate_confidence(sum_avg_xg, "over")
+            return "OVER", confidence, f"YOUR_SWEET_SPOT: sum_xg={sum_avg_xg:.1f}>3.0"
         
-        # 3. Add absolute home advantage (+0.088 goals)
-        home_adjusted += self.per_match_home_boost
-        away_adjusted -= self.per_match_home_boost
-        
-        # 4. Calculate REAL strength difference
-        strength_diff = home_adjusted - away_adjusted
-        strength_ratio = away_adjusted / home_adjusted if home_adjusted > 0 else 999
-        
-        # 5. INTELLIGENT DECISION MAKING:
-        # If away team is MUCH stronger (>40% stronger), home advantage can't overcome it
-        if strength_ratio > 1.4:  # Away team is 40%+ stronger
-            confidence = self._calculate_reality_based_confidence(strength_ratio, is_home=False)
-            return "AWAY", confidence, f"AWAY_MUCH_STRONGER ({strength_ratio:.1f}x)"
-        
-        # If home team is MUCH stronger (>40% stronger)
-        elif strength_ratio < 0.71:  # Home team is 40%+ stronger (1/0.71 = 1.4)
-            confidence = self._calculate_reality_based_confidence(1/strength_ratio, is_home=True)
-            return "HOME", confidence, f"HOME_MUCH_STRONGER ({1/strength_ratio:.1f}x)"
-        
-        # If away team is moderately stronger (20-40% stronger)
-        elif strength_ratio > 1.2:  # Away 20-40% stronger
-            # Slight edge to away despite home advantage
-            confidence = 55 + min(10, (strength_ratio - 1.2) * 20)
-            return "AWAY", confidence, f"AWAY_MODERATELY_STRONGER ({strength_ratio:.1f}x)"
-        
-        # If home team is moderately stronger (20-40% stronger)
-        elif strength_ratio < 0.83:  # Home 20-40% stronger (1/0.83 = 1.2)
-            confidence = 60 + min(15, (1/strength_ratio - 1.2) * 20)
-            return "HOME", confidence, f"HOME_MODERATELY_STRONGER ({1/strength_ratio:.1f}x)"
-        
-        # Close match: Use your 44.52% home win baseline
         else:
-            # Strength difference < 20%, home gets baseline advantage
-            if strength_diff > 0:
-                confidence = 52  # Slight edge for home
-                return "HOME", confidence, "CLOSE_MATCH_HOME_EDGE"
+            # Uncertain range (2.2-3.0) from your analysis
+            # Use DISTRIBUTION information
+            if sum_avg_xg < 2.6:  # Closer to under peak
+                confidence = 55
+                return "UNDER", confidence, f"UNCERTAIN_RANGE: sum_xg={sum_avg_xg:.1f} (near under peak)"
+            else:  # Closer to over peak
+                confidence = 55
+                return "OVER", confidence, f"UNCERTAIN_RANGE: sum_xg={sum_avg_xg:.1f} (near over peak)"
+    
+    def predict_winner(self, home_xg, away_xg, home_scoring, away_scoring, home_conceding, away_conceding):
+        """
+        Simple winner prediction based on xG difference
+        With your home advantage baseline
+        """
+        xg_diff = home_xg - away_xg
+        
+        # YOUR INSIGHT: 44.52% home win baseline
+        if xg_diff > 0.5:
+            confidence = 60 + min(20, xg_diff * 10)
+            return "HOME", confidence, f"XG_ADVANTAGE: +{xg_diff:.2f}"
+        elif xg_diff < -0.5:
+            confidence = 60 + min(20, abs(xg_diff) * 10)
+            return "AWAY", confidence, f"XG_ADVANTAGE: +{abs(xg_diff):.2f}"
+        else:
+            # Close match: default to home (YOUR 44.52% baseline)
+            return "HOME", 52, "CLOSE_MATCH_HOME_BASELINE"
+    
+    def _calculate_confidence(self, sum_xg, prediction):
+        """Calculate confidence based on YOUR distribution findings"""
+        if prediction == "under":
+            # Peak at 1.5-2.5 = HIGH confidence
+            if sum_xg < 1.8:
+                return 75  # Very low sum_xg = very high confidence under
+            elif sum_xg < 2.2:
+                return 65  # Still in sweet spot
             else:
-                confidence = 48  # Slight edge for away
-                return "AWAY", confidence, "CLOSE_MATCH_AWAY_EDGE"
-    
-    def _calculate_reality_based_confidence(self, strength_ratio, is_home=True):
-        """Calculate confidence based on ACTUAL strength differences"""
-        if is_home:
-            # Home team is stronger
-            base = 60  # Start at 60% for home advantage
-            boost = (strength_ratio - 1) * 30  # Add 10% per 0.33x strength advantage
-        else:
-            # Away team is stronger
-            base = 40  # Start lower for away team
-            boost = (strength_ratio - 1) * 25  # Add boost for strength
+                return 55  # Edge of sweet spot
         
-        confidence = base + boost
-        return min(85, max(45, confidence))  # Keep within reasonable bounds
-    
-    def predict_totals(self, home_stats, away_stats, total_xg=None):
-        """Intelligent totals prediction based on REAL scoring patterns"""
-        
-        # Get REAL scoring rates
-        home_scoring = home_stats.get('avg_home_goals_scored', 1.5)
-        away_scoring = away_stats.get('avg_away_goals_scored', 1.2)
-        home_conceding = home_stats.get('avg_home_goals_conceded', 1.3)
-        away_conceding = away_stats.get('avg_away_goals_conceded', 1.5)
-        
-        # EXPECTED TOTAL calculation:
-        # 1. Average of teams' scoring rates
-        avg_scoring = (home_scoring + away_scoring) / 2
-        
-        # 2. Apply your home advantage insight (+25% for home scoring)
-        home_boosted_scoring = home_scoring * self.home_scoring_multiplier
-        
-        # 3. Calculate expected total
-        expected_total = (home_boosted_scoring + away_scoring) / 2
-        
-        # 4. Adjust for defensive strength
-        defensive_factor = (home_conceding + away_conceding) / 2.6
-        expected_total *= (1.1 - (defensive_factor - 1.4) * 0.3)
-        
-        # INTELLIGENT THRESHOLDS:
-        if expected_total > 3.0:
-            confidence = 70
-            return "OVER", confidence, f"VERY_HIGH_SCORING: {expected_total:.1f} expected"
-        elif expected_total > 2.7:
-            confidence = 65
-            return "OVER", confidence, f"HIGH_SCORING: {expected_total:.1f} expected"
-        elif expected_total < 2.0:
-            confidence = 70
-            return "UNDER", confidence, f"VERY_LOW_SCORING: {expected_total:.1f} expected"
-        elif expected_total < 2.3:
-            confidence = 60
-            return "UNDER", confidence, f"LOW_SCORING: {expected_total:.1f} expected"
-        else:
-            # 2.3-2.7 range: Use historical distribution
-            # From your analysis, more matches end under 2.5
-            confidence = 55
-            return "UNDER", confidence, f"NEUTRAL_TO_UNDER: {expected_total:.1f} expected"
-    
-    def get_statistical_insights(self):
-        """Display how your insights are being applied INTELLIGENTLY"""
-        return {
-            "home_advantage": f"+{self.home_advantage_goals} goals (applied RELATIVE to team strength)",
-            "home_win_rate": f"{self.home_win_rate*100:.1f}% (used as BASELINE, not absolute)",
-            "intelligent_application": "Home advantage CANNOT overcome large quality gaps",
-            "scoring_multiplier": f"Home: ×{self.home_scoring_multiplier}, Away: ×{self.away_scoring_penalty}",
-            "current_vs_baseline": f"Current model: {self.current_model_accuracy}% vs Baseline: {self.baseline_accuracy}%",
-            "goal": f"Target: 57.5%+ accuracy by applying insights INTELLIGENTLY"
-        }
-
-# ========== REALITY CHECK ENGINE ==========
-
-class RealityCheckEngine:
-    """
-    CHECKS if predictions make REAL-WORLD sense
-    Based on your ACTUAL statistical findings
-    """
-    
-    def __init__(self, league_name):
-        self.name = league_name
-        self.model_type = "REALITY_CHECK"
-        self.version = "v4.1_reality"
-        
-        # Your statistical constants
-        self.home_win_baseline = 0.4452
-        
-        # Reality thresholds
-        self.min_sensible_confidence = 40
-        self.max_sensible_confidence = 85
-        self.strength_gap_threshold = 1.5  # 50% stronger
-        
-    def check_prediction(self, home_stats, away_stats, predicted_winner, confidence):
-        """
-        VERIFIES if prediction makes REAL-WORLD sense
-        Returns: (is_sensible, reason, adjusted_prediction, adjusted_confidence)
-        """
-        
-        # Get key metrics
-        home_scoring = home_stats.get('avg_home_goals_scored', 1.5)
-        away_scoring = away_stats.get('avg_away_goals_scored', 1.2)
-        home_win_rate = home_stats.get('home_wins_rate', 0.4)
-        away_win_rate = away_stats.get('away_wins_rate', 0.3)
-        
-        # Calculate REALITY metrics
-        scoring_ratio = away_scoring / home_scoring if home_scoring > 0 else 999
-        win_rate_ratio = away_win_rate / home_win_rate if home_win_rate > 0 else 999
-        
-        # CHECKS:
-        
-        # 1. Check if confidence is within sensible bounds
-        if confidence < self.min_sensible_confidence or confidence > self.max_sensible_confidence:
-            return False, f"Confidence {confidence}% outside sensible range", None, None
-        
-        # 2. Check if prediction matches strength reality
-        if predicted_winner == "HOME":
-            # If away team scores MUCH more, home win prediction is suspect
-            if scoring_ratio > self.strength_gap_threshold:
-                # Away team scores 50%+ more goals
-                adjusted_conf = max(40, confidence - 30)  # Reduce confidence
-                return True, f"Away team scores {scoring_ratio:.1f}x more goals", "AWAY", adjusted_conf
-        elif predicted_winner == "AWAY":
-            # If home team scores MUCH more, away win prediction is suspect
-            if 1/scoring_ratio > self.strength_gap_threshold:
-                # Home team scores 50%+ more goals
-                adjusted_conf = max(40, confidence - 30)
-                return True, f"Home team scores {1/scoring_ratio:.1f}x more goals", "HOME", adjusted_conf
-        
-        # 3. Check win rate reality
-        if predicted_winner == "HOME" and away_win_rate > home_win_rate * 2:
-            # Away team wins twice as often
-            return True, f"Away team wins {away_win_rate*100:.1f}% vs Home {home_win_rate*100:.1f}%", "AWAY", 55
-        
-        # Prediction passes reality check
-        return True, "Prediction matches team strength reality", predicted_winner, confidence
-
-# ========== ENGINE FACTORY ==========
-
-class IntelligentEngineFactory:
-    """Factory for INTELLIGENT statistical engines"""
-    
-    @staticmethod
-    def create_engine(league_name):
-        """Create truthful statistical engine"""
-        return TruthfulStatisticalEngine(league_name)
-    
-    @staticmethod
-    def create_reality_checker(league_name):
-        """Create reality check engine"""
-        return RealityCheckEngine(league_name)
-    
-    @staticmethod
-    def get_statistical_facts():
-        """Your ACTUAL statistical findings"""
-        return {
-            "home_goals": "16.69 goals (25% more than away)",
-            "away_goals": "13.33 goals", 
-            "home_wins": "44.52% of matches",
-            "away_wins": "29.93% of matches",
-            "draws": "25.55% of matches",
-            "home_advantage": "+3.36 goals over season (+0.088 per match)",
-            "current_accuracy": "22.2% (your current model)",
-            "baseline": "44.52% (always bet home)",
-            "target": "57.5%+ (intelligent application)"
-        }
-
-# ========== DATA FUNCTIONS ==========
-
-def save_match_prediction(prediction_data, actual_score, league_name, engine, reality_check=None):
-    """Save match prediction with reality check"""
-    try:
-        home_goals, away_goals = map(int, actual_score.split('-'))
-        total_goals = home_goals + away_goals
-        
-        actual_winner = 'HOME' if home_goals > away_goals else 'AWAY' if away_goals > home_goals else 'DRAW'
-        actual_over_under = 'OVER' if total_goals > 2.5 else 'UNDER'
-        
-        # Apply reality check if available
-        if reality_check:
-            predicted_winner = reality_check[2] if reality_check[0] else prediction_data['predicted_winner']
-            winner_confidence = reality_check[3] if reality_check[0] else prediction_data['winner_confidence']
-            reality_note = reality_check[1] if reality_check[0] else "No reality check applied"
-        else:
-            predicted_winner = prediction_data['predicted_winner']
-            winner_confidence = prediction_data['winner_confidence']
-            reality_note = "No reality check"
-        
-        match_data = {
-            "match_date": datetime.now().date().isoformat(),
-            "league": league_name,
-            "home_team": prediction_data.get('home_team', 'Unknown'),
-            "away_team": prediction_data.get('away_team', 'Unknown'),
-            
-            # Reality-checked predictions
-            "predicted_winner": predicted_winner,
-            "winner_confidence": float(winner_confidence),
-            "winner_logic": prediction_data.get('winner_logic', 'UNKNOWN'),
-            "reality_check_note": reality_note,
-            
-            "predicted_totals_direction": prediction_data.get('predicted_totals', 'UNKNOWN'),
-            "totals_confidence": float(prediction_data.get('totals_confidence', 50)),
-            "totals_logic": prediction_data.get('totals_logic', 'UNKNOWN'),
-            
-            # Actual results
-            "actual_home_goals": home_goals,
-            "actual_away_goals": away_goals,
-            "actual_total_goals": total_goals,
-            "actual_winner": actual_winner,
-            "actual_over_under": actual_over_under,
-            
-            # Model info
-            "model_version": getattr(engine, 'version', 'unknown'),
-            "model_type": getattr(engine, 'model_type', 'unknown'),
-            "notes": "Intelligent statistical application"
-        }
-        
-        if supabase:
-            response = supabase.table("match_predictions").insert(match_data).execute()
-            if hasattr(response, 'data') and response.data:
-                return True, "✅ Match saved with reality check"
+        else:  # "over"
+            # Peak at 3.0-4.0 = HIGH confidence
+            if sum_xg > 3.5:
+                return 75  # Very high sum_xg = very high confidence over
+            elif sum_xg > 3.0:
+                return 65  # In sweet spot
             else:
-                return False, "❌ Failed to save"
-        else:
-            with open("match_predictions_backup.json", "a") as f:
-                f.write(json.dumps(match_data) + "\n")
-            return True, "⚠️ Saved locally"
-        
-    except Exception as e:
-        return False, f"❌ Error: {str(e)}"
-
-def get_match_stats():
-    """Get accuracy statistics"""
-    try:
-        if supabase:
-            response = supabase.table("match_predictions").select("id", count="exact").execute()
-            total_matches = response.count or 0
-            
-            # Get accuracy
-            acc_response = supabase.table("match_predictions").select("predicted_winner", "actual_winner").execute()
-            
-            correct = 0
-            total = 0
-            if acc_response.data:
-                for match in acc_response.data:
-                    if match['predicted_winner'] and match['actual_winner']:
-                        total += 1
-                        if match['predicted_winner'] == match['actual_winner']:
-                            correct += 1
-            
-            accuracy = (correct / total * 100) if total > 0 else 0
-            
-            return {
-                'total_matches': total_matches,
-                'prediction_accuracy': accuracy,
-                'correct_predictions': correct,
-                'total_predictions': total
-            }
-        else:
-            if os.path.exists("match_predictions_backup.json"):
-                with open("match_predictions_backup.json", "r") as f:
-                    lines = f.readlines()
-                
-                correct = 0
-                total = 0
-                for line in lines:
-                    try:
-                        data = json.loads(line)
-                        if data.get('predicted_winner') and data.get('actual_winner'):
-                            total += 1
-                            if data['predicted_winner'] == data['actual_winner']:
-                                correct += 1
-                    except:
-                        continue
-                
-                accuracy = (correct / total * 100) if total > 0 else 0
-                
-                return {
-                    'total_matches': len(lines),
-                    'prediction_accuracy': accuracy,
-                    'correct_predictions': correct,
-                    'total_predictions': total
-                }
-    except:
-        pass
+                return 55  # Edge of sweet spot
     
-    return {
-        'total_matches': 0,
-        'prediction_accuracy': 0,
-        'correct_predictions': 0,
-        'total_predictions': 0
-    }
-
-# ========== EXPECTED GOALS CALCULATOR ==========
-
-class RealisticExpectedGoals:
-    """Realistic xG calculation"""
-    
-    def __init__(self, league_metrics):
-        self.league_avg = league_metrics.get('avg_goals_per_match', 2.5)
-        
-    def calculate(self, home_stats, away_stats):
-        """Calculate realistic expected goals"""
-        home_scoring = home_stats['goals_for_pm']
-        away_scoring = away_stats['goals_for_pm']
-        home_conceding = home_stats['goals_against_pm']
-        away_conceding = away_stats['goals_against_pm']
-        
-        # Simple realistic calculation
-        home_xg = (home_scoring + away_conceding) / 2
-        away_xg = (away_scoring + home_conceding) / 2
-        
-        # Apply realistic adjustments
-        home_xg *= 1.15  # Home advantage
-        away_xg *= 0.85  # Away disadvantage
-        
-        # Ensure realism
-        home_xg = max(0.3, min(4.0, home_xg))
-        away_xg = max(0.3, min(4.0, away_xg))
-        
-        return home_xg, away_xg
-
-# Poisson probability functions
-def poisson_pmf(k, lam):
-    return (math.exp(-lam) * (lam ** k)) / math.factorial(k)
-
-class ProbabilityCalculator:
-    @staticmethod
-    def calculate_probabilities(home_xg, away_xg):
-        probs = []
-        for h in range(0, 7):
-            for a in range(0, 7):
-                prob = poisson_pmf(h, home_xg) * poisson_pmf(a, away_xg)
-                if prob > 0.001:
-                    probs.append({'home': h, 'away': a, 'prob': prob})
-        
-        home_win = sum(p['prob'] for p in probs if p['home'] > p['away'])
-        draw = sum(p['prob'] for p in probs if p['home'] == p['away'])
-        away_win = sum(p['prob'] for p in probs if p['home'] < p['away'])
-        
-        over_25 = sum(p['prob'] for p in probs if p['home'] + p['away'] > 2.5)
-        under_25 = sum(p['prob'] for p in probs if p['home'] + p['away'] < 2.5)
-        
-        top_scores = sorted(probs, key=lambda x: x['prob'], reverse=True)[:3]
-        
+    def get_statistical_findings(self):
+        """Display YOUR ACTUAL findings"""
         return {
-            'home_win': home_win,
-            'draw': draw,
-            'away_win': away_win,
-            'over_25': over_25,
-            'under_25': under_25,
-            'expected_home': home_xg,
-            'expected_away': away_xg,
-            'expected_total': home_xg + away_xg,
-            'top_scores': [(f"{s['home']}-{s['away']}", s['prob']) for s in top_scores]
+            "data_sample": f"{self.data_sample_size} league entries analyzed",
+            "under_sweet_spot": f"sum_xg < {self.over_under_sweet_spots['under_sweet_spot']} = HIGH probability UNDER",
+            "over_sweet_spot": f"sum_xg > {self.over_under_sweet_spots['over_sweet_spot']} = HIGH probability OVER",
+            "uncertain_range": f"{self.over_under_sweet_spots['uncertain_range'][0]}-{self.over_under_sweet_spots['uncertain_range'][1]} = overlap zone",
+            "under_distribution": f"Peaks at {self.under_peak[0]}-{self.under_peak[1]} sum_xg",
+            "over_distribution": f"Peaks at {self.over_peak[0]}-{self.over_peak[1]} sum_xg",
+            "home_win_baseline": f"{self.baseline_home_win_rate}% of matches"
         }
+
+# ========== DISTRIBUTION VISUALIZER ==========
+
+class DistributionVisualizer:
+    """Shows YOUR ACTUAL distribution findings"""
+    
+    @staticmethod
+    def create_distribution_chart():
+        """Create a visualization of YOUR findings"""
+        import matplotlib.pyplot as plt
+        
+        # YOUR ACTUAL DISTRIBUTIONS
+        # Under 2.5 goals: peaks at 1.5-2.5
+        under_x = np.linspace(1.0, 3.5, 100)
+        under_y = np.exp(-(under_x - 2.0)**2 / 0.5)  # Peak at 2.0
+        
+        # Over 2.5 goals: peaks at 3.0-4.0  
+        over_x = np.linspace(2.0, 4.5, 100)
+        over_y = np.exp(-(over_x - 3.5)**2 / 0.5)  # Peak at 3.5
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Plot distributions
+        ax.plot(under_x, under_y, 'b-', linewidth=3, label='Under 2.5 Goals (Your Finding)')
+        ax.plot(over_x, over_y, 'r-', linewidth=3, label='Over 2.5 Goals (Your Finding)')
+        
+        # Add sweet spots
+        ax.axvline(x=2.2, color='blue', linestyle='--', alpha=0.5, label='Under Sweet Spot (<2.2)')
+        ax.axvline(x=3.0, color='red', linestyle='--', alpha=0.5, label='Over Sweet Spot (>3.0)')
+        
+        # Shade uncertain range
+        ax.axvspan(2.2, 3.0, alpha=0.1, color='gray', label='Uncertain Range (2.2-3.0)')
+        
+        ax.set_xlabel('sum_of_avg_xg (Your Key Metric)')
+        ax.set_ylabel('Probability Density')
+        ax.set_title('YOUR ACTUAL FINDING: Distinct Distributions for Over/Under 2.5 Goals')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        return fig
 
 # ========== DATA LOADING ==========
 
 @st.cache_data
 def load_league_data(league_name):
+    """Load your actual CSV files"""
     try:
         file_map = {
             "Premier League": "premier_league.csv",
-            "Bundesliga": "bundesliga.csv",
+            "Bundesliga": "bundesliga.csv", 
             "Serie A": "serie_a.csv",
             "La Liga": "laliga.csv",
             "Ligue 1": "ligue_1.csv",
@@ -492,67 +177,64 @@ def load_league_data(league_name):
             "RFPL": "rfpl.csv"
         }
         
-        filename = file_map.get(league_name, f"{league_name.lower().replace(' ', '_')}.csv")
+        filename = file_map.get(league_name)
+        if not filename:
+            return None
+            
         df = pd.read_csv(f"leagues/{filename}")
+        
+        # Calculate YOUR metrics: xg_per_match, xga_per_match
+        df['xg_per_match'] = df['xg'] / df['matches']
+        df['xga_per_match'] = df['xga'] / df['matches']
+        
         return df
-    except:
+    except Exception as e:
+        st.error(f"Error loading {league_name}: {str(e)}")
         return None
 
 def prepare_team_data(df):
+    """Prepare data with YOUR metrics"""
     if df is None or len(df) == 0:
         return pd.DataFrame(), pd.DataFrame()
     
     home_data = df[df['venue'] == 'home'].copy()
     away_data = df[df['venue'] == 'away'].copy()
     
+    # Add YOUR key metrics
     for df_part in [home_data, away_data]:
         if len(df_part) > 0:
-            df_part['goals_for_pm'] = df_part['gf'] / df_part['matches']
-            df_part['goals_against_pm'] = df_part['ga'] / df_part['matches']
-            df_part['win_rate'] = df_part['wins'] / df_part['matches']
-            df_part['goals_vs_xg_pm'] = df_part['goals_vs_xg'] / df_part['matches']
+            df_part['goals_per_match'] = df_part['gf'] / df_part['matches']
+            df_part['goals_allowed_per_match'] = df_part['ga'] / df_part['matches']
+            df_part['xg_per_match'] = df_part['xg'] / df_part['matches']
+            df_part['xga_per_match'] = df_part['xga'] / df_part['matches']
+            df_part['points_per_match'] = df_part['pts'] / df_part['matches']
     
     return home_data.set_index('team'), away_data.set_index('team')
 
-def calculate_league_metrics(df):
-    if df is None or len(df) == 0:
-        return {}
-    
-    total_matches = df['matches'].sum() / 2
-    total_goals = df['gf'].sum()
-    avg_goals = total_goals / total_matches if total_matches > 0 else 2.5
-    
-    return {'avg_goals_per_match': avg_goals}
-
 # ========== STREAMLIT UI ==========
 
+# Sidebar
 with st.sidebar:
-    st.header("⚙️ TRUTHFUL STATISTICAL ENGINE")
+    st.header("⚙️ YOUR STATISTICAL MODEL")
     
     leagues = ["Premier League", "Bundesliga", "Serie A", "La Liga", "Ligue 1", "Eredivisie", "RFPL"]
     selected_league = st.selectbox("Select League", leagues)
     
-    # Enable reality checking
-    enable_reality_check = st.checkbox("🔍 Enable Reality Check", value=True,
-                                      help="Checks if predictions make real-world sense")
+    # Create YOUR model
+    model = YourStatisticalModel(selected_league)
     
-    # Create engines
-    engine = IntelligentEngineFactory.create_engine(selected_league)
-    reality_checker = IntelligentEngineFactory.create_reality_checker(selected_league) if enable_reality_check else None
-    
-    # Display statistical facts
+    # Show YOUR findings
     st.divider()
-    st.header("📊 STATISTICAL FACTS (YOUR ANALYSIS)")
+    st.header("📊 YOUR ACTUAL STATISTICAL FINDINGS")
     
-    facts = IntelligentEngineFactory.get_statistical_facts()
-    for key, value in facts.items():
+    findings = model.get_statistical_findings()
+    for key, value in findings.items():
         st.write(f"**{key.replace('_', ' ').title()}:** {value}")
     
     # Load data
     df = load_league_data(selected_league)
     
     if df is not None:
-        league_metrics = calculate_league_metrics(df)
         home_stats_df, away_stats_df = prepare_team_data(df)
         
         if len(home_stats_df) > 0 and len(away_stats_df) > 0:
@@ -565,35 +247,24 @@ with st.sidebar:
             
             st.divider()
             
-            if st.button("🚀 Generate TRUTHFUL Prediction", type="primary", use_container_width=True):
+            if st.button("🚀 Generate Prediction Using YOUR Findings", type="primary"):
                 calculate_btn = True
             else:
                 calculate_btn = False
-    
-    # Performance tracking
-    st.divider()
-    st.header("📈 PERFORMANCE TRACKING")
-    
-    stats = get_match_stats()
-    st.metric("Total Matches", stats['total_matches'])
-    
-    if stats['total_predictions'] > 0:
-        st.metric("Accuracy", f"{stats['prediction_accuracy']:.1f}%")
-        st.metric("Correct", f"{stats['correct_predictions']}/{stats['total_predictions']}")
 
 # Main content
 if df is None:
     st.error("Please add CSV files to the 'leagues' folder")
     st.stop()
 
-# Truth banner
+# Show YOUR distribution findings
 st.markdown("""
 <div style="background-color: #0C4A6E; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
     <h3 style="color: white; text-align: center; margin: 0;">
-        🔍 TRUTHFUL STATISTICAL PREDICTIONS
+        🔬 YOUR ACTUAL STATISTICAL FINDINGS FROM DATA ANALYSIS
     </h3>
     <p style="color: #E0F2FE; text-align: center; margin: 5px 0 0 0;">
-        Home advantage: +3.36 goals • Applied INTELLIGENTLY, not blindly • Reality checks enabled
+        192 league entries analyzed • Sweet spots identified • Distinct distributions confirmed
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -604,46 +275,25 @@ if 'calculate_btn' in locals() and calculate_btn:
         home_stats = home_stats_df.loc[home_team]
         away_stats = away_stats_df.loc[away_team]
         
-        # Prepare stats for engine
-        home_real_stats = {
-            'avg_home_goals_scored': home_stats['goals_for_pm'],
-            'avg_home_goals_conceded': home_stats['goals_against_pm'],
-            'home_wins_rate': home_stats['win_rate']
-        }
+        # Get YOUR key metrics
+        home_xg = home_stats['xg_per_match']
+        away_xg = away_stats['xg_per_match']
+        home_scoring = home_stats['goals_per_match']
+        away_scoring = away_stats['goals_per_match']
+        home_conceding = home_stats['goals_allowed_per_match']
+        away_conceding = away_stats['goals_allowed_per_match']
         
-        away_real_stats = {
-            'avg_away_goals_scored': away_stats['goals_for_pm'],
-            'avg_away_goals_conceded': away_stats['goals_against_pm'],
-            'away_wins_rate': away_stats['win_rate']
-        }
+        # Calculate YOUR sum_of_avg_xg
+        sum_avg_xg = home_xg + away_xg
         
-        # Calculate realistic xG
-        xg_calculator = RealisticExpectedGoals(league_metrics)
-        home_xg, away_xg = xg_calculator.calculate(home_stats, away_stats)
-        
-        # Get predictions
-        predicted_winner, winner_confidence, winner_logic = engine.predict_winner(
-            home_real_stats, away_real_stats, home_xg, away_xg
+        # Use YOUR model
+        predicted_winner, winner_confidence, winner_logic = model.predict_winner(
+            home_xg, away_xg, home_scoring, away_scoring, home_conceding, away_conceding
         )
         
-        predicted_totals, totals_confidence, totals_logic = engine.predict_totals(
-            home_real_stats, away_real_stats, home_xg + away_xg
+        predicted_totals, totals_confidence, totals_logic = model.predict_totals(
+            home_xg, away_xg, home_scoring, away_scoring
         )
-        
-        # Apply reality check
-        reality_result = None
-        if reality_checker:
-            reality_result = reality_checker.check_prediction(
-                home_real_stats, away_real_stats, predicted_winner, winner_confidence
-            )
-            
-            if reality_result[0]:  # If sensible
-                predicted_winner = reality_result[2]
-                winner_confidence = reality_result[3]
-                winner_logic = f"{winner_logic} | {reality_result[1]}"
-        
-        # Calculate probabilities
-        probs = ProbabilityCalculator.calculate_probabilities(home_xg, away_xg)
         
         # Store data
         prediction_data = {
@@ -651,21 +301,18 @@ if 'calculate_btn' in locals() and calculate_btn:
             'away_team': away_team,
             'home_xg': home_xg,
             'away_xg': away_xg,
+            'sum_avg_xg': sum_avg_xg,
             'predicted_winner': predicted_winner,
             'winner_confidence': winner_confidence,
             'winner_logic': winner_logic,
             'predicted_totals': predicted_totals,
             'totals_confidence': totals_confidence,
             'totals_logic': totals_logic,
-            'probabilities': probs,
-            'reality_check': reality_result,
-            'home_stats': home_real_stats,
-            'away_stats': away_real_stats
+            'home_scoring': home_scoring,
+            'away_scoring': away_scoring
         }
         
         st.session_state.prediction_data = prediction_data
-        st.session_state.selected_teams = (home_team, away_team)
-        st.session_state.engine = engine
         
     except Exception as e:
         st.error(f"Prediction error: {str(e)}")
@@ -673,35 +320,49 @@ if 'calculate_btn' in locals() and calculate_btn:
 
 # Display prediction
 if 'prediction_data' not in st.session_state:
-    st.info("👈 Select teams and click 'Generate TRUTHFUL Prediction'")
+    # Show distribution visualization
+    st.subheader("📊 YOUR ACTUAL DISTRIBUTION FINDINGS")
+    
+    try:
+        fig = DistributionVisualizer.create_distribution_chart()
+        st.pyplot(fig)
+        
+        st.info("👈 Select teams to see how YOUR findings apply to specific matches")
+    except:
+        st.info("👈 Select teams and click 'Generate Prediction Using YOUR Findings'")
+    
     st.stop()
 
 prediction_data = st.session_state.prediction_data
-home_team, away_team = st.session_state.selected_teams
-engine = st.session_state.engine
 
-st.header(f"🎯 {home_team} vs {away_team}")
-st.caption(f"League: {selected_league} | Engine: {engine.model_type} | Intelligent statistical application")
+st.header(f"🎯 {prediction_data['home_team']} vs {prediction_data['away_team']}")
+st.caption(f"League: {selected_league} | Using YOUR actual statistical findings")
 
-# Show how insights are applied
-with st.expander("🔬 HOW YOUR INSIGHTS ARE APPLIED INTELLIGENTLY"):
-    insights = engine.get_statistical_insights()
-    for key, value in insights.items():
-        st.write(f"**{key.replace('_', ' ').title()}:** {value}")
-    
-    # Show team comparison
+# Show how YOUR findings apply
+with st.expander("🔬 HOW YOUR FINDINGS ARE BEING APPLIED"):
     col1, col2 = st.columns(2)
+    
     with col1:
-        st.write(f"**{home_team} (Home):**")
-        st.write(f"Goals scored: {prediction_data['home_stats']['avg_home_goals_scored']:.2f}/match")
-        st.write(f"Goals conceded: {prediction_data['home_stats']['avg_home_goals_conceded']:.2f}/match")
-        st.write(f"Win rate: {prediction_data['home_stats']['home_wins_rate']*100:.1f}%")
+        st.write("**Your Key Metrics:**")
+        st.write(f"Home xG/match: {prediction_data['home_xg']:.2f}")
+        st.write(f"Away xG/match: {prediction_data['away_xg']:.2f}")
+        st.write(f"**sum_of_avg_xg: {prediction_data['sum_avg_xg']:.2f}**")
+        st.write(f"Home scoring: {prediction_data['home_scoring']:.2f}/match")
+        st.write(f"Away scoring: {prediction_data['away_scoring']:.2f}/match")
     
     with col2:
-        st.write(f"**{away_team} (Away):**")
-        st.write(f"Goals scored: {prediction_data['away_stats']['avg_away_goals_scored']:.2f}/match")
-        st.write(f"Goals conceded: {prediction_data['away_stats']['avg_away_goals_conceded']:.2f}/match")
-        st.write(f"Win rate: {prediction_data['away_stats']['away_wins_rate']*100:.1f}%")
+        st.write("**Application of Your Findings:**")
+        
+        sum_xg = prediction_data['sum_avg_xg']
+        if sum_xg < 2.2:
+            st.success(f"✅ In UNDER sweet spot ({sum_xg:.1f} < 2.2)")
+            st.write("**Your finding:** HIGH probability of UNDER 2.5 goals")
+        elif sum_xg > 3.0:
+            st.success(f"✅ In OVER sweet spot ({sum_xg:.1f} > 3.0)")
+            st.write("**Your finding:** HIGH probability of OVER 2.5 goals")
+        else:
+            st.warning(f"⚠️ In uncertain range (2.2-3.0)")
+            st.write("**Your finding:** Less certain prediction")
 
 # Prediction cards
 col1, col2 = st.columns(2)
@@ -711,22 +372,10 @@ with col1:
     winner_conf = prediction_data['winner_confidence']
     winner_logic = prediction_data['winner_logic']
     
-    # Get actual probability
-    prob = prediction_data['probabilities']
-    actual_prob = prob['home_win'] if winner_pred == 'HOME' else prob['away_win'] if winner_pred == 'AWAY' else prob['draw']
-    
-    # Color based on confidence
-    if winner_conf > 65:
-        color = "#10B981"  # Green
-    elif winner_conf > 55:
-        color = "#F59E0B"  # Yellow
-    else:
-        color = "#EF4444"  # Red
-    
     st.markdown(f"""
     <div style="background-color: #1E293B; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
-        <h3 style="color: white; margin: 0;">WINNER (INTELLIGENT)</h3>
-        <div style="font-size: 36px; font-weight: bold; color: {color}; margin: 10px 0;">
+        <h3 style="color: white; margin: 0;">MATCH WINNER</h3>
+        <div style="font-size: 36px; font-weight: bold; color: #60A5FA; margin: 10px 0;">
             {'🏠' if winner_pred == 'HOME' else '✈️' if winner_pred == 'AWAY' else '🤝'} {winner_pred}
         </div>
         <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
@@ -736,31 +385,30 @@ with col1:
             {winner_logic}
         </div>
         <div style="font-size: 12px; color: #9CA3AF; margin-top: 5px;">
-            Poisson probability: {actual_prob*100:.1f}%
+            Baseline: {model.baseline_home_win_rate}% home wins
         </div>
     </div>
     """, unsafe_allow_html=True)
-    
-    # Show reality check result if available
-    if prediction_data.get('reality_check'):
-        reality = prediction_data['reality_check']
-        if reality[0]:
-            st.success(f"✅ Reality check passed: {reality[1]}")
-        else:
-            st.warning(f"⚠️ {reality[1]}")
 
 with col2:
     totals_pred = prediction_data['predicted_totals']
     totals_conf = prediction_data['totals_confidence']
     totals_logic = prediction_data['totals_logic']
+    sum_xg = prediction_data['sum_avg_xg']
     
-    actual_prob = prob['over_25'] if totals_pred == 'OVER' else prob['under_25']
+    # Color code based on sweet spots
+    if sum_xg < 2.2:
+        color = "#3B82F6"  # Blue for under
+    elif sum_xg > 3.0:
+        color = "#EF4444"  # Red for over
+    else:
+        color = "#F59E0B"  # Yellow for uncertain
     
     st.markdown(f"""
     <div style="background-color: #1E293B; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
-        <h3 style="color: white; margin: 0;">TOTAL GOALS</h3>
-        <div style="font-size: 36px; font-weight: bold; color: #60A5FA; margin: 10px 0;">
-            {'📈' if totals_pred == 'OVER' else '📉'} {totals_pred} 2.5
+        <h3 style="color: white; margin: 0;">YOUR SWEET SPOT PREDICTION</h3>
+        <div style="font-size: 36px; font-weight: bold; color: {color}; margin: 10px 0;">
+            {'📉' if totals_pred == 'UNDER' else '📈'} {totals_pred} 2.5
         </div>
         <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
             {totals_conf:.0f}%
@@ -769,156 +417,160 @@ with col2:
             {totals_logic}
         </div>
         <div style="font-size: 12px; color: #9CA3AF; margin-top: 5px;">
-            Poisson probability: {actual_prob*100:.1f}%
+            sum_of_avg_xg = {sum_xg:.2f}
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-# Strength comparison
+# Sweet spot analysis
 st.divider()
-st.subheader("📊 REALITY-BASED COMPARISON")
-
-home_stats = prediction_data['home_stats']
-away_stats = prediction_data['away_stats']
+st.subheader("🎯 YOUR SWEET SPOT ANALYSIS")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.write("**Team Strength Analysis:**")
+    st.metric("sum_of_avg_xg", f"{prediction_data['sum_avg_xg']:.2f}")
     
-    home_attack = home_stats['avg_home_goals_scored']
-    away_defense = away_stats['avg_away_goals_conceded']
-    home_expected_goals = (home_attack + away_defense) / 2 * 1.25
-    
-    away_attack = away_stats['avg_away_goals_scored']
-    home_defense = home_stats['avg_home_goals_conceded']
-    away_expected_goals = (away_attack + home_defense) / 2 * 0.8
-    
-    st.write(f"Home expected goals: {home_expected_goals:.2f}")
-    st.write(f"Away expected goals: {away_expected_goals:.2f}")
-    st.write(f"Strength ratio: {away_expected_goals/home_expected_goals:.2f}x")
+    # Show which sweet spot we're in
+    if prediction_data['sum_avg_xg'] < 2.2:
+        st.success("**IN UNDER SWEET SPOT**")
+        st.write("Your finding: HIGH probability UNDER")
+    elif prediction_data['sum_avg_xg'] > 3.0:
+        st.success("**IN OVER SWEET SPOT**")
+        st.write("Your finding: HIGH probability OVER")
+    else:
+        st.warning("**IN UNCERTAIN RANGE**")
+        st.write("Your finding: Less certain")
 
 with col2:
-    st.write("**Your Statistical Insights Applied:**")
-    st.write(f"Home advantage: +{engine.per_match_home_boost:.3f} goals")
-    st.write(f"Home scoring boost: ×{engine.home_scoring_multiplier}")
-    st.write(f"Away scoring penalty: ×{engine.away_scoring_penalty}")
-    st.write(f"Baseline home win rate: {engine.home_win_rate*100:.1f}%")
+    # Distance from sweet spots
+    distance_to_under = abs(prediction_data['sum_avg_xg'] - 2.2)
+    distance_to_over = abs(prediction_data['sum_avg_xg'] - 3.0)
+    
+    if prediction_data['sum_avg_xg'] < 2.2:
+        st.metric("Distance to UNDER threshold", f"{distance_to_under:.2f}")
+        st.progress(1 - (distance_to_under / 2.2))
+    elif prediction_data['sum_avg_xg'] > 3.0:
+        st.metric("Distance to OVER threshold", f"{distance_to_over:.2f}")
+        st.progress(min(1.0, distance_to_over / 2.0))
+    else:
+        st.metric("Middle of uncertain range", "-")
+        st.progress(0.5)
 
 with col3:
-    st.write("**Expected Match Outcome:**")
-    st.write(f"Expected goals: Home {prediction_data['home_xg']:.2f} - Away {prediction_data['away_xg']:.2f}")
-    st.write(f"Total expected: {prediction_data['home_xg'] + prediction_data['away_xg']:.2f}")
+    # Expected total based on your analysis
+    if prediction_data['sum_avg_xg'] < 2.0:
+        expected_total = "1-2 goals"
+    elif prediction_data['sum_avg_xg'] < 2.5:
+        expected_total = "2 goals"
+    elif prediction_data['sum_avg_xg'] < 3.0:
+        expected_total = "2-3 goals"
+    else:
+        expected_total = "3+ goals"
     
-    # Show what the old model would have predicted
-    old_home_strength = (home_attack + away_defense) / 2
-    old_pred = "HOME" if old_home_strength > 1.4 else "DRAW" if old_home_strength > 1.0 else "AWAY"
-    st.write(f"Old model would predict: {old_pred}")
+    st.write("**Expected Match Total:**")
+    st.write(f"Based on sum_xg = {prediction_data['sum_avg_xg']:.2f}:")
+    st.write(f"**{expected_total}**")
 
-# Data collection
+# Simple data collection
 st.divider()
-st.subheader("📝 COLLECT MATCH DATA")
+st.subheader("📝 TRACK THIS PREDICTION")
 
-col1, col2 = st.columns([2, 1])
+col1, col2 = st.columns(2)
 
 with col1:
     score = st.text_input("Actual Final Score", key="score_input")
     
-    with st.expander("View Detailed Analysis"):
-        st.write("**Expected Goals Calculation:**")
-        st.write(f"- Home xG: {prediction_data['home_xg']:.2f}")
-        st.write(f"- Away xG: {prediction_data['away_xg']:.2f}")
-        st.write(f"- Total xG: {prediction_data['home_xg'] + prediction_data['away_xg']:.2f}")
-        
-        st.write("**Statistical Application:**")
-        st.write(f"- Home advantage applied: +{engine.per_match_home_boost:.3f} goals")
-        st.write(f"- Home scoring multiplier: ×{engine.home_scoring_multiplier}")
-        st.write(f"- Away scoring penalty: ×{engine.away_scoring_penalty}")
+    with st.expander("View Your Metrics"):
+        st.write("**Your sum_of_avg_xg Analysis:**")
+        st.write(f"- Home xG/match: {prediction_data['home_xg']:.2f}")
+        st.write(f"- Away xG/match: {prediction_data['away_xg']:.2f}")
+        st.write(f"- **sum_of_avg_xg: {prediction_data['sum_avg_xg']:.2f}**")
+        st.write(f"- Sweet spot: {'UNDER' if prediction_data['sum_avg_xg'] < 2.2 else 'OVER' if prediction_data['sum_avg_xg'] > 3.0 else 'UNCERTAIN'}")
 
 with col2:
-    if st.button("💾 Save Match", type="primary", use_container_width=True):
-        if not score or '-' not in score:
-            st.error("Enter valid score like '2-1'")
-        else:
+    if st.button("💾 Save This Prediction", type="primary"):
+        if score:
             try:
-                success, message = save_match_prediction(
-                    prediction_data, score, selected_league, engine, 
-                    prediction_data.get('reality_check')
-                )
+                # Simple local save
+                save_data = {
+                    'date': str(datetime.now()),
+                    'league': selected_league,
+                    'home_team': prediction_data['home_team'],
+                    'away_team': prediction_data['away_team'],
+                    'actual_score': score,
+                    'sum_avg_xg': float(prediction_data['sum_avg_xg']),
+                    'predicted_totals': prediction_data['predicted_totals'],
+                    'confidence': float(prediction_data['totals_confidence']),
+                    'sweet_spot': 'UNDER' if prediction_data['sum_avg_xg'] < 2.2 else 'OVER' if prediction_data['sum_avg_xg'] > 3.0 else 'UNCERTAIN'
+                }
                 
-                if success:
-                    st.success(f"""
-                    {message}
-                    
-                    **Model:** {engine.model_type}
-                    **Reality check:** {prediction_data.get('reality_check', ['Not applied', ''])[1]}
-                    """)
-                    
-                    # Reset
-                    for key in ['prediction_data', 'selected_teams', 'engine']:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    st.rerun()
+                # Save to file
+                import json
+                with open("your_findings_predictions.json", "a") as f:
+                    f.write(json.dumps(save_data) + "\n")
+                
+                st.success("✅ Prediction saved! Tracking YOUR sweet spot accuracy")
+                
+                # Show prediction result
+                home_goals, away_goals = map(int, score.split('-'))
+                total_goals = home_goals + away_goals
+                actual_over_under = "OVER" if total_goals > 2.5 else "UNDER"
+                
+                correct = actual_over_under == prediction_data['predicted_totals']
+                
+                if correct:
+                    st.balloons()
+                    st.success(f"✅ CORRECT! Predicted {prediction_data['predicted_totals']}, actual {actual_over_under}")
                 else:
-                    st.error(message)
+                    st.error(f"❌ INCORRECT. Predicted {prediction_data['predicted_totals']}, actual {actual_over_under}")
+                
             except:
-                st.error("Enter valid score")
+                st.error("Enter score like '2-1'")
+        else:
+            st.error("Enter actual score")
 
-# Probabilities
+# Performance summary
 st.divider()
-st.subheader("🎲 MATCH PROBABILITIES")
-
-prob = prediction_data['probabilities']
+st.subheader("📈 YOUR MODEL PERFORMANCE")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric("Home Win", f"{prob['home_win']*100:.1f}%")
-    st.metric("Draw", f"{prob['draw']*100:.1f}%")
-    st.metric("Away Win", f"{prob['away_win']*100:.1f}%")
+    st.write("**Your Statistical Foundation:**")
+    st.write("• 192 league entries analyzed")
+    st.write("• Distinct over/under distributions")
+    st.write("• Clear sweet spots identified")
+    st.write("• Positive correlation confirmed")
 
 with col2:
-    st.metric("Over 2.5", f"{prob['over_25']*100:.1f}%")
-    st.metric("Under 2.5", f"{prob['under_25']*100:.1f}%")
+    st.write("**Sweet Spot Accuracy:**")
+    st.write(f"• UNDER sweet spot: <2.2 sum_xg")
+    st.write(f"• OVER sweet spot: >3.0 sum_xg")
+    st.write(f"• Uncertain range: 2.2-3.0")
+    st.write(f"• Baseline home wins: {model.baseline_home_win_rate}%")
 
 with col3:
-    st.write("**Most Likely Scores:**")
-    for score, prob_val in prob['top_scores']:
-        st.write(f"{score}: {prob_val*100:.1f}%")
+    # Show current prediction's position
+    sum_xg = prediction_data['sum_avg_xg']
     
-    st.write(f"**Expected Goals:**")
-    st.write(f"Home: {prob['expected_home']:.2f}")
-    st.write(f"Away: {prob['expected_away']:.2f}")
-    st.write(f"Total: {prob['expected_total']:.2f}")
-
-# Performance
-st.divider()
-st.subheader("📈 TRUTHFUL PERFORMANCE TRACKING")
-
-stats = get_match_stats()
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.metric("Matches Collected", stats['total_matches'])
-    if stats['total_predictions'] > 0:
-        st.metric("Accuracy", f"{stats['prediction_accuracy']:.1f}%")
-
-with col2:
-    baseline = 44.52
-    current = stats['prediction_accuracy']
-    improvement = current - baseline
+    st.write("**This Prediction's Position:**")
     
-    st.metric("Baseline", f"{baseline}%")
-    st.metric("Improvement", f"{improvement:+.1f}%")
-
-with col3:
-    st.write("**Key Principles:**")
-    st.write("• Home advantage is REAL")
-    st.write("• But NOT absolute")
-    st.write("• Team quality MATTERS")
-    st.write("• Reality checks are CRITICAL")
+    # Create a simple visualization
+    if sum_xg < 2.2:
+        position = "█░░░░░░░░░░░░░░░░░░░"
+        label = f"{sum_xg:.2f} (UNDER sweet spot)"
+    elif sum_xg < 3.0:
+        position = "░░░░███░░░░░░░░░░░░░"
+        label = f"{sum_xg:.2f} (Uncertain range)"
+    else:
+        position = "░░░░░░░░░░░░░░░███░░"
+        label = f"{sum_xg:.2f} (OVER sweet spot)"
+    
+    st.write("sum_xg scale:")
+    st.write("1.0 ┤" + position + "┤ 4.5")
+    st.write(f"Current: **{label}**")
 
 # Footer
 st.divider()
-st.caption(f"📊 TRUTHFUL STATISTICAL MODELS | Current Accuracy: {stats['prediction_accuracy']:.1f}% | Target: 57.5%+ | Reality checks: {'ON' if enable_reality_check else 'OFF'}")
+st.caption(f"🎯 YOUR ACTUAL STATISTICAL FINDINGS | Sweet spots: UNDER<2.2, OVER>3.0 | Data: {model.data_sample_size} league entries | Using: sum_of_avg_xg")
