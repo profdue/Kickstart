@@ -47,6 +47,8 @@ class ProvenStatisticalEngine:
     
     def __init__(self, league_name):
         self.name = league_name
+        self.model_type = "PROVEN_STATISTICAL"
+        self.version = "v3.0_real_stats"
         
         # FROM YOUR ANALYSIS OF 1049 MATCHES:
         self.home_advantage_goals = 3.36  # Home teams score +3.36 more goals over season
@@ -65,9 +67,6 @@ class ProvenStatisticalEngine:
         # PER-MATCH ADJUSTMENTS (assuming 38-match season):
         self.per_match_home_advantage = 3.36 / 38  # +0.088 goals per match
         self.per_match_net_advantage = 6.72 / 38   # +0.177 GD per match
-        
-        self.model_type = "PROVEN_STATISTICAL"
-        self.version = "v3.0_real_stats"
         self.baseline_accuracy = 44.52    # "Always bet home" baseline
         
         # League-specific calibrations
@@ -267,11 +266,13 @@ class SimpleProvenModel:
     
     def __init__(self, league_name):
         self.name = league_name
+        self.model_type = "SIMPLE_PROVEN"
         self.version = "v3.1_simple_proven"
         
         # Your proven constants
         self.home_advantage_per_match = 3.36 / 38  # +0.088 goals
         self.home_win_baseline = 0.4452  # 44.52%
+        self.baseline_accuracy = 44.52
         
     def predict(self, home_team_stats, away_team_stats):
         """
@@ -281,7 +282,7 @@ class SimpleProvenModel:
         """
         
         # Get REAL statistics (not xG)
-        home_attack = home_team_stats.get('avg_goals_scored_home', 1.5)
+        home_attack = home_team_stats.get('avg_home_goals_scored', 1.5)
         away_defense = away_team_stats.get('avg_goals_conceded_away', 1.5)
         away_attack = away_team_stats.get('avg_goals_scored_away', 1.2)
         home_defense = home_team_stats.get('avg_goals_conceded_home', 1.3)
@@ -316,8 +317,8 @@ class SimpleProvenModel:
         
         # Calculate from REAL goal statistics
         expected_total = (
-            home_team_stats.get('avg_goals_scored_home', 1.5) +
-            away_team_stats.get('avg_goals_scored_away', 1.2)
+            home_team_stats.get('avg_home_goals_scored', 1.5) +
+            away_team_stats.get('avg_away_goals_scored', 1.2)
         )
         
         # Apply home advantage boost (from your analysis)
@@ -342,6 +343,22 @@ class SimpleProvenModel:
             # Conservative: slight edge to UNDER
             confidence = 60
             return "UNDER", confidence, f"NEUTRAL: {expected_total:.1f} expected"
+    
+    def get_expected_improvement(self):
+        return {
+            "baseline": "Always bet HOME = 44.52% accuracy",
+            "expected_winner_accuracy": 57.5,
+            "expected_totals_accuracy": 62.5,
+            "improvement_over_current": "+35.3%"
+        }
+    
+    def get_statistical_insights(self):
+        return {
+            "home_advantage": "+3.36 goals scored advantage",
+            "home_win_rate": "44.52% of matches are home wins",
+            "goal_ratio": "Home teams score 25% more goals",
+            "baseline": "Simple model beats complex: 44.52% vs 22.2%"
+        }
 
 # ========== LEAGUE ENGINE FACTORY ==========
 
@@ -372,15 +389,11 @@ class LeagueEngineFactory:
     def create_engine(league_name, use_simple=False):
         """Create the appropriate engine for the league"""
         if use_simple:
-            engine_class = LeagueEngineFactory.SIMPLE_ENGINES.get(league_name)
+            engine_class = LeagueEngineFactory.SIMPLE_ENGINES.get(league_name, SimpleProvenModel)
         else:
-            engine_class = LeagueEngineFactory.ENGINES.get(league_name)
+            engine_class = LeagueEngineFactory.ENGINES.get(league_name, ProvenStatisticalEngine)
         
-        if engine_class:
-            return engine_class(league_name)
-        else:
-            # Default to proven statistical engine
-            return ProvenStatisticalEngine(league_name)
+        return engine_class(league_name)
     
     @staticmethod
     def get_league_stats():
@@ -428,8 +441,8 @@ def save_match_prediction(prediction_data, actual_score, league_name, engine):
             "away_team": prediction_data.get('away_team', 'Unknown'),
             
             # Statistical data from your analysis
-            "home_advantage_applied": float(engine.per_match_home_advantage if hasattr(engine, 'per_match_home_advantage') else 0.088),
-            "home_win_baseline": float(engine.home_win_rate if hasattr(engine, 'home_win_rate') else 0.4452),
+            "home_advantage_applied": float(getattr(engine, 'per_match_home_advantage', 0.088)),
+            "home_win_baseline": float(getattr(engine, 'home_win_baseline', 0.4452) * 100),
             
             # Prediction data
             "predicted_winner": prediction_data.get('predicted_winner', 'UNKNOWN'),
@@ -448,9 +461,9 @@ def save_match_prediction(prediction_data, actual_score, league_name, engine):
             "actual_over_under": actual_over_under,
             
             # Model info
-            "model_version": engine.version,
-            "model_type": engine.model_type,
-            "notes": f"Statistical engine using proven insights: {engine.get_statistical_insights() if hasattr(engine, 'get_statistical_insights') else 'No insights'}"
+            "model_version": getattr(engine, 'version', 'unknown'),
+            "model_type": getattr(engine, 'model_type', 'unknown'),
+            "notes": "Statistical engine using proven insights"
         }
         
         # Save to Supabase
@@ -888,7 +901,7 @@ if 'calculate_btn' in locals() and calculate_btn:
                 'name': engine.name,
                 'model_type': engine.model_type,
                 'version': engine.version,
-                'baseline_accuracy': 44.52
+                'baseline_accuracy': engine.baseline_accuracy
             },
             'real_stats': {
                 'home': home_real_stats,
@@ -902,8 +915,8 @@ if 'calculate_btn' in locals() and calculate_btn:
         st.session_state.engine = engine
         st.session_state.use_simple_model = use_simple_model
         
-    except KeyError as e:
-        st.error(f"Team data error: {e}")
+    except Exception as e:
+        st.error(f"Prediction error: {str(e)}")
         st.stop()
 elif 'prediction_data' in st.session_state:
     # Use stored prediction
@@ -917,7 +930,7 @@ else:
 
 # ========== DISPLAY PREDICTION ==========
 st.header(f"🎯 {home_team} vs {away_team}")
-st.caption(f"League: {selected_league} | Engine: {engine.model_type} | Baseline Accuracy: 44.52%")
+st.caption(f"League: {selected_league} | Engine: {engine.model_type} | Baseline Accuracy: {getattr(engine, 'baseline_accuracy', 44.52)}%")
 
 # Statistical insights display
 with st.expander("🔬 PROVEN STATISTICAL INSIGHTS USED"):
@@ -932,9 +945,10 @@ with st.expander("🔬 PROVEN STATISTICAL INSIGHTS USED"):
     
     with col2:
         st.write("**Model Performance:**")
-        st.write(f"🔸 Baseline (always bet HOME): 44.52%")
+        baseline = getattr(engine, 'baseline_accuracy', 44.52)
+        st.write(f"🔸 Baseline (always bet HOME): {baseline}%")
         st.write(f"🔸 Current model accuracy: 22.2%")
-        st.write(f"🔸 Expected improvement: +22.3%")
+        st.write(f"🔸 Expected improvement: +{57.5 - 22.2:.1f}%")
         st.write(f"🔸 Target accuracy: 57.5%+")
     
     if hasattr(engine, 'get_statistical_insights'):
@@ -957,7 +971,7 @@ with col1:
                   prob['draw_probability']
     
     # Show baseline comparison
-    baseline_accuracy = 44.52
+    baseline_accuracy = getattr(engine, 'baseline_accuracy', 44.52)
     improvement = winner_conf - baseline_accuracy
     
     st.markdown(f"""
@@ -1042,7 +1056,7 @@ with col3:
     st.write(f"Away attack vs Home defense: {away_goal_advantage:+.2f}")
     
     # Add home advantage
-    home_advantage = 0.088  # +0.088 goals from your analysis
+    home_advantage = getattr(engine, 'per_match_home_advantage', 0.088)
     st.write(f"Home venue advantage: +{home_advantage:.3f} goals")
 
 # ========== DATA COLLECTION SECTION ==========
@@ -1079,27 +1093,23 @@ with col2:
                     if success:
                         # Get updated stats
                         stats = get_match_stats()
+                        baseline = getattr(engine, 'baseline_accuracy', 44.52)
                         
                         st.success(f"""
                         {message}
                         
                         **Statistical Model:** {engine.model_type}
-                        **Baseline Accuracy:** 44.52% (always bet HOME)
+                        **Baseline Accuracy:** {baseline}% (always bet HOME)
                         **Current Accuracy:** {stats['prediction_accuracy']:.1f}%
-                        **Improvement:** {stats['prediction_accuracy'] - 44.52:+.1f}%
+                        **Improvement:** {stats['prediction_accuracy'] - baseline:+.1f}%
                         """)
                         
                         st.balloons()
                         
                         # Reset for next match
-                        if 'prediction_data' in st.session_state:
-                            del st.session_state.prediction_data
-                        if 'selected_teams' in st.session_state:
-                            del st.session_state.selected_teams
-                        if 'engine' in st.session_state:
-                            del st.session_state.engine
-                        if 'use_simple_model' in st.session_state:
-                            del st.session_state.use_simple_model
+                        for key in ['prediction_data', 'selected_teams', 'engine', 'use_simple_model']:
+                            if key in st.session_state:
+                                del st.session_state[key]
                         st.rerun()
                     else:
                         st.error(f"❌ {message}")
@@ -1152,7 +1162,7 @@ with col1:
         st.metric("Current Accuracy", f"{stats['prediction_accuracy']:.1f}%")
 
 with col2:
-    baseline = 44.52
+    baseline = getattr(engine, 'baseline_accuracy', 44.52)
     current = stats['prediction_accuracy']
     improvement = current - baseline
     
@@ -1169,4 +1179,5 @@ with col3:
 # ========== FOOTER ==========
 st.divider()
 stats = get_match_stats()
-st.caption(f"📊 REAL STATISTICAL MODELS | Baseline Accuracy: 44.52% | Current Accuracy: {stats['prediction_accuracy']:.1f}% | Expected: 57.5%+")
+baseline = getattr(engine, 'baseline_accuracy', 44.52)
+st.caption(f"📊 REAL STATISTICAL MODELS | Baseline Accuracy: {baseline}% | Current Accuracy: {stats['prediction_accuracy']:.1f}% | Expected: 57.5%+")
