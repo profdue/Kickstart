@@ -70,11 +70,14 @@ def save_match_prediction(prediction, actual_score, league_name):
         # Get engine calculations
         winner_pred = prediction.get('winner', {})
         totals_pred = prediction.get('totals', {})
+        engine_calc = prediction.get('engine_calculations', {})
         
         # Calculate all required values with safe defaults
         home_xg = prediction.get('expected_goals', {}).get('home', 0)
         away_xg = prediction.get('expected_goals', {}).get('away', 0)
-        delta_xg = home_xg - away_xg
+        
+        # FIX: Use the adjusted xG delta from winner_pred, not raw xG delta
+        delta_from_winner = winner_pred.get('delta', 0)
         
         home_finish = totals_pred.get('home_finishing', 0)
         away_finish = totals_pred.get('away_finishing', 0)
@@ -82,13 +85,15 @@ def save_match_prediction(prediction, actual_score, league_name):
         finishing_impact = totals_pred.get('finishing_impact', finishing_sum * 0.6)
         
         # Get defense stats from engine calculations
-        engine_calc = prediction.get('engine_calculations', {})
         home_defense = engine_calc.get('home_defense', 0)
         away_defense = engine_calc.get('away_defense', 0)
         
-        # Calculate adjusted xG values
-        home_adjusted_xg = home_xg + home_finish - away_defense
-        away_adjusted_xg = away_xg + away_finish - home_defense
+        # Calculate adjusted xG values - CORRECTED to match engine calculations
+        home_adjusted_xg = engine_calc.get('home_adjusted_xg', home_xg + home_finish - away_defense)
+        away_adjusted_xg = engine_calc.get('away_adjusted_xg', away_xg + away_finish - home_defense)
+        
+        # Calculate the correct delta (adjusted xG difference)
+        adjusted_delta = home_adjusted_xg - away_adjusted_xg
         
         # Safely get prediction values with defaults
         predicted_winner = winner_pred.get('original_prediction', winner_pred.get('type', 'UNKNOWN'))
@@ -124,7 +129,7 @@ def save_match_prediction(prediction, actual_score, league_name):
             # Engine calculations
             'home_adjusted_xg': float(home_adjusted_xg),
             'away_adjusted_xg': float(away_adjusted_xg),
-            'delta_xg': float(delta_xg),
+            'delta_xg': float(adjusted_delta),  # FIXED: Use adjusted delta, not raw delta
             'total_xg': float(totals_pred.get('total_xg', home_xg + away_xg)),
             'finishing_sum': float(finishing_sum),
             'finishing_impact': float(finishing_impact),
@@ -563,7 +568,7 @@ class FootballEngine:
         )
         
         # Calculate additional engine values for data collection
-        delta_xg = home_xg - away_xg
+        delta_xg = home_xg - away_xg  # Raw delta
         finishing_sum = totals_prediction['home_finishing'] + totals_prediction['away_finishing']
         finishing_impact = totals_prediction['finishing_impact']
         
@@ -581,7 +586,7 @@ class FootballEngine:
             'probabilities': probabilities,
             'expected_goals': {'home': home_xg, 'away': away_xg, 'total': home_xg + away_xg},
             'engine_calculations': {
-                'delta_xg': delta_xg,
+                'delta_xg': delta_xg,  # Raw delta (for display in engine calculations)
                 'home_adjusted_xg': home_adjusted_xg,
                 'away_adjusted_xg': away_adjusted_xg,
                 'finishing_sum': finishing_sum,
@@ -790,7 +795,7 @@ with col1:
                   prob['away_win_probability'] if winner_pred['type'] == 'AWAY' else \
                   prob['draw_probability']
     
-    # FIXED: Use .get() method to safely access 'delta' key
+    # Get delta value for display
     delta_value = winner_pred.get('delta', 0)
     
     st.markdown(f"""
@@ -849,7 +854,8 @@ with col1:
         st.write("**For Data Collection:**")
         st.write(f"- Home xG: {prediction['expected_goals']['home']:.2f}")
         st.write(f"- Away xG: {prediction['expected_goals']['away']:.2f}")
-        st.write(f"- ΔxG: {prediction['engine_calculations']['delta_xg']:.2f}")
+        st.write(f"- Raw ΔxG: {prediction['engine_calculations']['delta_xg']:.2f}")
+        st.write(f"- Adjusted ΔxG: {winner_pred.get('delta', 0):.2f}")
         st.write(f"- Home finishing: {prediction['totals']['home_finishing']:.3f}")
         st.write(f"- Away finishing: {prediction['totals']['away_finishing']:.3f}")
         st.write(f"- Finishing impact: {prediction['totals']['finishing_impact']:.3f}")
@@ -908,7 +914,8 @@ with col1:
     st.write(f"- Home xG: {prediction['expected_goals']['home']:.2f}")
     st.write(f"- Away xG: {prediction['expected_goals']['away']:.2f}")
     st.write(f"- Total xG: {prediction['expected_goals']['total']:.2f}")
-    st.write(f"- ΔxG: {prediction['engine_calculations']['delta_xg']:.2f}")
+    st.write(f"- Raw ΔxG: {prediction['engine_calculations']['delta_xg']:.2f}")
+    st.write(f"- Adjusted ΔxG: {winner_pred.get('delta', 0):.2f}")
 
 with col2:
     st.write("**Finishing Adjustments:**")
