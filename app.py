@@ -14,15 +14,15 @@ warnings.filterwarnings('ignore')
 
 # Page config
 st.set_page_config(
-    page_title="⚽ Football Intelligence Engine v8.2 - LOGIC FIXED",
-    page_icon="🎯",
+    page_title="⚽ Football Intelligence Engine - DATA COLLECTION MODE",
+    page_icon="📊",
     layout="wide"
 )
 
-st.title("🎯 Football Intelligence Engine v8.2 - LOGIC FIXED")
+st.title("📊 Football Intelligence Engine - DATA COLLECTION MODE")
 st.markdown("""
-    **LOGIC BUG FIXED** - Now uses finishing data in totals decisions
-    *Testing without empirical crutches*
+    **FRESH START** - Collecting complete match data for analysis
+    *40+ matches already recorded - building clean dataset*
 """)
 
 # ========== SUPABASE INITIALIZATION ==========
@@ -41,10 +41,13 @@ def init_supabase():
         st.error(f"Error initializing Supabase: {e}")
         return None
 
+# Initialize
+supabase = init_supabase()
+
 # ========== CONSTANTS ==========
 MAX_GOALS_CALC = 8
 
-# League-specific adjustments (ORIGINAL VALUES - no surgical changes)
+# League-specific adjustments
 LEAGUE_ADJUSTMENTS = {
     "Premier League": {"over_threshold": 2.5, "under_threshold": 2.5, "avg_goals": 2.79, "very_high_threshold": 3.3},
     "Bundesliga": {"over_threshold": 3.0, "under_threshold": 2.2, "avg_goals": 3.20, "very_high_threshold": 3.5},
@@ -55,540 +58,132 @@ LEAGUE_ADJUSTMENTS = {
     "RFPL": {"over_threshold": 2.5, "under_threshold": 2.2, "avg_goals": 2.53, "very_high_threshold": 3.1}
 }
 
-# ========== PROVEN PATTERNS DATABASE - MINIMAL CRUTCHES ==========
-# KEEPING ONLY THE CONFIRMED BUGS, REMOVING TOTALS CRUTCHES
+# ========== DATA COLLECTION FUNCTIONS ==========
 
-PROVEN_FAILURES = {
-    # ONLY KEEPING WINNER CONFIDENCE BUGS (confirmed algorithm bug)
-    "WINNER_HIGH_70.0": {
-        "record": "0/2",
-        "action": "BET_OPPOSITE",
-        "confidence": 70,
-        "reason": "70% false favorite zone",
-        "matches": "2 matches, 0 wins"
-    },
-    "WINNER_HIGH_69.0": {
-        "record": "0/1",
-        "action": "BET_OPPOSITE",
-        "confidence": 70,
-        "reason": "70% false favorite zone",
-        "matches": "1 match, 0 wins"
-    }
-    
-    # REMOVED TOTALS ANTI-PATTERNS - Let fixed algorithm handle these
-    # "TOTALS_RISKY_VERY_HIGH": {...},
-    # "TOTALS_LOW_OVER_HIGH": {...},
-    # "TOTALS_LOW_UNDER_HIGH": {...},
-}
-
-PROVEN_SUCCESSES = {
-    # ONLY KEEPING 100% CONFIDENCE WINNERS (confirmed algorithm strength)
-    "WINNER_VERY_HIGH_100": {
-        "record": "4/5",
-        "action": "BET_STRONGLY",
-        "boost": 15,
-        "reason": "True dominance - algorithm certainty",
-        "matches": "5 matches, 4 wins"
-    }
-    
-    # REMOVED TOTALS SUCCESS PATTERNS - Let fixed algorithm handle these
-    # "TOTALS_MED_OVER_MODERATE_LOW": {...},
-    # "TOTALS_HIGH_OVER_MODERATE_LOW": {...},
-    # "TOTALS_MED_UNDER_VERY_HIGH": {...},
-    # "TOTALS_NEUTRAL_MODERATE_LOW": {...},
-}
-
-# ========== CONFIDENCE LEVEL RULES ==========
-# KEEPING ONLY CONFIRMED BUGS
-
-CONFIDENCE_RULES = {
-    # 70% CONFIDENCE BUG (confirmed algorithm bug)
-    "70_PERCENT_ZONE": {
-        "range": (68, 72),
-        "action": "BET_OPPOSITE",
-        "confidence": 70,
-        "reason": "70% false favorite zone (0/3 success)"
-    },
-    
-    # 90% OVERCONFIDENCE TRAP (keep as caution)
-    "90_PERCENT_ZONE": {
-        "range": (88, 94),
-        "action": "CAUTION",
-        "derate_factor": 0.8,
-        "reason": "90% overconfidence trap zone"
-    },
-    
-    # 100% HAMMER ZONE (confirmed strength)
-    "100_PERCENT_ZONE": {
-        "range": (99, 101),
-        "action": "BET_STRONGLY",
-        "boost": 1.1,
-        "reason": "True dominance (4/5 success)"
-    }
-}
-
-# ========== HIGH VARIANCE DIRECTIONAL LOGIC ==========
-# KEEPING - This is strategic insight, not a crutch
-
-HIGH_VARIANCE_RULES = {
-    "OVERPERFORMER": {
-        "threshold": 0.4,
-        "over_boost": 20,
-        "under_penalty": -15,
-        "over_reason": "High variance overperformer amplifies OVER",
-        "under_reason": "Overperformer likely to score, hurting UNDER"
-    },
-    "UNDERPERFORMER": {
-        "threshold": -0.4,
-        "under_boost": 20,
-        "over_penalty": -15,
-        "under_reason": "High variance underperformer amplifies UNDER",
-        "over_reason": "Underperformer due for goals, helping OVER"
-    }
-}
-
-# ========== SIMPLIFIED LEARNING SYSTEM ==========
-
-class ProvenPatternSystem:
-    """LEARNING SYSTEM WITH MINIMAL CRUTCHES"""
-    
-    def __init__(self):
-        self.pattern_memory = {}
-        self.supabase = init_supabase()
+def save_match_prediction(prediction, actual_score, league_name):
+    """Save COMPLETE match prediction data to Supabase"""
+    try:
+        # Parse actual score
+        home_goals, away_goals = map(int, actual_score.split('-'))
+        total_goals = home_goals + away_goals
         
-        # Thresholds from your data
-        self.min_matches = 3
-        self.strong_threshold = 0.70  # >70% = STRONG
-        self.weak_threshold = 0.40    # <40% = WEAK
+        # Get engine calculations
+        winner_pred = prediction['winner']
+        totals_pred = prediction['totals']
         
-        self.load_learning()
-    
-    def save_learning(self):
-        """Save learning data to Supabase (football_learning table)"""
-        try:
-            if not self.supabase:
-                st.warning("No Supabase connection. Saving locally only.")
-                return self._save_learning_local()
-            
-            # Prepare data for Supabase
-            supabase_data = []
-            for pattern_key, stats in self.pattern_memory.items():
-                if stats['total'] == 0:
-                    continue
-                    
-                data = {
-                    "pattern_key": pattern_key,
-                    "total_matches": stats['total'],
-                    "successful_matches": stats['success'],
-                    "last_updated": datetime.now().isoformat(),
-                    "metadata": json.dumps({
-                        "success_rate": stats['success'] / stats['total'] if stats['total'] > 0 else 0,
-                        "strength": self._get_strength_category(stats),
-                        "last_updated": datetime.now().isoformat()
-                    })
-                }
-                supabase_data.append(data)
-            
-            if supabase_data:
-                # Try to update existing records first, then insert new ones
-                for data in supabase_data:
-                    try:
-                        # Check if pattern exists
-                        response = self.supabase.table("football_learning").select("*").eq("pattern_key", data['pattern_key']).execute()
-                        
-                        if response.data and len(response.data) > 0:
-                            # Update existing record
-                            self.supabase.table("football_learning").update({
-                                "total_matches": data['total_matches'],
-                                "successful_matches": data['successful_matches'],
-                                "last_updated": data['last_updated'],
-                                "metadata": data['metadata']
-                            }).eq("pattern_key", data['pattern_key']).execute()
-                            st.success(f"✅ Updated pattern: {data['pattern_key']}")
-                        else:
-                            # Insert new record
-                            self.supabase.table("football_learning").insert(data).execute()
-                            st.success(f"✅ Inserted pattern: {data['pattern_key']}")
-                            
-                    except Exception as e:
-                        st.error(f"❌ Error saving pattern {data['pattern_key']}: {str(e)}")
-                        # Fallback to local storage
-                        return self._save_learning_local()
-                
-                return True
-            else:
-                st.warning("No pattern data to save")
-                return True
-            
-        except Exception as e:
-            st.error(f"❌ Supabase save error: {str(e)}")
-            return self._save_learning_local()
-    
-    def _get_strength_category(self, stats):
-        """Get strength category for pattern"""
-        if stats['total'] < self.min_matches:
-            return "INSUFFICIENT_DATA"
+        # Calculate all required values
+        home_xg = prediction['expected_goals']['home']
+        away_xg = prediction['expected_goals']['away']
+        delta_xg = home_xg - away_xg
         
-        success_rate = stats['success'] / stats['total']
-        if success_rate > self.strong_threshold:
-            return "STRONG"
-        elif success_rate < self.weak_threshold:
-            return "WEAK"
-        else:
-            return "NEUTRAL"
-    
-    def _save_learning_local(self):
-        """Fallback local storage"""
-        try:
-            with open("proven_patterns_data.pkl", "wb") as f:
-                pickle.dump({
-                    'pattern_memory': self.pattern_memory,
-                    'version': '8.2_no_crutches',
-                    'last_saved': datetime.now().isoformat()
-                }, f)
-            return True
-        except Exception as e:
-            st.error(f"❌ Local save error: {str(e)}")
-            return False
-    
-    def load_learning(self):
-        """Load learning data from Supabase (football_learning table)"""
-        try:
-            if not self.supabase:
-                st.warning("No Supabase connection. Loading local data only.")
-                return self._load_learning_local()
-            
-            # First try to load from Supabase
-            response = self.supabase.table("football_learning").select("*").execute()
-            
-            if response.data:
-                self.pattern_memory = {}
-                for row in response.data:
-                    self.pattern_memory[row['pattern_key']] = {
-                        'total': row['total_matches'] or 0,
-                        'success': row['successful_matches'] or 0
-                    }
-                st.success(f"✅ Loaded {len(response.data)} patterns from Supabase")
-                return True
-            else:
-                st.warning("No data in Supabase, trying local storage")
-                return self._load_learning_local()
-            
-        except Exception as e:
-            st.error(f"❌ Supabase load error: {str(e)}")
-            return self._load_learning_local()
-    
-    def _load_learning_local(self):
-        """Fallback local storage"""
-        try:
-            if os.path.exists("proven_patterns_data.pkl"):
-                with open("proven_patterns_data.pkl", "rb") as f:
-                    data = pickle.load(f)
-                    self.pattern_memory = data.get('pattern_memory', {})
-                st.success(f"✅ Loaded {len(self.pattern_memory)} patterns from local storage")
-                return True
-            else:
-                st.warning("No local pattern data found. Starting fresh.")
-                return True
-        except Exception as e:
-            st.error(f"❌ Local load error: {str(e)}")
-            return False
-    
-    def record_outcome(self, prediction, actual_score):
-        """Record match outcome - FIXED VERSION"""
-        try:
-            # Generate pattern keys
-            winner_key = self._generate_winner_key(prediction['winner'])
-            totals_key = self._generate_totals_key(prediction['totals'])
-            
-            # Parse score
-            home_goals, away_goals = map(int, actual_score.split('-'))
-            
-            # Determine actual outcomes
-            if home_goals > away_goals:
-                actual_winner = "HOME"
-            elif away_goals > home_goals:
-                actual_winner = "AWAY"
-            else:
-                actual_winner = "DRAW"
-            
-            total_goals = home_goals + away_goals
-            actual_over = total_goals > 2.5
-            
-            # Initialize patterns if they don't exist
-            if winner_key not in self.pattern_memory:
-                self.pattern_memory[winner_key] = {'total': 0, 'success': 0}
-            if totals_key not in self.pattern_memory:
-                self.pattern_memory[totals_key] = {'total': 0, 'success': 0}
-            
-            # Check predictions against ORIGINAL predictions, not final ones
-            winner_correct = prediction['winner']['original_prediction'] == actual_winner
-            totals_correct = (prediction['totals']['original_direction'] == "OVER") == actual_over
-            
-            # Update patterns
-            self.pattern_memory[winner_key]['total'] += 1
-            self.pattern_memory[winner_key]['success'] += 1 if winner_correct else 0
-            
-            self.pattern_memory[totals_key]['total'] += 1
-            self.pattern_memory[totals_key]['success'] += 1 if totals_correct else 0
-            
-            # Save to Supabase and local
-            save_success = self.save_learning()
-            
-            return {
-                'winner_correct': winner_correct,
-                'totals_correct': totals_correct,
-                'winner_key': winner_key,
-                'totals_key': totals_key,
-                'save_success': save_success,
-                'winner_stats': self.pattern_memory[winner_key],
-                'totals_stats': self.pattern_memory[totals_key]
-            }, "Outcome recorded!"
-            
-        except Exception as e:
-            return None, f"❌ Error: {str(e)}"
-    
-    def _generate_winner_key(self, winner_pred):
-        """Generate winner pattern key"""
-        # Use the original prediction for pattern key
-        original_pred = winner_pred.get('original_prediction', winner_pred.get('type', 'UNKNOWN'))
-        confidence = winner_pred.get('original_confidence', winner_pred.get('confidence', '50'))
+        home_finish = totals_pred.get('home_finishing', 0)
+        away_finish = totals_pred.get('away_finishing', 0)
+        finishing_sum = home_finish + away_finish
+        finishing_impact = totals_pred.get('finishing_impact', finishing_sum * 0.6)
         
-        # Standardize confidence
-        if isinstance(confidence, str):
-            if confidence.endswith('.0'):
-                confidence = confidence[:-2]
-        elif isinstance(confidence, float):
-            confidence = str(int(confidence)) if confidence.is_integer() else f"{confidence:.1f}"
+        # Get defense stats (from team data - need to pass these in)
+        home_defense = prediction.get('home_defense', 0)
+        away_defense = prediction.get('away_defense', 0)
         
-        # Use confidence category from prediction
-        confidence_category = winner_pred.get('confidence_category', 'MEDIUM')
+        # Calculate adjusted xG values
+        home_adjusted_xg = home_xg + home_finish - away_defense
+        away_adjusted_xg = away_xg + away_finish - home_defense
         
-        return f"WINNER_{confidence_category}_{confidence}"
-    
-    def _generate_totals_key(self, totals_pred):
-        """Generate totals pattern key"""
-        # Use ORIGINAL finishing alignment and total category for pattern key
-        finishing = totals_pred.get('original_finishing_alignment', 
-                                  totals_pred.get('finishing_alignment', 'NEUTRAL'))
-        total_cat = totals_pred.get('original_total_category', 
-                                   totals_pred.get('total_category', 'MODERATE_LOW'))
-        
-        # Clean override suffix if present
-        if finishing.endswith("_OVERRIDDEN"):
-            finishing = finishing[:-11]
-        
-        return f"TOTALS_{finishing}_{total_cat}"
-    
-    def get_proven_advice(self, winner_pred, totals_pred, home_finish, away_finish, league_name):
-        """Get betting advice with MINIMAL CRUTCHES"""
-        winner_key = self._generate_winner_key(winner_pred)
-        totals_key = self._generate_totals_key(totals_pred)
-        
-        advice = {
-            'winner': {
-                'action': 'FOLLOW', 
-                'bet_on': winner_pred['type'], 
-                'confidence': winner_pred['confidence_score'],
-                'reason': 'Algorithm prediction',
-                'stake': 'HALF',
-                'variance_effect': 'NONE'
-            },
-            'totals': {
-                'action': 'FOLLOW', 
-                'bet_on': totals_pred['direction'], 
-                'confidence': totals_pred['confidence_score'],
-                'reason': 'Algorithm prediction',
-                'stake': 'HALF',
-                'variance_effect': 'NONE'
-            }
+        # Prepare complete data record
+        match_data = {
+            # Match info
+            'league': league_name,
+            'home_team': prediction['home_team'],
+            'away_team': prediction['away_team'],
+            'match_date': datetime.now().date().isoformat(),
+            
+            # Raw inputs
+            'home_xg': float(home_xg),
+            'away_xg': float(away_xg),
+            'home_finishing_vs_xg': float(home_finish),
+            'away_finishing_vs_xg': float(away_finish),
+            'home_defense_vs_xga': float(home_defense),
+            'away_defense_vs_xga': float(away_defense),
+            
+            # Engine calculations
+            'home_adjusted_xg': float(home_adjusted_xg),
+            'away_adjusted_xg': float(away_adjusted_xg),
+            'delta_xg': float(delta_xg),
+            'total_xg': float(totals_pred['total_xg']),
+            'finishing_sum': float(finishing_sum),
+            'finishing_impact': float(finishing_impact),
+            'adjusted_total_xg': float(totals_pred.get('adjusted_xg', totals_pred['total_xg'])),
+            
+            # Predictions
+            'predicted_winner': winner_pred['original_prediction'],
+            'winner_confidence': float(winner_pred['original_confidence_score']),
+            'predicted_totals_direction': totals_pred['original_direction'],
+            'totals_confidence': float(totals_pred['original_confidence_score']),
+            
+            # Categories (for reference)
+            'finishing_alignment': totals_pred.get('original_finishing_alignment', 'UNKNOWN'),
+            'total_xg_category': totals_pred.get('original_total_category', 'UNKNOWN'),
+            
+            # Actual results
+            'actual_home_goals': home_goals,
+            'actual_away_goals': away_goals,
+            'actual_total_goals': total_goals,
+            'actual_winner': 'HOME' if home_goals > away_goals else 'AWAY' if away_goals > home_goals else 'DRAW',
+            'actual_over_under': 'OVER' if total_goals > 2.5 else 'UNDER',
+            
+            # Model info
+            'model_version': prediction.get('version', 'data_collection_v1'),
+            'notes': f"Collection match"
         }
         
-        # ====== STEP 1: CHECK PROVEN FAILURE PATTERNS ======
+        # Save to Supabase
+        if supabase:
+            response = supabase.table("match_predictions").insert(match_data).execute()
+            return True, "✅ Complete match data saved to database"
+        else:
+            # Fallback: save locally
+            with open("match_predictions_backup.json", "a") as f:
+                f.write(json.dumps(match_data) + "\n")
+            return True, "⚠️ Saved locally (no Supabase connection)"
         
-        # Check winner proven failures (KEEPING ONLY CONFIRMED BUGS)
-        winner_confidence = winner_pred['confidence_score']
-        winner_conf_str = f"{winner_confidence:.1f}"
-        
-        # Check for specific confidence values in proven failures
-        if f"WINNER_HIGH_{winner_conf_str}" in PROVEN_FAILURES:
-            rule = PROVEN_FAILURES[f"WINNER_HIGH_{winner_conf_str}"]
-            advice['winner']['action'] = rule['action']
-            advice['winner']['confidence'] = rule['confidence']
-            advice['winner']['reason'] = f"PROVEN BUG: {rule['reason']} ({rule['record']})"
-            advice['winner']['stake'] = 'HALF'
-        
-        # Check totals proven failures (REMOVED - let fixed algorithm handle)
-        # if totals_key in PROVEN_FAILURES:
-        #     rule = PROVEN_FAILURES[totals_key]
-        #     advice['totals']['action'] = rule['action']
-        #     advice['totals']['bet_on'] = 'UNDER' if totals_pred['direction'] == 'OVER' else 'OVER'
-        #     advice['totals']['confidence'] = rule['confidence']
-        #     advice['totals']['reason'] = f"PROVEN FAILURE: {rule['reason']} ({rule['record']})"
-        #     advice['totals']['stake'] = 'FULL'
-        
-        # ====== STEP 2: CHECK PROVEN SUCCESS PATTERNS ======
-        
-        # Check winner proven successes (KEEPING ONLY 100% CONFIDENCE)
-        if winner_key in PROVEN_SUCCESSES and advice['winner']['action'] != 'BET_OPPOSITE':
-            rule = PROVEN_SUCCESSES[winner_key]
-            advice['winner']['action'] = rule['action']
-            advice['winner']['confidence'] = min(95, winner_pred['confidence_score'] + rule['boost'])
-            advice['winner']['reason'] = f"PROVEN STRENGTH: {rule['reason']} ({rule['record']})"
-            advice['winner']['stake'] = 'FULL'
-        
-        # Check totals proven successes (REMOVED - let fixed algorithm handle)
-        # if totals_key in PROVEN_SUCCESSES and advice['totals']['action'] != 'BET_OPPOSITE':
-        #     rule = PROVEN_SUCCESSES[totals_key]
-        #     advice['totals']['action'] = rule['action']
-        #     advice['totals']['confidence'] = min(95, totals_pred['confidence_score'] + rule['boost'])
-        #     advice['totals']['reason'] = f"PROVEN SUCCESS: {rule['reason']} ({rule['record']})"
-        #     advice['totals']['stake'] = 'FULL'
-        
-        # ====== STEP 3: APPLY CONFIDENCE LEVEL RULES ======
-        
-        # Apply confidence zone rules for winner
-        for zone_name, zone_rule in CONFIDENCE_RULES.items():
-            if zone_rule['range'][0] <= winner_confidence <= zone_rule['range'][1]:
-                if zone_name == "70_PERCENT_ZONE" and advice['winner']['action'] != 'BET_OPPOSITE':
-                    advice['winner']['action'] = zone_rule['action']
-                    advice['winner']['confidence'] = zone_rule['confidence']
-                    advice['winner']['reason'] = zone_rule['reason']
-                    advice['winner']['stake'] = 'HALF'
-                elif zone_name == "90_PERCENT_ZONE" and advice['winner']['action'] == 'FOLLOW':
-                    advice['winner']['confidence'] *= zone_rule['derate_factor']
-                    advice['winner']['reason'] = zone_rule['reason']
-                    advice['winner']['stake'] = 'REDUCED'
-                elif zone_name == "100_PERCENT_ZONE" and advice['winner']['action'] == 'FOLLOW':
-                    advice['winner']['action'] = zone_rule['action']
-                    advice['winner']['confidence'] *= zone_rule['boost']
-                    advice['winner']['reason'] = zone_rule['reason']
-                    advice['winner']['stake'] = 'FULL'
-        
-        # ====== STEP 4: APPLY HIGH VARIANCE DIRECTIONAL LOGIC ======
-        # KEEPING - This is strategic insight, not a crutch
-        
-        # Apply variance rules to totals
-        if advice['totals']['action'] != 'BET_OPPOSITE':  # Don't override proven failures
-            # Check for overperformer
-            if home_finish > HIGH_VARIANCE_RULES["OVERPERFORMER"]["threshold"] or \
-               away_finish > HIGH_VARIANCE_RULES["OVERPERFORMER"]["threshold"]:
-                
-                variance_type = "OVERPERFORMER"
-                rule = HIGH_VARIANCE_RULES[variance_type]
-                
-                if totals_pred['direction'] == "OVER":
-                    advice['totals']['confidence'] += rule['over_boost']
-                    advice['totals']['variance_effect'] = 'AMPLIFIED'
-                    advice['totals']['reason'] = f"{rule['over_reason']} (+{rule['over_boost']}% boost)"
-                else:
-                    advice['totals']['confidence'] += rule['under_penalty']
-                    advice['totals']['variance_effect'] = 'REDUCED'
-                    advice['totals']['reason'] = f"{rule['under_reason']} ({rule['under_penalty']}% penalty)"
+    except Exception as e:
+        return False, f"❌ Error saving match data: {str(e)}"
+
+def get_match_stats():
+    """Get statistics about collected matches"""
+    try:
+        if supabase:
+            # Count total matches
+            response = supabase.table("match_predictions").select("id", count="exact").execute()
+            total_matches = response.count or 0
             
-            # Check for underperformer
-            elif home_finish < HIGH_VARIANCE_RULES["UNDERPERFORMER"]["threshold"] or \
-                 away_finish < HIGH_VARIANCE_RULES["UNDERPERFORMER"]["threshold"]:
-                
-                variance_type = "UNDERPERFORMER"
-                rule = HIGH_VARIANCE_RULES[variance_type]
-                
-                if totals_pred['direction'] == "UNDER":
-                    advice['totals']['confidence'] += rule['under_boost']
-                    advice['totals']['variance_effect'] = 'AMPLIFIED'
-                    advice['totals']['reason'] = f"{rule['under_reason']} (+{rule['under_boost']}% boost)"
-                else:
-                    advice['totals']['confidence'] += rule['over_penalty']
-                    advice['totals']['variance_effect'] = 'REDUCED'
-                    advice['totals']['reason'] = f"{rule['over_reason']} ({rule['over_penalty']}% penalty)"
-        
-        # ====== STEP 5: APPLY LEAGUE-SPECIFIC EXECUTION ======
-        # KEEPING - This is strategic insight
-        
-        league_adj = LEAGUE_ADJUSTMENTS.get(league_name, LEAGUE_ADJUSTMENTS["Premier League"])
-        total_xg = totals_pred['total_xg']
-        
-        # Higher scoring leagues = trust OVER more
-        if league_name == "Bundesliga" or league_name == "Eredivisie":
-            if totals_pred['direction'] == "OVER" and total_xg > league_adj['over_threshold']:
-                advice['totals']['confidence'] = min(95, advice['totals']['confidence'] * 1.1)
-                advice['totals']['reason'] += " | High-scoring league boost"
-        
-        # Lower scoring leagues = trust UNDER more
-        elif league_name == "Serie A" or league_name == "RFPL":
-            if totals_pred['direction'] == "UNDER" and total_xg < league_adj['under_threshold']:
-                advice['totals']['confidence'] = min(95, advice['totals']['confidence'] * 1.1)
-                advice['totals']['reason'] += " | Low-scoring league boost"
-        
-        # ====== STEP 6: APPLY HISTORICAL LEARNING (only if ≥3 matches) ======
-        # KEEPING - This is true learning, not a crutch
-        
-        # Winner pattern learning (only if not already overridden)
-        if winner_key in self.pattern_memory and advice['winner']['action'] == 'FOLLOW':
-            stats = self.pattern_memory[winner_key]
-            if stats['total'] >= self.min_matches:
-                success_rate = stats['success'] / stats['total']
-                
-                if success_rate > self.strong_threshold:
-                    advice['winner']['action'] = 'BET_STRONGLY'
-                    advice['winner']['confidence'] = min(95, winner_pred['confidence_score'] * 1.3)
-                    advice['winner']['reason'] = f"Strong pattern: {stats['success']}/{stats['total']} ({success_rate:.0%})"
-                    advice['winner']['stake'] = 'FULL'
-                
-                elif success_rate < self.weak_threshold:
-                    advice['winner']['action'] = 'BET_OPPOSITE'
-                    advice['winner']['confidence'] = 85
-                    if winner_pred['type'] == 'HOME':
-                        advice['winner']['bet_on'] = 'AWAY'
-                    elif winner_pred['type'] == 'AWAY':
-                        advice['winner']['bet_on'] = 'HOME'
-                    advice['winner']['reason'] = f"Weak pattern: {stats['success']}/{stats['total']} ({success_rate:.0%})"
-                    advice['winner']['stake'] = 'HALF'
-        
-        # Totals pattern learning (only if not already overridden)
-        if totals_key in self.pattern_memory and advice['totals']['action'] == 'FOLLOW':
-            stats = self.pattern_memory[totals_key]
-            if stats['total'] >= self.min_matches:
-                success_rate = stats['success'] / stats['total']
-                
-                if success_rate > self.strong_threshold:
-                    advice['totals']['action'] = 'BET_STRONGLY'
-                    advice['totals']['confidence'] = min(95, totals_pred['confidence_score'] * 1.3)
-                    advice['totals']['reason'] = f"Strong pattern: {stats['success']}/{stats['total']} ({success_rate:.0%})"
-                    advice['totals']['stake'] = 'FULL'
-                
-                elif success_rate < self.weak_threshold:
-                    advice['totals']['action'] = 'BET_OPPOSITE'
-                    advice['totals']['confidence'] = 85
-                    advice['totals']['bet_on'] = 'UNDER' if totals_pred['direction'] == 'OVER' else 'OVER'
-                    advice['totals']['reason'] = f"Weak pattern: {stats['success']}/{stats['total']} ({success_rate:.0%})"
-                    advice['totals']['stake'] = 'HALF'
-        
-        # Ensure confidence is within bounds
-        advice['winner']['confidence'] = max(5, min(100, advice['winner']['confidence']))
-        advice['totals']['confidence'] = max(5, min(100, advice['totals']['confidence']))
-        
-        return advice
-    
-    def get_pattern_stats(self, pattern_key):
-        """Get stats for a pattern"""
-        return self.pattern_memory.get(pattern_key, {'total': 0, 'success': 0})
+            # Get league distribution
+            league_response = supabase.table("match_predictions").select("league").execute()
+            leagues = [row['league'] for row in league_response.data] if league_response.data else []
+            
+            return {
+                'total_matches': total_matches,
+                'leagues': leagues,
+                'league_counts': pd.Series(leagues).value_counts().to_dict() if leagues else {}
+            }
+        else:
+            # Check local backup
+            if os.path.exists("match_predictions_backup.json"):
+                with open("match_predictions_backup.json", "r") as f:
+                    lines = f.readlines()
+                return {
+                    'total_matches': len(lines),
+                    'leagues': [],
+                    'league_counts': {}
+                }
+            return {'total_matches': 0, 'leagues': [], 'league_counts': {}}
+    except:
+        return {'total_matches': 0, 'leagues': [], 'league_counts': {}}
 
-# ========== INITIALIZE SESSION STATES ==========
-if 'proven_system' not in st.session_state:
-    st.session_state.proven_system = ProvenPatternSystem()
-
-if 'last_prediction' not in st.session_state:
-    st.session_state.last_prediction = None
-
-if 'last_teams' not in st.session_state:
-    st.session_state.last_teams = None
-
-# ========== ORIGINAL CORE PREDICTION CLASSES ==========
-# Keeping your original working classes WITH THE LOGIC FIX
+# ========== CORE PREDICTION ENGINE (ORIGINAL) ==========
 
 class ExpectedGoalsPredictor:
-    """ORIGINAL expected goals calculation"""
+    """Expected goals calculation"""
     
     def __init__(self, league_metrics, league_name):
         self.league_metrics = league_metrics
@@ -596,7 +191,7 @@ class ExpectedGoalsPredictor:
         self.league_name = league_name
     
     def predict_expected_goals(self, home_stats, away_stats):
-        """Calculate expected goals (ORIGINAL)"""
+        """Calculate expected goals"""
         home_adjGF = home_stats['goals_for_pm'] + 0.6 * home_stats['goals_vs_xg_pm']
         home_adjGA = home_stats['goals_against_pm'] + 0.6 * home_stats['goals_allowed_vs_xga_pm']
         
@@ -622,10 +217,10 @@ class ExpectedGoalsPredictor:
         return home_xg, away_xg
 
 class WinnerPredictor:
-    """ORIGINAL winner determination with empirical overrides"""
+    """Winner determination"""
     
     def predict_winner(self, home_xg, away_xg, home_stats, away_stats):
-        """Predict winner with original logic"""
+        """Predict winner"""
         home_finishing = home_stats['goals_vs_xg_pm']
         away_finishing = away_stats['goals_vs_xg_pm']
         home_defense = home_stats['goals_allowed_vs_xga_pm']
@@ -636,7 +231,7 @@ class WinnerPredictor:
         
         delta = home_adjusted_xg - away_adjusted_xg
         
-        # Winner determination (ORIGINAL)
+        # Winner determination
         if delta > 1.2:
             predicted_winner = "HOME"
             strength = "STRONG"
@@ -659,17 +254,14 @@ class WinnerPredictor:
             predicted_winner = "DRAW"
             strength = "CLOSE"
         
-        # Confidence calculation (ORIGINAL)
+        # Confidence calculation
         base_confidence = min(100, abs(delta) / max(home_adjusted_xg, away_adjusted_xg, 0.5) * 150)
         win_rate_diff = home_stats['win_rate'] - away_stats['win_rate']
         form_bonus = min(20, max(0, win_rate_diff * 40))
         
         winner_confidence = min(100, max(30, base_confidence + form_bonus))
         
-        # Store ORIGINAL values
-        original_confidence = winner_confidence
-        
-        # Confidence categorization (ORIGINAL)
+        # Confidence categorization
         if winner_confidence >= 90:
             confidence_category = "VERY HIGH"
         elif winner_confidence >= 75:
@@ -689,21 +281,22 @@ class WinnerPredictor:
             'strength': strength,
             'confidence_score': winner_confidence,
             'confidence': confidence_category,
-            'original_confidence': f"{original_confidence:.1f}",
+            'original_confidence': f"{winner_confidence:.1f}",
             'confidence_category': confidence_category,
             'delta': delta,
-            'has_confidence_bug': CONFIDENCE_RULES["70_PERCENT_ZONE"]["range"][0] <= winner_confidence <= CONFIDENCE_RULES["70_PERCENT_ZONE"]["range"][1]
+            'home_adjusted_xg': home_adjusted_xg,
+            'away_adjusted_xg': away_adjusted_xg
         }
 
 class TotalsPredictor:
-    """ORIGINAL totals prediction - NOW WITH LOGIC FIX"""
+    """Totals prediction with FINISHING FIX"""
     
     def __init__(self, league_name):
         self.league_name = league_name
         self.league_adjustments = LEAGUE_ADJUSTMENTS.get(league_name, LEAGUE_ADJUSTMENTS["Premier League"])
     
     def categorize_finishing(self, value):
-        """ORIGINAL finishing categorization"""
+        """Finishing categorization"""
         if value > 0.3:
             return "STRONG_OVERPERFORM"
         elif value > 0.1:
@@ -716,11 +309,10 @@ class TotalsPredictor:
             return "STRONG_UNDERPERFORM"
     
     def get_finishing_alignment(self, home_finish, away_finish):
-        """ORIGINAL finishing alignment"""
+        """Finishing alignment"""
         home_cat = self.categorize_finishing(home_finish)
         away_cat = self.categorize_finishing(away_finish)
         
-        # ORIGINAL alignment matrix
         alignment_matrix = {
             "STRONG_OVERPERFORM": {
                 "STRONG_OVERPERFORM": "HIGH_OVER",
@@ -762,7 +354,7 @@ class TotalsPredictor:
         return alignment_matrix[home_cat][away_cat]
     
     def categorize_total_xg(self, total_xg):
-        """ORIGINAL total xG categories with league adjustments"""
+        """Total xG categories"""
         very_high_thresh = self.league_adjustments.get('very_high_threshold', 3.3)
         
         if total_xg > very_high_thresh:
@@ -779,53 +371,38 @@ class TotalsPredictor:
             return "VERY_LOW"
     
     def predict_totals(self, home_xg, away_xg, home_stats, away_stats):
-        """Predict totals with original logic - FIXED VERSION"""
+        """Predict totals with FINISHING FIX"""
         total_xg = home_xg + away_xg
         home_finish = home_stats['goals_vs_xg_pm']
         away_finish = away_stats['goals_vs_xg_pm']
         
-        # ========== THE LOGIC FIX ==========
-        # Apply finishing impact to adjust xG BEFORE making decision
+        # THE FIX: Apply finishing impact
         finishing_impact = (home_finish + away_finish) * 0.6
         adjusted_xg = total_xg * (1 + finishing_impact)
         
         over_threshold = self.league_adjustments['over_threshold']
         
-        # Use ADJUSTED xG for the decision (not raw xG)
+        # Use ADJUSTED xG for decision
         base_direction = "OVER" if adjusted_xg > over_threshold else "UNDER"
-        # ========== END FIX ==========
         
-        # ORIGINAL finishing alignment (unchanged)
+        # Finishing alignment
         finishing_alignment = self.get_finishing_alignment(home_finish, away_finish)
-        total_category = self.categorize_total_xg(total_xg)  # Note: Still use raw xG for category
-        
-        # Store original values
-        original_direction = base_direction
-        original_finishing = finishing_alignment
-        original_category = total_category
-        
-        # Risk assessment
-        risk_flags = []
-        
-        # HIGH VARIANCE TEAM flag (will be used directionally, not as penalty)
-        if abs(home_finish) > 0.4 or abs(away_finish) > 0.4:
-            risk_flags.append("HIGH_VARIANCE_TEAM")
-        
-        # CLOSE TO THRESHOLD flag - Now using ADJUSTED xG
-        lower_thresh = self.league_adjustments['under_threshold'] - 0.1
-        upper_thresh = self.league_adjustments['over_threshold'] + 0.1
-        if lower_thresh < adjusted_xg < upper_thresh:
-            risk_flags.append("CLOSE_TO_THRESHOLD")
-        
-        # REMOVED PROVEN ANTI-PATTERN CHECKS - let fixed algorithm handle
+        total_category = self.categorize_total_xg(total_xg)
         
         # Base confidence
         base_confidence = 60
         
-        # Apply CLOSE_TO_THRESHOLD penalty only
-        for flag in risk_flags:
-            if flag == "CLOSE_TO_THRESHOLD":
-                base_confidence -= 10
+        # Risk assessment
+        risk_flags = []
+        if abs(home_finish) > 0.4 or abs(away_finish) > 0.4:
+            risk_flags.append("HIGH_VARIANCE_TEAM")
+        
+        # CLOSE TO THRESHOLD with adjusted xG
+        lower_thresh = self.league_adjustments['under_threshold'] - 0.1
+        upper_thresh = self.league_adjustments['over_threshold'] + 0.1
+        if lower_thresh < adjusted_xg < upper_thresh:
+            risk_flags.append("CLOSE_TO_THRESHOLD")
+            base_confidence -= 10
         
         base_confidence = max(5, min(95, base_confidence))
         
@@ -841,31 +418,26 @@ class TotalsPredictor:
         else:
             confidence_category = "VERY LOW"
         
-        # Include adjusted_xg in the output for debugging
         return {
             'direction': base_direction,
             'original_direction': base_direction,
             'total_xg': total_xg,
-            'adjusted_xg': adjusted_xg,  # NEW: for debugging
-            'finishing_impact': finishing_impact,  # NEW: for debugging
+            'adjusted_xg': adjusted_xg,
+            'finishing_impact': finishing_impact,
             'confidence': confidence_category,
             'confidence_score': base_confidence,
             'finishing_alignment': finishing_alignment,
-            'original_finishing_alignment': original_finishing,
+            'original_finishing_alignment': finishing_alignment,
             'total_category': total_category,
-            'original_total_category': original_category,
+            'original_total_category': total_category,
             'risk_flags': risk_flags,
             'home_finishing': home_finish,
             'away_finishing': away_finish,
-            'league_threshold': over_threshold,
-            'home_finish_value': home_finish,
-            'away_finish_value': away_finish
+            'league_threshold': over_threshold
         }
 
-# ========== ORIGINAL PROBABILITY ENGINE ==========
-
 class PoissonProbabilityEngine:
-    """ORIGINAL probability engine"""
+    """Probability engine"""
     
     @staticmethod
     def calculate_all_probabilities(home_xg, away_xg):
@@ -930,10 +502,8 @@ def poisson_pmf(k, lam):
         return 0
     return (math.exp(-lam) * (lam ** k)) / factorial_cache(k)
 
-# ========== CLEAN FOOTBALL ENGINE ==========
-
-class CleanFootballEngine:
-    """Engine with LOGIC FIX and MINIMAL CRUTCHES"""
+class FootballEngine:
+    """Main football engine"""
     
     def __init__(self, league_metrics, league_name):
         self.league_metrics = league_metrics
@@ -945,9 +515,9 @@ class CleanFootballEngine:
         self.probability_engine = PoissonProbabilityEngine()
     
     def predict_match(self, home_team, away_team, home_stats, away_stats):
-        """Generate prediction with LOGIC FIX and minimal crutches"""
+        """Generate prediction"""
         
-        # Get ORIGINAL predictions
+        # Get predictions
         home_xg, away_xg = self.xg_predictor.predict_expected_goals(home_stats, away_stats)
         
         probabilities = self.probability_engine.calculate_all_probabilities(home_xg, away_xg)
@@ -960,370 +530,38 @@ class CleanFootballEngine:
             home_xg, away_xg, home_stats, away_stats
         )
         
-        # Get MINIMAL betting advice (only confirmed bugs)
-        betting_advice = st.session_state.proven_system.get_proven_advice(
-            winner_prediction, 
-            totals_prediction,
-            totals_prediction['home_finish_value'],
-            totals_prediction['away_finish_value'],
-            self.league_name
-        )
+        # Calculate additional engine values for data collection
+        delta_xg = home_xg - away_xg
+        finishing_sum = totals_prediction['home_finishing'] + totals_prediction['away_finishing']
+        finishing_impact = totals_prediction['finishing_impact']
         
-        # Apply betting advice
-        final_winner = self._apply_advice_to_winner(
-            winner_prediction, betting_advice['winner'], home_team, away_team
-        )
+        home_defense = home_stats['goals_allowed_vs_xga_pm']
+        away_defense = away_stats['goals_allowed_vs_xga_pm']
+        home_adjusted_xg = home_xg + totals_prediction['home_finishing'] - away_defense
+        away_adjusted_xg = away_xg + totals_prediction['away_finishing'] - home_defense
         
-        final_totals = self._apply_advice_to_totals(
-            totals_prediction, betting_advice['totals']
-        )
-        
-        # Get probabilities
-        winner_prob = self._get_probability_for_winner(final_winner, probabilities)
-        totals_prob = self._get_probability_for_totals(final_totals, probabilities)
-        
-        # Create the final prediction dictionary
+        # Create prediction dictionary
         prediction_dict = {
             'home_team': home_team,
             'away_team': away_team,
-            'winner': {
-                'team': final_winner['team'],
-                'type': final_winner['type'],
-                'probability': winner_prob,
-                'confidence': self._get_confidence_category(final_winner['confidence']),
-                'confidence_score': final_winner['confidence'],
-                'strength': final_winner.get('strength', 'N/A'),
-                'most_likely_score': probabilities['most_likely_score'],
-                'betting_action': betting_advice['winner']['action'],
-                'original_prediction': winner_prediction['original_prediction'],
-                'original_confidence': winner_prediction['original_confidence'],
-                'original_confidence_score': winner_prediction['confidence_score'],
-                'reason': betting_advice['winner']['reason'],
-                'stake': betting_advice['winner']['stake'],
-                'color': self._get_color_for_action(betting_advice['winner']['action']),
-                'has_confidence_bug': winner_prediction.get('has_confidence_bug', False),
-                'variance_effect': betting_advice['winner'].get('variance_effect', 'NONE'),
-                'confidence_category': winner_prediction.get('confidence_category', 'MEDIUM')
-            },
-            
-            'totals': {
-                'direction': final_totals['direction'],
-                'probability': totals_prob,
-                'confidence': self._get_confidence_category(final_totals['confidence']),
-                'confidence_score': final_totals['confidence'],
-                'total_xg': totals_prediction['total_xg'],
-                'adjusted_xg': totals_prediction.get('adjusted_xg', totals_prediction['total_xg']),
-                'finishing_impact': totals_prediction.get('finishing_impact', 0),
-                'finishing_alignment': totals_prediction['finishing_alignment'],
-                'original_finishing_alignment': totals_prediction['original_finishing_alignment'],
-                'total_category': totals_prediction['total_category'],
-                'original_total_category': totals_prediction['original_total_category'],
-                'risk_flags': totals_prediction.get('risk_flags', []),
-                'betting_action': betting_advice['totals']['action'],
-                'original_direction': totals_prediction['original_direction'],
-                'original_confidence_score': totals_prediction['confidence_score'],
-                'reason': betting_advice['totals']['reason'],
-                'stake': betting_advice['totals']['stake'],
-                'color': self._get_color_for_action(betting_advice['totals']['action']),
-                'variance_effect': betting_advice['totals'].get('variance_effect', 'NONE'),
-                'home_finishing': totals_prediction['home_finish_value'],
-                'away_finishing': totals_prediction['away_finish_value']
-            },
-            
+            'winner': winner_prediction,
+            'totals': totals_prediction,
             'probabilities': probabilities,
             'expected_goals': {'home': home_xg, 'away': away_xg, 'total': home_xg + away_xg},
-            'betting_advice': betting_advice,
-            'version': '8.2_no_crutches',
+            'engine_calculations': {
+                'delta_xg': delta_xg,
+                'home_adjusted_xg': home_adjusted_xg,
+                'away_adjusted_xg': away_adjusted_xg,
+                'finishing_sum': finishing_sum,
+                'finishing_impact': finishing_impact,
+                'home_defense': home_defense,
+                'away_defense': away_defense
+            },
+            'version': 'data_collection_v1',
             'league': self.league_name
         }
         
         return prediction_dict
-    
-    def _apply_advice_to_winner(self, original, advice, home_team, away_team):
-        """Apply advice to winner"""
-        final = original.copy()
-        
-        if advice['action'] == 'BET_OPPOSITE':
-            # Bet opposite
-            if original['type'] == 'HOME':
-                final['type'] = 'AWAY'
-                final['team'] = away_team
-            elif original['type'] == 'AWAY':
-                final['type'] = 'HOME'
-                final['team'] = home_team
-            else:
-                final['type'] = 'DRAW'
-                final['team'] = 'DRAW'
-            
-            final['confidence'] = advice['confidence']
-        
-        elif advice['action'] == 'CAUTION':
-            # Derate confidence
-            final['confidence'] = advice['confidence']
-            final['team'] = home_team if original['type'] == 'HOME' else away_team if original['type'] == 'AWAY' else 'DRAW'
-        
-        elif advice['action'] == 'BET_STRONGLY':
-            # Boost confidence
-            final['confidence'] = advice['confidence']
-            final['team'] = home_team if original['type'] == 'HOME' else away_team if original['type'] == 'AWAY' else 'DRAW'
-        
-        else:
-            # Follow algorithm
-            final['team'] = home_team if original['type'] == 'HOME' else away_team if original['type'] == 'AWAY' else 'DRAW'
-            final['confidence'] = advice['confidence']
-        
-        return final
-    
-    def _apply_advice_to_totals(self, original, advice):
-        """Apply advice to totals"""
-        final = original.copy()
-        
-        if advice['action'] == 'BET_OPPOSITE':
-            # Bet opposite
-            final['direction'] = advice['bet_on']
-            final['confidence'] = advice['confidence']
-        
-        elif advice['action'] == 'BET_STRONGLY':
-            # Boost confidence
-            final['confidence'] = advice['confidence']
-        
-        else:
-            # Follow algorithm
-            final['confidence'] = advice['confidence']
-        
-        return final
-    
-    def _get_probability_for_winner(self, winner_pred, probabilities):
-        """Get probability for winner"""
-        if winner_pred['type'] == 'HOME':
-            return probabilities['home_win_probability']
-        elif winner_pred['type'] == 'AWAY':
-            return probabilities['away_win_probability']
-        else:
-            return probabilities['draw_probability']
-    
-    def _get_probability_for_totals(self, totals_pred, probabilities):
-        """Get probability for totals"""
-        if totals_pred['direction'] == 'OVER':
-            return probabilities['over_2_5_probability']
-        else:
-            return probabilities['under_2_5_probability']
-    
-    def _get_confidence_category(self, confidence_score):
-        """Get confidence category from score"""
-        if confidence_score >= 85:
-            return "VERY HIGH"
-        elif confidence_score >= 75:
-            return "HIGH"
-        elif confidence_score >= 65:
-            return "MEDIUM"
-        elif confidence_score >= 55:
-            return "LOW"
-        else:
-            return "VERY LOW"
-    
-    def _get_color_for_action(self, action):
-        """Get color for betting action"""
-        colors = {
-            'BET_OPPOSITE': '#DC2626',  # Red
-            'CAUTION': '#F59E0B',        # Orange
-            'BET_STRONGLY': '#10B981',   # Green
-            'FOLLOW': '#6B7280',         # Gray
-            'BET': '#3B82F6'             # Blue
-        }
-        return colors.get(action, '#6B7280')
-
-# ========== CLEAN BETTING CARD ==========
-
-class CleanBettingCard:
-    """Clean betting card based on algorithm output"""
-    
-    @staticmethod
-    def get_recommendation(prediction):
-        """Get betting recommendation based on algorithm output"""
-        winner_pred = prediction['winner']
-        totals_pred = prediction['totals']
-        
-        # Check for 70% confidence bug
-        if winner_pred['betting_action'] == 'BET_OPPOSITE' and winner_pred.get('has_confidence_bug', False):
-            return {
-                'type': '70_PERCENT_BUG_FIX',
-                'text': f"🎯 {winner_pred['team']} to win",
-                'subtext': '70% FALSE FAVORITE ZONE',
-                'reason': winner_pred['reason'],
-                'confidence': winner_pred['confidence_score'],
-                'color': '#DC2626',
-                'icon': '🎯',
-                'stake': winner_pred.get('stake', 'HALF'),
-                'proven_type': 'BUG_FIX'
-            }
-        
-        # Check for 100% confidence strength
-        if winner_pred['betting_action'] == 'BET_STRONGLY' and '100%' in winner_pred.get('reason', ''):
-            return {
-                'type': '100_PERCENT_STRENGTH',
-                'text': f"✅ {winner_pred['team']} to win",
-                'subtext': '100% CONFIDENCE ZONE',
-                'reason': winner_pred['reason'],
-                'confidence': winner_pred['confidence_score'],
-                'color': '#10B981',
-                'icon': '✅',
-                'stake': winner_pred.get('stake', 'FULL'),
-                'proven_type': 'STRENGTH'
-            }
-        
-        # Check for high variance amplification
-        if totals_pred.get('variance_effect') == 'AMPLIFIED':
-            return {
-                'type': 'VARIANCE_AMPLIFICATION',
-                'text': f"⚡ {totals_pred['direction']} 2.5 Goals",
-                'subtext': 'VARIANCE AMPLIFICATION',
-                'reason': totals_pred['reason'],
-                'confidence': totals_pred['confidence_score'],
-                'color': '#8B5CF6',
-                'icon': '⚡',
-                'stake': totals_pred.get('stake', 'HALF'),
-                'proven_type': 'VARIANCE_PLAY'
-            }
-        
-        # Check for strong patterns from learning
-        if winner_pred['betting_action'] == 'BET_STRONGLY' and 'Strong pattern' in winner_pred.get('reason', ''):
-            return {
-                'type': 'LEARNED_STRONG_PATTERN',
-                'text': f"✅ {winner_pred['team']} to win",
-                'subtext': 'LEARNED STRONG PATTERN',
-                'reason': winner_pred['reason'],
-                'confidence': winner_pred['confidence_score'],
-                'color': '#10B981',
-                'icon': '✅',
-                'stake': winner_pred.get('stake', 'HALF'),
-                'proven_type': 'LEARNED'
-            }
-        
-        if totals_pred['betting_action'] == 'BET_STRONGLY' and 'Strong pattern' in totals_pred.get('reason', ''):
-            return {
-                'type': 'LEARNED_STRONG_PATTERN',
-                'text': f"📈 {totals_pred['direction']} 2.5 Goals",
-                'subtext': 'LEARNED STRONG PATTERN',
-                'reason': totals_pred['reason'],
-                'confidence': totals_pred['confidence_score'],
-                'color': '#10B981',
-                'icon': '✅',
-                'stake': totals_pred.get('stake', 'HALF'),
-                'proven_type': 'LEARNED'
-            }
-        
-        # Weak patterns (bet opposite) from learning
-        if winner_pred['betting_action'] == 'BET_OPPOSITE' and 'Weak pattern' in winner_pred.get('reason', ''):
-            return {
-                'type': 'LEARNED_WEAK_PATTERN',
-                'text': f"🎯 {winner_pred['team']} to win",
-                'subtext': 'LEARNED WEAK PATTERN',
-                'reason': winner_pred['reason'],
-                'confidence': winner_pred['confidence_score'],
-                'color': '#DC2626',
-                'icon': '🎯',
-                'stake': winner_pred.get('stake', 'HALF'),
-                'proven_type': 'LEARNED'
-            }
-        
-        if totals_pred['betting_action'] == 'BET_OPPOSITE' and 'Weak pattern' in totals_pred.get('reason', ''):
-            return {
-                'type': 'LEARNED_WEAK_PATTERN',
-                'text': f"📈 {totals_pred['direction']} 2.5 Goals",
-                'subtext': 'LEARNED WEAK PATTERN',
-                'reason': totals_pred['reason'],
-                'confidence': totals_pred['confidence_score'],
-                'color': '#DC2626',
-                'icon': '🎯',
-                'stake': totals_pred.get('stake', 'HALF'),
-                'proven_type': 'LEARNED'
-            }
-        
-        # Caution zone
-        if winner_pred['betting_action'] == 'CAUTION':
-            return {
-                'type': 'CAUTION_ZONE',
-                'text': f"⚠️ {winner_pred['team']} to win",
-                'subtext': 'CAUTION (90% trap zone)',
-                'reason': winner_pred['reason'],
-                'confidence': winner_pred['confidence_score'],
-                'color': '#F59E0B',
-                'icon': '⚠️',
-                'stake': 'REDUCED',
-                'proven_type': 'CAUTION'
-            }
-        
-        # Default: Follow algorithm
-        # Pick the stronger prediction
-        if winner_pred['confidence_score'] > totals_pred['confidence_score']:
-            return {
-                'type': 'ALGORITHM_WINNER',
-                'text': f"🏠 {winner_pred['team']} to win",
-                'subtext': 'ALGORITHM PREDICTION',
-                'reason': 'Following algorithm prediction',
-                'confidence': winner_pred['confidence_score'],
-                'color': '#3B82F6',
-                'icon': '🏠' if winner_pred['type'] == 'HOME' else '✈️' if winner_pred['type'] == 'AWAY' else '🤝',
-                'stake': 'HALF',
-                'proven_type': 'ALGORITHM'
-            }
-        else:
-            return {
-                'type': 'ALGORITHM_TOTALS',
-                'text': f"📈 {totals_pred['direction']} 2.5 Goals",
-                'subtext': 'ALGORITHM PREDICTION',
-                'reason': 'Following algorithm prediction',
-                'confidence': totals_pred['confidence_score'],
-                'color': '#3B82F6',
-                'icon': '📈' if totals_pred['direction'] == 'OVER' else '📉',
-                'stake': 'HALF',
-                'proven_type': 'ALGORITHM'
-            }
-    
-    @staticmethod
-    def display_card(recommendation):
-        """Display the betting card"""
-        color = recommendation['color']
-        stake_colors = {
-            'FULL': '#10B981', 
-            'HALF': '#F59E0B', 
-            'REDUCED': '#F59E0B',
-            'NONE': '#6B7280'
-        }
-        stake_color = stake_colors.get(recommendation['stake'], '#6B7280')
-        
-        st.markdown(f"""
-        <div style="
-            background: linear-gradient(135deg, {color}20 0%, #1F2937 100%);
-            padding: 25px;
-            border-radius: 20px;
-            border: 3px solid {color};
-            text-align: center;
-            margin: 20px 0;
-        ">
-            <div style="font-size: 48px; margin-bottom: 15px;">
-                {recommendation['icon']}
-            </div>
-            <div style="font-size: 36px; font-weight: bold; color: white; margin-bottom: 10px;">
-                {recommendation['text']}
-            </div>
-            <div style="font-size: 24px; color: {color}; margin-bottom: 10px; font-weight: bold;">
-                {recommendation['subtext']}
-            </div>
-            <div style="display: flex; justify-content: center; gap: 20px; margin-bottom: 15px;">
-                <div style="font-size: 18px; color: #9CA3AF;">
-                    Confidence: {recommendation['confidence']:.0f}/100
-                </div>
-                <div style="font-size: 18px; color: {stake_color}; font-weight: bold;">
-                    Stake: {recommendation['stake']}
-                </div>
-            </div>
-            <div style="font-size: 16px; color: #D1D5DB; padding: 10px; background: rgba(59, 130, 246, 0.1); border-radius: 10px;">
-                {recommendation['reason']}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
 
 # ========== DATA LOADING FUNCTIONS ==========
 
@@ -1381,110 +619,12 @@ def calculate_league_metrics(df):
     
     return {'avg_goals_per_match': avg_goals_per_match}
 
-# ========== FEEDBACK SYSTEM ==========
+# ========== SESSION STATES ==========
+if 'last_prediction' not in st.session_state:
+    st.session_state.last_prediction = None
 
-def record_outcome_clean(prediction):
-    """Clean feedback system with Supabase integration"""
-    
-    st.divider()
-    st.subheader("📝 Record Outcome for Pattern Learning")
-    
-    # Show current patterns
-    winner_key = st.session_state.proven_system._generate_winner_key(prediction['winner'])
-    totals_key = st.session_state.proven_system._generate_totals_key(prediction['totals'])
-    
-    winner_stats = st.session_state.proven_system.get_pattern_stats(winner_key)
-    totals_stats = st.session_state.proven_system.get_pattern_stats(totals_key)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**Winner Pattern:**")
-        st.code(winner_key)
-        if winner_stats['total'] > 0:
-            success = winner_stats['success'] / winner_stats['total'] if winner_stats['total'] > 0 else 0
-            st.write(f"Current: {winner_stats['success']}/{winner_stats['total']} ({success:.0%})")
-        
-        # Check if it's a known bug
-        if winner_key in PROVEN_FAILURES:
-            st.error(f"🔴 CONFIRMED BUG: {PROVEN_FAILURES[winner_key]['record']}")
-    
-    with col2:
-        st.write("**Totals Pattern:**")
-        st.code(totals_key)
-        if totals_stats['total'] > 0:
-            success = totals_stats['success'] / totals_stats['total'] if totals_stats['total'] > 0 else 0
-            st.write(f"Current: {totals_stats['success']}/{totals_stats['total']} ({success:.0%})")
-        
-        # No more proven patterns for totals - algorithm is fixed
-    
-    # Score input
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        score = st.text_input("Actual Score (e.g., 2-1)", key="clean_score_input")
-    
-    with col2:
-        if st.button("✅ Record Outcome", type="primary", use_container_width=True):
-            if not score or '-' not in score:
-                st.error("Enter valid score like '2-1'")
-            else:
-                try:
-                    with st.spinner("Saving pattern data to Supabase..."):
-                        result, message = st.session_state.proven_system.record_outcome(prediction, score)
-                        
-                        if result:
-                            col_success, col_stats = st.columns(2)
-                            
-                            with col_success:
-                                if result['save_success']:
-                                    st.success("✅ Pattern saved to Supabase!")
-                                else:
-                                    st.warning("⚠️ Saved locally only (check Supabase connection)")
-                            
-                            with col_stats:
-                                st.write(f"**Winner:** {'✅ Correct' if result['winner_correct'] else '❌ Wrong'}")
-                                st.write(f"**Totals:** {'✅ Correct' if result['totals_correct'] else '❌ Wrong'}")
-                            
-                            # Show updated stats
-                            st.write("### 📊 Updated Pattern Stats:")
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                new_winner_stats = result['winner_stats']
-                                success_rate = new_winner_stats['success'] / new_winner_stats['total'] if new_winner_stats['total'] > 0 else 0
-                                st.write(f"**{winner_key}**")
-                                st.write(f"Record: {new_winner_stats['success']}/{new_winner_stats['total']} ({success_rate:.0%})")
-                            
-                            with col2:
-                                new_totals_stats = result['totals_stats']
-                                success_rate = new_totals_stats['success'] / new_totals_stats['total'] if new_totals_stats['total'] > 0 else 0
-                                st.write(f"**{totals_key}**")
-                                st.write(f"Record: {new_totals_stats['success']}/{new_totals_stats['total']} ({success_rate:.0%})")
-                            
-                            # Check for pattern significance
-                            if new_winner_stats['total'] >= 3:
-                                success_rate = new_winner_stats['success'] / new_winner_stats['total']
-                                if success_rate < 0.4 and winner_key not in PROVEN_FAILURES:
-                                    st.error(f"⚠️ **Potential new bug:** {winner_key} ({new_winner_stats['success']}/{new_winner_stats['total']})")
-                                elif success_rate > 0.7 and winner_key not in PROVEN_SUCCESSES:
-                                    st.success(f"⚠️ **Potential new strength:** {winner_key} ({new_winner_stats['success']}/{new_winner_stats['total']})")
-                            
-                            if new_totals_stats['total'] >= 3:
-                                success_rate = new_totals_stats['success'] / new_totals_stats['total']
-                                if success_rate < 0.4:
-                                    st.error(f"⚠️ **Weak totals pattern:** {totals_key} ({new_totals_stats['success']}/{new_totals_stats['total']})")
-                                elif success_rate > 0.7:
-                                    st.success(f"⚠️ **Strong totals pattern:** {totals_key} ({new_totals_stats['success']}/{new_totals_stats['total']})")
-                            
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {message}")
-                            
-                except ValueError:
-                    st.error("Enter numbers like '2-1'")
-                except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
+if 'last_teams' not in st.session_state:
+    st.session_state.last_teams = None
 
 # ========== STREAMLIT UI ==========
 
@@ -1522,119 +662,56 @@ with st.sidebar:
         else:
             st.error("Could not prepare team data")
             st.stop()
-
-    # System Section
+    
+    # Data Collection Stats
     st.divider()
-    st.header("🎯 SYSTEM STATUS")
+    st.header("📊 Data Collection Stats")
     
-    st.success("**✅ LOGIC BUG FIXED**")
-    st.write("Totals predictions now correctly incorporate finishing data")
+    stats = get_match_stats()
+    total_matches = stats['total_matches']
     
-    st.subheader("🔧 Active Adjustments:")
+    st.metric("Total Matches Collected", total_matches)
     
-    st.error("**70% Confidence Zone Bug:**")
-    st.write("→ BET OPPOSITE when winner confidence is 68-72%")
-    st.write("→ Confirmed bug from data (0/3 success)")
-    
-    st.warning("**90% Confidence Zone:**")
-    st.write("→ CAUTION when winner confidence is 88-94%")
-    st.write("→ Overconfidence trap zone")
-    
-    st.success("**100% Confidence Zone:**")
-    st.write("→ BET STRONGLY when winner confidence is 99-100%")
-    st.write("→ Confirmed strength (4/5 success)")
-    
-    st.info("**High Variance Logic:**")
-    st.write("→ Overperformers: OVER +20%, UNDER -15%")
-    st.write("→ Underperformers: UNDER +20%, OVER -15%")
-    
-    st.subheader("🔄 Removed Crutches:")
-    st.write("""
-    ✅ **TOTALS anti-patterns REMOVED:**
-    - TOTALS_RISKY_VERY_HIGH
-    - TOTALS_LOW_OVER_HIGH  
-    - TOTALS_LOW_UNDER_HIGH
-    
-    ✅ **TOTALS success patterns REMOVED:**
-    - TOTALS_MED_OVER_MODERATE_LOW
-    - TOTALS_HIGH_OVER_MODERATE_LOW
-    - TOTALS_MED_UNDER_VERY_HIGH
-    - TOTALS_NEUTRAL_MODERATE_LOW
-    """)
-    
-    # Show current match patterns if available
-    if st.session_state.last_prediction:
-        try:
-            winner_pred = st.session_state.last_prediction['winner']
-            totals_pred = st.session_state.last_prediction['totals']
-            
-            winner_key = st.session_state.proven_system._generate_winner_key(winner_pred)
-            totals_key = st.session_state.proven_system._generate_totals_key(totals_pred)
-            
-            winner_stats = st.session_state.proven_system.get_pattern_stats(winner_key)
-            totals_stats = st.session_state.proven_system.get_pattern_stats(totals_key)
-            
-            st.subheader("Current Match Patterns:")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write(f"**Winner:** {winner_key}")
-                if winner_stats['total'] >= 3:
-                    success = winner_stats['success'] / winner_stats['total']
-                    if success > 0.7:
-                        st.success(f"✅ {success:.0%}")
-                    elif success < 0.4:
-                        st.error(f"🎯 {success:.0%}")
-                    else:
-                        st.info(f"⚪ {success:.0%}")
-                else:
-                    st.caption(f"{winner_stats['total']}/3 matches")
-            
-            with col2:
-                st.write(f"**Totals:** {totals_key}")
-                if totals_stats['total'] >= 3:
-                    success = totals_stats['success'] / totals_stats['total']
-                    if success > 0.7:
-                        st.success(f"✅ {success:.0%}")
-                    elif success < 0.4:
-                        st.error(f"🎯 {success:.0%}")
-                    else:
-                        st.info(f"⚪ {success:.0%}")
-                else:
-                    st.caption(f"{totals_stats['total']}/3 matches")
-                    
-        except Exception as e:
-            st.warning("Could not display pattern stats")
-    
-    st.divider()
-    
-    # Statistics
-    st.subheader("📊 Pattern Statistics:")
-    
-    pattern_memory = st.session_state.proven_system.pattern_memory
-    total_patterns = len(pattern_memory)
-    qualifying = len([v for v in pattern_memory.values() if v['total'] >= 3])
-    strong = len([v for v in pattern_memory.values() 
-                 if v['total'] >= 3 and v['success']/v['total'] > 0.7])
-    weak = len([v for v in pattern_memory.values() 
-               if v['total'] >= 3 and v['success']/v['total'] < 0.4])
-    
-    st.write(f"Total patterns tracked: {total_patterns}")
-    st.write(f"Qualifying (≥3 matches): {qualifying}")
-    st.write(f"Strong patterns (>70%): {strong}")
-    st.write(f"Weak patterns (<40%): {weak}")
-    
-    # Show top patterns
-    if qualifying > 0:
-        st.subheader("🏆 Top Patterns:")
-        sorted_patterns = sorted([(k, v) for k, v in pattern_memory.items() if v['total'] >= 3], 
-                                key=lambda x: x[1]['success']/x[1]['total'], 
-                                reverse=True)[:5]
+    if total_matches > 0:
+        st.progress(min(total_matches / 100, 1.0))
+        st.caption(f"Target: 100 matches ({total_matches}/100)")
         
-        for pattern, stats in sorted_patterns:
-            success = stats['success'] / stats['total']
-            st.write(f"**{pattern}:** {stats['success']}/{stats['total']} ({success:.0%})")
+        if stats['league_counts']:
+            st.write("**By League:**")
+            for league, count in stats['league_counts'].items():
+                st.write(f"- {league}: {count}")
+    
+    # Quick Analysis
+    if total_matches >= 10:
+        st.divider()
+        st.header("🔍 Quick Insights")
+        
+        if st.button("Run Quick Analysis", use_container_width=True):
+            # Simple analysis query
+            try:
+                if supabase:
+                    response = supabase.table("match_predictions").select(
+                        "predicted_winner", "actual_winner", "winner_confidence"
+                    ).execute()
+                    
+                    if response.data:
+                        df_analysis = pd.DataFrame(response.data)
+                        df_analysis['correct'] = df_analysis['predicted_winner'] == df_analysis['actual_winner']
+                        
+                        # Group by confidence
+                        if len(df_analysis) > 0:
+                            df_analysis['conf_bucket'] = pd.cut(
+                                df_analysis['winner_confidence'], 
+                                bins=[0, 40, 60, 80, 100],
+                                labels=['0-40%', '40-60%', '60-80%', '80-100%']
+                            )
+                            
+                            accuracy = df_analysis.groupby('conf_bucket')['correct'].mean()
+                            st.write("**Accuracy by Confidence:**")
+                            for bucket, acc in accuracy.items():
+                                st.write(f"{bucket}: {acc:.1%}")
+            except:
+                pass
 
 # Main content
 if df is None:
@@ -1647,8 +724,8 @@ if 'calculate_btn' in locals() and calculate_btn:
         home_stats = home_stats_df.loc[home_team]
         away_stats = away_stats_df.loc[away_team]
         
-        # Generate prediction with LOGIC FIX
-        engine = CleanFootballEngine(league_metrics, selected_league)
+        # Generate prediction
+        engine = FootballEngine(league_metrics, selected_league)
         prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
         
         # Store for next time
@@ -1668,328 +745,226 @@ else:
 
 # ========== DISPLAY PREDICTION ==========
 st.header(f"🎯 {home_team} vs {away_team}")
-st.caption(f"League: {selected_league} | Version: {prediction.get('version', '8.2')} | Logic Bug Fixed")
+st.caption(f"League: {selected_league} | Data Collection Mode | Matches: {get_match_stats()['total_matches']}")
 
 # Prediction cards
 col1, col2 = st.columns(2)
 
 with col1:
     winner_pred = prediction['winner']
-    color = winner_pred.get('color', '#6B7280')
+    prob = prediction['probabilities']
     
-    # Determine icon based on action
-    if winner_pred['betting_action'] == 'BET_OPPOSITE':
-        icon = "🎯"
-        subtitle = "BET OPPOSITE (70% Bug)"
-        card_color = "#7F1D1D"
-    elif winner_pred['betting_action'] == 'CAUTION':
-        icon = "⚠️"
-        subtitle = "CAUTION (90% Trap)"
-        card_color = "#78350F"
-    elif winner_pred['betting_action'] == 'BET_STRONGLY':
-        icon = "✅"
-        subtitle = "BET STRONGLY (100% Strength)"
-        card_color = "#14532D"
-    else:
-        icon = "🏠" if winner_pred['type'] == "HOME" else "✈️" if winner_pred['type'] == "AWAY" else "🤝"
-        card_color = "#1E293B"
-        subtitle = winner_pred['confidence']
+    winner_prob = prob['home_win_probability'] if winner_pred['type'] == 'HOME' else \
+                  prob['away_win_probability'] if winner_pred['type'] == 'AWAY' else \
+                  prob['draw_probability']
     
     st.markdown(f"""
-    <div style="background-color: {card_color}; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
+    <div style="background-color: #1E293B; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
         <h3 style="color: white; margin: 0;">WINNER</h3>
-        <div style="font-size: 36px; font-weight: bold; color: {color}; margin: 10px 0;">
-            {icon} {winner_pred['team']}
+        <div style="font-size: 36px; font-weight: bold; color: #60A5FA; margin: 10px 0;">
+            {'🏠' if winner_pred['type'] == 'HOME' else '✈️' if winner_pred['type'] == 'AWAY' else '🤝'} {winner_pred['type']}
         </div>
         <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
-            {winner_pred['probability']*100:.1f}%
+            {winner_prob*100:.1f}%
         </div>
         <div style="font-size: 16px; color: white;">
-            {subtitle} | Confidence: {winner_pred['confidence_score']:.0f}/100
+            {winner_pred['confidence']} | Confidence: {winner_pred['confidence_score']:.0f}/100
         </div>
         <div style="font-size: 14px; color: #D1D5DB; margin-top: 10px;">
-            {winner_pred['reason']}
-        </div>
-        <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
-            <div style="font-size: 12px; color: #9CA3AF;">
-                Stake: {winner_pred.get('stake', 'HALF')}
-            </div>
-            <div style="font-size: 12px; color: #9CA3AF;">
-                Original: {winner_pred['original_prediction']} ({winner_pred['original_confidence_score']:.0f}%)
-            </div>
+            ΔxG: {winner_pred['delta']:.2f}
         </div>
     </div>
     """, unsafe_allow_html=True)
 
 with col2:
     totals_pred = prediction['totals']
-    color = totals_pred.get('color', '#6B7280')
+    prob = prediction['probabilities']
     
-    # Determine icon based on action
-    if totals_pred['betting_action'] == 'BET_OPPOSITE':
-        icon = "🎯"
-        subtitle = "BET OPPOSITE (Learned)"
-        card_color = "#7F1D1D"
-    elif totals_pred['betting_action'] == 'BET_STRONGLY':
-        icon = "✅"
-        subtitle = "BET STRONGLY (Learned)"
-        card_color = "#14532D"
-    else:
-        icon = "📈" if totals_pred['direction'] == "OVER" else "📉"
-        card_color = "#1E293B"
-        subtitle = totals_pred['confidence']
+    totals_prob = prob['over_2_5_probability'] if totals_pred['direction'] == 'OVER' else \
+                  prob['under_2_5_probability']
     
     st.markdown(f"""
-    <div style="background-color: {card_color}; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
+    <div style="background-color: #1E293B; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
         <h3 style="color: white; margin: 0;">TOTAL GOALS</h3>
-        <div style="font-size: 36px; font-weight: bold; color: {color}; margin: 10px 0;">
-            {icon} {totals_pred['direction']} 2.5
+        <div style="font-size: 36px; font-weight: bold; color: #60A5FA; margin: 10px 0;">
+            {'📈' if totals_pred['direction'] == 'OVER' else '📉'} {totals_pred['direction']} 2.5
         </div>
         <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
-            {totals_pred['probability']*100:.1f}%
+            {totals_prob*100:.1f}%
         </div>
         <div style="font-size: 16px; color: white;">
-            {subtitle} | Confidence: {totals_pred['confidence_score']:.0f}/100
+            {totals_pred['confidence']} | Confidence: {totals_pred['confidence_score']:.0f}/100
         </div>
         <div style="font-size: 14px; color: #D1D5DB; margin-top: 10px;">
-            {totals_pred['reason']}
-        </div>
-        <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
-            <div style="font-size: 12px; color: #9CA3AF;">
-                Stake: {totals_pred.get('stake', 'HALF')}
-            </div>
-            <div style="font-size: 12px; color: #9CA3AF;">
-                Original: {totals_pred['original_direction']} ({totals_pred['original_confidence_score']:.0f}%)
-            </div>
-            <div style="font-size: 12px; color: #60A5FA;">
-                Adj. xG: {totals_pred.get('adjusted_xg', totals_pred['total_xg']):.2f}
-            </div>
-        </div>
-        <div style="font-size: 12px; color: #FCD34D; margin-top: 5px;">
-            Raw xG: {totals_pred['total_xg']:.2f} | Impact: {totals_pred.get('finishing_impact', 0):.1%} | Variance: {totals_pred.get('variance_effect', 'NONE')}
+            Raw xG: {totals_pred['total_xg']:.2f} | Adj. xG: {totals_pred['adjusted_xg']:.2f}
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-# ========== CLEAN BETTING CARD ==========
+# ========== DATA COLLECTION SECTION ==========
 st.divider()
-st.subheader("🎯 BETTING ADVICE")
+st.subheader("📝 COLLECT MATCH DATA")
 
-recommendation = CleanBettingCard.get_recommendation(prediction)
-CleanBettingCard.display_card(recommendation)
+col1, col2 = st.columns([2, 1])
 
-# ========== LOGIC ANALYSIS ==========
+with col1:
+    score = st.text_input("Actual Final Score (e.g., 2-1)", key="score_input")
+    
+    with st.expander("📊 View Engine Calculations"):
+        st.write("**For Data Collection:**")
+        st.write(f"- Home xG: {prediction['expected_goals']['home']:.2f}")
+        st.write(f"- Away xG: {prediction['expected_goals']['away']:.2f}")
+        st.write(f"- ΔxG: {prediction['engine_calculations']['delta_xg']:.2f}")
+        st.write(f"- Home finishing: {prediction['totals']['home_finishing']:.3f}")
+        st.write(f"- Away finishing: {prediction['totals']['away_finishing']:.3f}")
+        st.write(f"- Finishing impact: {prediction['totals']['finishing_impact']:.3f}")
+        st.write(f"- Raw → Adj. xG: {prediction['totals']['total_xg']:.2f} → {prediction['totals']['adjusted_xg']:.2f}")
+
+with col2:
+    if st.button("💾 Save Match Data", type="primary", use_container_width=True):
+        if not score or '-' not in score:
+            st.error("Enter valid score like '2-1'")
+        else:
+            try:
+                with st.spinner("Saving complete match data..."):
+                    # Add defense stats to prediction for data collection
+                    prediction['home_defense'] = prediction['engine_calculations']['home_defense']
+                    prediction['away_defense'] = prediction['engine_calculations']['away_defense']
+                    
+                    success, message = save_match_prediction(prediction, score, selected_league)
+                    
+                    if success:
+                        st.success(f"""
+                        {message}
+                        
+                        **Saved to database:**
+                        - All xG values
+                        - Finishing stats
+                        - Engine calculations
+                        - Predictions & confidence
+                        - Actual results
+                        
+                        **Total matches:** {get_match_stats()['total_matches']}
+                        """)
+                        
+                        # Show success animation
+                        st.balloons()
+                        
+                        # Reset for next match
+                        st.session_state.last_prediction = None
+                        st.session_state.last_teams = None
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
+                        
+            except ValueError:
+                st.error("Enter numbers like '2-1'")
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+
+# ========== ENGINE CALCULATIONS DISPLAY ==========
 st.divider()
-st.subheader("🔍 LOGIC ANALYSIS")
+st.subheader("🔧 ENGINE CALCULATIONS")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.subheader("🎯 Algorithm Output")
-    
-    st.write(f"**Winner:**")
-    st.write(f"- Prediction: {prediction['winner']['original_prediction']}")
-    st.write(f"- Confidence: {prediction['winner']['original_confidence_score']:.1f}%")
-    
-    st.write(f"**Totals:**")
-    st.write(f"- Prediction: {prediction['totals']['original_direction']}")
-    st.write(f"- Confidence: {prediction['totals']['original_confidence_score']:.1f}%")
-    st.write(f"- Raw xG: {prediction['totals']['total_xg']:.2f}")
-    st.write(f"- Adj. xG: {prediction['totals'].get('adjusted_xg', prediction['totals']['total_xg']):.2f}")
-    st.write(f"- Finishing Impact: {prediction['totals'].get('finishing_impact', 0):.1%}")
-    st.write(f"- Pattern: {prediction['totals']['original_finishing_alignment']} + {prediction['totals']['original_total_category']}")
+    st.write("**xG Calculations:**")
+    st.write(f"- Home xG: {prediction['expected_goals']['home']:.2f}")
+    st.write(f"- Away xG: {prediction['expected_goals']['away']:.2f}")
+    st.write(f"- Total xG: {prediction['expected_goals']['total']:.2f}")
+    st.write(f"- ΔxG: {prediction['engine_calculations']['delta_xg']:.2f}")
 
 with col2:
-    st.subheader("⚡ Active Adjustments")
-    
-    st.write(f"**Winner Adjustments:**")
-    if prediction['winner']['has_confidence_bug']:
-        st.error("→ 70% Confidence Bug Fix")
-    if "100%" in prediction['winner'].get('reason', ''):
-        st.success("→ 100% Confidence Strength")
-    if prediction['winner']['betting_action'] == 'CAUTION':
-        st.warning("→ 90% Overconfidence Caution")
-    if "Strong pattern" in prediction['winner'].get('reason', ''):
-        st.success("→ Learned Strong Pattern")
-    if "Weak pattern" in prediction['winner'].get('reason', ''):
-        st.error("→ Learned Weak Pattern")
-    
-    st.write(f"**Totals Adjustments:**")
-    if prediction['totals'].get('variance_effect') == 'AMPLIFIED':
-        st.info(f"→ Variance Amplification: {prediction['totals']['variance_effect']}")
-    elif prediction['totals'].get('variance_effect') == 'REDUCED':
-        st.warning(f"→ Variance Reduction: {prediction['totals']['variance_effect']}")
-    if "Strong pattern" in prediction['totals'].get('reason', ''):
-        st.success("→ Learned Strong Pattern")
-    if "Weak pattern" in prediction['totals'].get('reason', ''):
-        st.error("→ Learned Weak Pattern")
+    st.write("**Finishing Adjustments:**")
+    st.write(f"- Home finishing: {prediction['totals']['home_finishing']:.3f}")
+    st.write(f"- Away finishing: {prediction['totals']['away_finishing']:.3f}")
+    st.write(f"- Sum: {prediction['engine_calculations']['finishing_sum']:.3f}")
+    st.write(f"- Impact (×0.6): {prediction['totals']['finishing_impact']:.3f}")
 
 with col3:
-    st.subheader("📊 Pattern Statistics")
-    
-    winner_key = st.session_state.proven_system._generate_winner_key(prediction['winner'])
-    totals_key = st.session_state.proven_system._generate_totals_key(prediction['totals'])
-    
-    winner_stats = st.session_state.proven_system.get_pattern_stats(winner_key)
-    totals_stats = st.session_state.proven_system.get_pattern_stats(totals_key)
-    
-    st.write(f"**Winner Pattern:**")
-    st.code(winner_key)
-    if winner_stats['total'] > 0:
-        success = winner_stats['success'] / winner_stats['total']
-        st.write(f"Record: {winner_stats['success']}/{winner_stats['total']} ({success:.0%})")
-    
-    st.write(f"**Totals Pattern:**")
-    st.code(totals_key)
-    if totals_stats['total'] > 0:
-        success = totals_stats['success'] / totals_stats['total']
-        st.write(f"Record: {totals_stats['success']}/{totals_stats['total']} ({success:.0%})")
+    st.write("**Adjusted Values:**")
+    st.write(f"- Raw total: {prediction['totals']['total_xg']:.2f}")
+    st.write(f"- Adjusted: {prediction['totals']['adjusted_xg']:.2f}")
+    st.write(f"- Threshold: {prediction['totals']['league_threshold']}")
+    st.write(f"- Decision: {prediction['totals']['adjusted_xg']:.2f} {'>' if prediction['totals']['adjusted_xg'] > prediction['totals']['league_threshold'] else '<'} {prediction['totals']['league_threshold']}")
 
-# ========== FINISHING IMPACT BREAKDOWN ==========
+# ========== PROBABILITIES ==========
 st.divider()
-st.subheader("🎯 FINISHING IMPACT BREAKDOWN")
+st.subheader("🎲 PROBABILITIES")
 
-with st.expander("📈 Totals Decision Logic", expanded=True):
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**Finishing Data:**")
-        home_finish = prediction['totals'].get('home_finishing', 0)
-        away_finish = prediction['totals'].get('away_finishing', 0)
-        
-        st.write(f"- Home finishing vs xG: {home_finish:.3f}")
-        st.write(f"- Away finishing vs xG: {away_finish:.3f}")
-        st.write(f"- Total finishing: {home_finish + away_finish:.3f}")
-        
-        # Show finishing categories
-        totals_predictor = TotalsPredictor(prediction['league'])
-        home_cat = totals_predictor.categorize_finishing(home_finish)
-        away_cat = totals_predictor.categorize_finishing(away_finish)
-        st.write(f"- Home category: {home_cat}")
-        st.write(f"- Away category: {away_cat}")
-        
-    with col2:
-        st.write("**Adjustment Calculation:**")
-        total_xg = prediction['totals']['total_xg']
-        finishing_impact = prediction['totals'].get('finishing_impact', 0)
-        adjusted_xg = prediction['totals'].get('adjusted_xg', total_xg)
-        threshold = prediction['totals'].get('league_threshold', 2.5)
-        
-        st.write(f"1. Raw xG: {total_xg:.3f}")
-        st.write(f"2. Finishing impact: ({home_finish:.3f} + {away_finish:.3f}) × 0.6 = {finishing_impact:.3f}")
-        st.write(f"3. Adjusted xG: {total_xg:.3f} × (1 + {finishing_impact:.3f}) = {adjusted_xg:.3f}")
-        st.write(f"4. Threshold: {threshold:.1f}")
-        st.write(f"5. Decision: {adjusted_xg:.3f} {'>' if adjusted_xg > threshold else '<'} {threshold:.1f} → **{prediction['totals']['original_direction']}**")
-        
-        # Show the fix in action
-        st.write("**Logic Fix Comparison:**")
-        st.write(f"- Old logic: {total_xg:.3f} > {threshold:.1f}? = {'OVER' if total_xg > threshold else 'UNDER'}")
-        st.write(f"- New logic: {adjusted_xg:.3f} > {threshold:.1f}? = {prediction['totals']['original_direction']}")
+prob = prediction['probabilities']
 
-# ========== FEEDBACK ==========
-record_outcome_clean(prediction)
+col1, col2, col3 = st.columns(3)
 
-# ========== SYSTEM REPORT ==========
+with col1:
+    st.metric("Home Win", f"{prob['home_win_probability']*100:.1f}%")
+    st.metric("Draw", f"{prob['draw_probability']*100:.1f}%")
+    st.metric("Away Win", f"{prob['away_win_probability']*100:.1f}%")
+
+with col2:
+    st.metric("Over 2.5", f"{prob['over_2_5_probability']*100:.1f}%")
+    st.metric("Under 2.5", f"{prob['under_2_5_probability']*100:.1f}%")
+    st.metric("BTTS", f"{prob['btts_probability']*100:.1f}%")
+
+with col3:
+    st.write("**Most Likely Scores:**")
+    for score, prob_val in prob['top_scores'][:3]:
+        st.write(f"{score}: {prob_val*100:.1f}%")
+
+# ========== DATA ANALYSIS QUERIES ==========
 st.divider()
-st.subheader("📤 System Report")
+st.subheader("📈 DATA ANALYSIS (After Collection)")
 
-winner_stats = st.session_state.proven_system.get_pattern_stats(winner_key)
-totals_stats = st.session_state.proven_system.get_pattern_stats(totals_key)
+if get_match_stats()['total_matches'] >= 10:
+    st.info(f"**{get_match_stats()['total_matches']} matches collected** - Ready for analysis")
+    
+    if st.button("Run Initial Analysis", use_container_width=True):
+        # Show sample analysis
+        st.write("**Sample Analysis Queries:**")
+        st.code("""
+        -- 1. Accuracy by confidence level
+        SELECT 
+            FLOOR(winner_confidence/10)*10 as confidence_decile,
+            COUNT(*) as matches,
+            AVG(CASE WHEN predicted_winner = actual_winner THEN 1.0 ELSE 0.0 END) as accuracy
+        FROM match_predictions
+        GROUP BY confidence_decile
+        ORDER BY confidence_decile;
+        
+        -- 2. Finishing adjustment effectiveness
+        SELECT 
+            CASE 
+                WHEN finishing_sum > 0.2 THEN 'OVERPERFORMERS'
+                WHEN finishing_sum < -0.2 THEN 'UNDERPERFORMERS'
+                ELSE 'NEUTRAL'
+            END as group,
+            COUNT(*) as matches,
+            AVG(CASE WHEN predicted_totals_direction = actual_over_under THEN 1.0 ELSE 0.0 END) as accuracy
+        FROM match_predictions
+        GROUP BY group;
+        """)
+        
+        # Try to run actual queries
+        try:
+            if supabase:
+                # Simple accuracy query
+                response = supabase.table("match_predictions").select(
+                    "predicted_winner", "actual_winner", "predicted_totals_direction", "actual_over_under"
+                ).execute()
+                
+                if response.data:
+                    df_results = pd.DataFrame(response.data)
+                    winner_accuracy = (df_results['predicted_winner'] == df_results['actual_winner']).mean()
+                    totals_accuracy = (df_results['predicted_totals_direction'] == df_results['actual_over_under']).mean()
+                    
+                    st.metric("Winner Accuracy", f"{winner_accuracy*100:.1f}%")
+                    st.metric("Totals Accuracy", f"{totals_accuracy*100:.1f}%")
+        except:
+            pass
+else:
+    st.warning(f"**{get_match_stats()['total_matches']} matches collected** - Need at least 10 for meaningful analysis")
 
-winner_success_rate = winner_stats['success'] / winner_stats['total'] if winner_stats['total'] > 0 else 0
-totals_success_rate = totals_stats['success'] / totals_stats['total'] if totals_stats['total'] > 0 else 0
-
-report = f"""🎯 FOOTBALL INTELLIGENCE ENGINE v8.2 - LOGIC BUG FIXED
-Match: {home_team} vs {away_team}
-League: {selected_league}
-Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-Version: 8.2 (Logic bug fixed, no crutches)
-
-🎯 BETTING ADVICE:
-{recommendation['icon']} {recommendation['text']}
-{recommendation['subtext']}
-Type: {recommendation['proven_type']}
-Reason: {recommendation['reason']}
-Confidence: {recommendation['confidence']:.0f}/100
-Stake: {recommendation['stake']}
-
-🎯 WINNER ANALYSIS:
-Final bet: {prediction['winner']['team']} ({prediction['winner']['type']})
-Original algorithm: {prediction['winner']['original_prediction']} ({prediction['winner']['original_confidence_score']:.1f}%)
-Final confidence: {prediction['winner']['confidence_score']:.0f}/100 ({prediction['winner']['confidence']})
-Betting action: {prediction['winner']['betting_action']}
-Reason: {prediction['winner']['reason']}
-Probability: {prediction['winner']['probability']*100:.1f}%
-Stake: {prediction['winner']['stake']}
-70% bug zone: {prediction['winner']['has_confidence_bug']}
-Pattern: {winner_key}
-Pattern stats: {winner_stats['success']}/{winner_stats['total']} wins ({winner_success_rate:.0%})
-
-🎯 TOTALS ANALYSIS (LOGIC FIXED):
-Final bet: {prediction['totals']['direction']} 2.5
-Original algorithm: {prediction['totals']['original_direction']} ({prediction['totals']['original_confidence_score']:.1f}%)
-Final confidence: {prediction['totals']['confidence_score']:.0f}/100 ({prediction['totals']['confidence']})
-Betting action: {prediction['totals']['betting_action']}
-Reason: {prediction['totals']['reason']}
-Probability: {prediction['totals']['probability']*100:.1f}%
-Stake: {prediction['totals']['stake']}
-Variance effect: {prediction['totals']['variance_effect']}
-Raw xG: {prediction['totals']['total_xg']:.2f}
-Adj. xG: {prediction['totals'].get('adjusted_xg', prediction['totals']['total_xg']):.2f}
-Finishing Impact: {prediction['totals'].get('finishing_impact', 0):.1%}
-Pattern: {prediction['totals']['original_finishing_alignment']} + {prediction['totals']['original_total_category']}
-Home finishing: {prediction['totals'].get('home_finishing', 0):.2f}
-Away finishing: {prediction['totals'].get('away_finishing', 0):.2f}
-Pattern stats: {totals_stats['success']}/{totals_stats['total']} wins ({totals_success_rate:.0%})
-
-📊 EXPECTED GOALS:
-{home_team}: {prediction['expected_goals']['home']:.2f} xG
-{away_team}: {prediction['expected_goals']['away']:.2f} xG
-Total: {prediction['expected_goals']['total']:.2f} xG
-
-🎲 PROBABILITIES:
-Home win: {prediction['probabilities']['home_win_probability']*100:.1f}%
-Draw: {prediction['probabilities']['draw_probability']*100:.1f}%
-Away win: {prediction['probabilities']['away_win_probability']*100:.1f}%
-Over 2.5: {prediction['probabilities']['over_2_5_probability']*100:.1f}%
-Under 2.5: {prediction['probabilities']['under_2_5_probability']*100:.1f}%
-Most likely score: {prediction['probabilities']['most_likely_score']}
-
----
-✅ LOGIC BUG FIXED:
-- Totals predictions now correctly incorporate finishing data
-- Old bug: Used raw xG ignoring finishing tendencies
-- New logic: adjusted_xg = total_xg × (1 + finishing_impact)
-- finishing_impact = (home_finish + away_finish) × 0.6
-
-🔧 ACTIVE ADJUSTMENTS:
-70% Zone (68-72%): BET OPPOSITE (confirmed bug)
-90% Zone (88-94%): CAUTION (overconfidence trap)
-100% Zone (99-100%): BET STRONGLY (confirmed strength)
-High Variance: Directional amplification/penalty
-
-🔄 REMOVED CRUTCHES:
-- TOTALS anti-patterns (algorithm can handle these now)
-- TOTALS success patterns (algorithm should get these right)
-
-📊 PATTERN STATISTICS:
-Total patterns tracked: {len(st.session_state.proven_system.pattern_memory)}
-Qualifying (≥3 matches): {len([v for v in st.session_state.proven_system.pattern_memory.values() if v['total'] >= 3])}
-Strong patterns (>70%): {len([v for v in st.session_state.proven_system.pattern_memory.values() if v['total'] >= 3 and v['success']/v['total'] > 0.7])}
-Weak patterns (<40%): {len([v for v in st.session_state.proven_system.pattern_memory.values() if v['total'] >= 3 and v['success']/v['total'] < 0.4])}
-
-📈 TESTING PHASE:
-- Running without empirical crutches
-- Letting fixed algorithm do its job
-- Monitoring for true algorithm weaknesses
-"""
-
-st.code(report, language="text")
-
-st.download_button(
-    label="📥 Download System Report",
-    data=report,
-    file_name=f"system_{home_team}_vs_{away_team}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-    mime="text/plain",
-    use_container_width=True
-)
+# ========== FOOTER ==========
+st.divider()
+st.caption(f"📊 Data Collection Mode | Version: {prediction.get('version', '1.0')} | Matches in DB: {get_match_stats()['total_matches']}")
