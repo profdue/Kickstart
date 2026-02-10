@@ -68,12 +68,12 @@ def save_match_prediction(prediction, actual_score, league_name):
         total_goals = home_goals + away_goals
         
         # Get engine calculations
-        winner_pred = prediction['winner']
-        totals_pred = prediction['totals']
+        winner_pred = prediction.get('winner', {})
+        totals_pred = prediction.get('totals', {})
         
-        # Calculate all required values
-        home_xg = prediction['expected_goals']['home']
-        away_xg = prediction['expected_goals']['away']
+        # Calculate all required values with safe defaults
+        home_xg = prediction.get('expected_goals', {}).get('home', 0)
+        away_xg = prediction.get('expected_goals', {}).get('away', 0)
         delta_xg = home_xg - away_xg
         
         home_finish = totals_pred.get('home_finishing', 0)
@@ -81,20 +81,36 @@ def save_match_prediction(prediction, actual_score, league_name):
         finishing_sum = home_finish + away_finish
         finishing_impact = totals_pred.get('finishing_impact', finishing_sum * 0.6)
         
-        # Get defense stats (from team data - need to pass these in)
-        home_defense = prediction.get('home_defense', 0)
-        away_defense = prediction.get('away_defense', 0)
+        # Get defense stats from engine calculations
+        engine_calc = prediction.get('engine_calculations', {})
+        home_defense = engine_calc.get('home_defense', 0)
+        away_defense = engine_calc.get('away_defense', 0)
         
         # Calculate adjusted xG values
         home_adjusted_xg = home_xg + home_finish - away_defense
         away_adjusted_xg = away_xg + away_finish - home_defense
         
+        # Safely get prediction values with defaults
+        predicted_winner = winner_pred.get('original_prediction', winner_pred.get('type', 'UNKNOWN'))
+        winner_confidence = float(winner_pred.get('original_confidence_score', 
+                                    winner_pred.get('confidence_score', 50)))
+        
+        predicted_direction = totals_pred.get('original_direction', 
+                                             totals_pred.get('direction', 'UNKNOWN'))
+        totals_confidence = float(totals_pred.get('original_confidence_score',
+                                                totals_pred.get('confidence_score', 50)))
+        
+        finishing_alignment = totals_pred.get('original_finishing_alignment',
+                                            totals_pred.get('finishing_alignment', 'UNKNOWN'))
+        total_category = totals_pred.get('original_total_category',
+                                        totals_pred.get('total_category', 'UNKNOWN'))
+        
         # Prepare complete data record
         match_data = {
             # Match info
             'league': league_name,
-            'home_team': prediction['home_team'],
-            'away_team': prediction['away_team'],
+            'home_team': prediction.get('home_team', 'Unknown'),
+            'away_team': prediction.get('away_team', 'Unknown'),
             'match_date': datetime.now().date().isoformat(),
             
             # Raw inputs
@@ -109,20 +125,21 @@ def save_match_prediction(prediction, actual_score, league_name):
             'home_adjusted_xg': float(home_adjusted_xg),
             'away_adjusted_xg': float(away_adjusted_xg),
             'delta_xg': float(delta_xg),
-            'total_xg': float(totals_pred['total_xg']),
+            'total_xg': float(totals_pred.get('total_xg', home_xg + away_xg)),
             'finishing_sum': float(finishing_sum),
             'finishing_impact': float(finishing_impact),
-            'adjusted_total_xg': float(totals_pred.get('adjusted_xg', totals_pred['total_xg'])),
+            'adjusted_total_xg': float(totals_pred.get('adjusted_xg', 
+                                                     totals_pred.get('total_xg', home_xg + away_xg))),
             
             # Predictions
-            'predicted_winner': winner_pred['original_prediction'],
-            'winner_confidence': float(winner_pred['original_confidence_score']),
-            'predicted_totals_direction': totals_pred['original_direction'],
-            'totals_confidence': float(totals_pred['original_confidence_score']),
+            'predicted_winner': predicted_winner,
+            'winner_confidence': winner_confidence,
+            'predicted_totals_direction': predicted_direction,
+            'totals_confidence': totals_confidence,
             
             # Categories (for reference)
-            'finishing_alignment': totals_pred.get('original_finishing_alignment', 'UNKNOWN'),
-            'total_xg_category': totals_pred.get('original_total_category', 'UNKNOWN'),
+            'finishing_alignment': finishing_alignment,
+            'total_xg_category': total_category,
             
             # Actual results
             'actual_home_goals': home_goals,
@@ -138,8 +155,17 @@ def save_match_prediction(prediction, actual_score, league_name):
         
         # Save to Supabase
         if supabase:
-            response = supabase.table("match_predictions").insert(match_data).execute()
-            return True, "✅ Complete match data saved to database"
+            try:
+                response = supabase.table("match_predictions").insert(match_data).execute()
+                if hasattr(response, 'data') and response.data:
+                    return True, "✅ Complete match data saved to database"
+                else:
+                    return False, "❌ Failed to save to database"
+            except Exception as e:
+                # Fallback: save locally
+                with open("match_predictions_backup.json", "a") as f:
+                    f.write(json.dumps(match_data) + "\n")
+                return True, f"⚠️ Saved locally (Supabase error: {str(e)})"
         else:
             # Fallback: save locally
             with open("match_predictions_backup.json", "a") as f:
@@ -147,6 +173,10 @@ def save_match_prediction(prediction, actual_score, league_name):
             return True, "⚠️ Saved locally (no Supabase connection)"
         
     except Exception as e:
+        # Log the full error for debugging
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Detailed error: {error_details}")
         return False, f"❌ Error saving match data: {str(e)}"
 
 def get_match_stats():
