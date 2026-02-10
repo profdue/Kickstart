@@ -285,7 +285,8 @@ class WinnerPredictor:
             'confidence_category': confidence_category,
             'delta': delta,
             'home_adjusted_xg': home_adjusted_xg,
-            'away_adjusted_xg': away_adjusted_xg
+            'away_adjusted_xg': away_adjusted_xg,
+            'original_confidence_score': winner_confidence
         }
 
 class TotalsPredictor:
@@ -426,6 +427,7 @@ class TotalsPredictor:
             'finishing_impact': finishing_impact,
             'confidence': confidence_category,
             'confidence_score': base_confidence,
+            'original_confidence_score': base_confidence,
             'finishing_alignment': finishing_alignment,
             'original_finishing_alignment': finishing_alignment,
             'total_category': total_category,
@@ -758,6 +760,9 @@ with col1:
                   prob['away_win_probability'] if winner_pred['type'] == 'AWAY' else \
                   prob['draw_probability']
     
+    # FIXED: Use .get() method to safely access 'delta' key
+    delta_value = winner_pred.get('delta', 0)
+    
     st.markdown(f"""
     <div style="background-color: #1E293B; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
         <h3 style="color: white; margin: 0;">WINNER</h3>
@@ -768,10 +773,10 @@ with col1:
             {winner_prob*100:.1f}%
         </div>
         <div style="font-size: 16px; color: white;">
-            {winner_pred['confidence']} | Confidence: {winner_pred['confidence_score']:.0f}/100
+            {winner_pred.get('confidence', 'N/A')} | Confidence: {winner_pred.get('confidence_score', 0):.0f}/100
         </div>
         <div style="font-size: 14px; color: #D1D5DB; margin-top: 10px;">
-            ΔxG: {winner_pred['delta']:.2f}
+            ΔxG: {delta_value:.2f}
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -793,10 +798,10 @@ with col2:
             {totals_prob*100:.1f}%
         </div>
         <div style="font-size: 16px; color: white;">
-            {totals_pred['confidence']} | Confidence: {totals_pred['confidence_score']:.0f}/100
+            {totals_pred['confidence']} | Confidence: {totals_pred.get('confidence_score', 0):.0f}/100
         </div>
         <div style="font-size: 14px; color: #D1D5DB; margin-top: 10px;">
-            Raw xG: {totals_pred['total_xg']:.2f} | Adj. xG: {totals_pred['adjusted_xg']:.2f}
+            Raw xG: {totals_pred.get('total_xg', 0):.2f} | Adj. xG: {totals_pred.get('adjusted_xg', 0):.2f}
         </div>
     </div>
     """, unsafe_allow_html=True)
