@@ -2,23 +2,27 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 import warnings
+from collections import defaultdict
 import json
+import pickle
+import hashlib
 import os
 from supabase import create_client, Client
 warnings.filterwarnings('ignore')
 
 # Page config
 st.set_page_config(
-    page_title="⚽ Football Intelligence Engine - LEAGUE-SPECIFIC MODELS",
-    page_icon="🎯",
+    page_title="⚽ Football Intelligence Engine - DATA COLLECTION MODE",
+    page_icon="📊",
     layout="wide"
 )
 
-st.title("🎯 Football Intelligence Engine - LEAGUE-SPECIFIC MODELS")
+st.title("📊 Football Intelligence Engine - DATA COLLECTION MODE")
 st.markdown("""
-    **INDEPENDENT LEAGUE ENGINES** - Each league optimized based on 35-match analysis
+    **FRESH START** - Collecting complete match data for analysis
+    *40+ matches already recorded - building clean dataset*
 """)
 
 # ========== SUPABASE INITIALIZATION ==========
@@ -34,448 +38,108 @@ def init_supabase():
             
         return create_client(supabase_url, supabase_key)
     except Exception as e:
-        st.error(f"Error initializing Supabase: {str(e)}")
+        st.error(f"Error initializing Supabase: {e}")
         return None
 
 # Initialize
 supabase = init_supabase()
 
-# ========== LEAGUE-SPECIFIC ENGINES ==========
+# ========== CONSTANTS ==========
+MAX_GOALS_CALC = 8
 
-class PremierLeagueEngine:
-    """COMPLETE REBUILD - Current model is 78% wrong (22% accuracy)"""
-    
-    def __init__(self):
-        self.name = "Premier League"
-        self.winner_accuracy = 0.222  # From 35-match analysis
-        self.totals_accuracy = 0.444  # From 35-match analysis
-        self.model_type = "REBUILD_FROM_SCRATCH"
-        self.version = "v2.0_premier_fixed"
-        
-    def predict_winner(self, home_xg, away_xg, home_finish, away_finish):
-        """SCRAP current model - use simple proven rules"""
-        finish_diff = home_finish - away_finish
-        xg_diff = home_xg - away_xg
-        
-        # Rule 1: Strong finishing advantage wins
-        if finish_diff > 0.15 and xg_diff > 0:
-            confidence = min(80, 60 + abs(finish_diff) * 100)
-            return "HOME", confidence, "FINISHING_ADVANTAGE"
-        elif finish_diff < -0.15 and xg_diff < 0:
-            confidence = min(80, 60 + abs(finish_diff) * 100)
-            return "AWAY", confidence, "FINISHING_ADVANTAGE"
-        
-        # Rule 2: Large xG difference wins (high threshold for low-accuracy league)
-        elif xg_diff > 0.7:
-            confidence = 55
-            return "HOME", confidence, "XG_ADVANTAGE"
-        elif xg_diff < -0.7:
-            confidence = 55
-            return "AWAY", confidence, "XG_ADVANTAGE"
-        
-        # Default: Draw (safest for unpredictable league)
-        else:
-            confidence = 50
-            return "DRAW", confidence, "CAUTIOUS"
-    
-    def predict_totals(self, total_xg, home_finish, away_finish):
-        """Premier League: xG correlation = -0.03 (USELESS) - Use finishing stats"""
-        avg_finish = (home_finish + away_finish) / 2
-        
-        if avg_finish > 0.1:
-            confidence = 60
-            return "OVER", confidence, "GOOD_FINISHERS"
-        elif avg_finish < -0.1:
-            confidence = 60
-            return "UNDER", confidence, "POOR_FINISHERS"
-        else:
-            # Neutral: slight edge to OVER for entertainment
-            confidence = 52
-            return "OVER", confidence, "NEUTRAL"
-            
-    def get_expected_improvement(self):
-        return {
-            "winner": {"current": 22.2, "expected": 45.0, "improvement": "+22.8%"},
-            "totals": {"current": 44.4, "expected": 57.5, "improvement": "+13.1%"}
-        }
-
-class SerieAEngine:
-    """LEVERAGE TOTALS STRENGTH - 75% totals accuracy"""
-    
-    def __init__(self):
-        self.name = "Serie A"
-        self.winner_accuracy = 0.500
-        self.totals_accuracy = 0.750  # EXCELLENT from analysis
-        self.model_type = "TOTALS_SPECIALIST"
-        self.version = "v2.0_serie_totals"
-        self.xg_calibration = 1.34  # Goals = xG × 1.34 (+34%)
-        
-    def predict_winner(self, home_xg, away_xg, home_finish, away_finish):
-        """Standard approach - focus resources on totals"""
-        finish_diff = home_finish - away_finish
-        xg_diff = home_xg - away_xg
-        
-        if xg_diff > 0.5 and finish_diff > 0.1:
-            confidence = 70
-            return "HOME", confidence, "COMBINED_ADVANTAGE"
-        elif xg_diff < -0.5 and finish_diff < -0.1:
-            confidence = 70
-            return "AWAY", confidence, "COMBINED_ADVANTAGE"
-        elif xg_diff > 0.5:
-            confidence = 60
-            return "HOME", confidence, "XG_ADVANTAGE"
-        elif xg_diff < -0.5:
-            confidence = 60
-            return "AWAY", confidence, "XG_ADVANTAGE"
-        else:
-            confidence = 50
-            return "DRAW", confidence, "BALANCED"
-    
-    def predict_totals(self, total_xg, home_finish, away_finish):
-        """Serie A: 75% accuracy for OVER predictions"""
-        calibrated_xg = total_xg * self.xg_calibration
-        
-        if calibrated_xg > 2.2:  # Lower threshold for high-scoring league
-            confidence = 80
-            return "OVER", confidence, "HIGH_SCORING_LEAGUE"
-        elif total_xg < 1.5:  # Only predict UNDER for very low xG
-            confidence = 60
-            return "UNDER", confidence, "VERY_LOW_XG"
-        else:
-            confidence = 75  # 75% accuracy from analysis
-            return "OVER", confidence, "LEAGUE_TREND"
-            
-    def get_expected_improvement(self):
-        return {
-            "winner": {"current": 50.0, "expected": 57.5, "improvement": "+7.5%"},
-            "totals": {"current": 75.0, "expected": 82.5, "improvement": "+7.5%"}
-        }
-
-class Ligue1Engine:
-    """LEVERAGE WINNER STRENGTH - 75% winner accuracy"""
-    
-    def __init__(self):
-        self.name = "Ligue 1"
-        self.winner_accuracy = 0.750  # EXCELLENT from analysis
-        self.totals_accuracy = 0.375  # TERRIBLE from analysis
-        self.model_type = "WINNER_SPECIALIST"
-        self.version = "v2.0_ligue_winners"
-        self.xg_calibration = 0.61  # Goals = xG × 0.61 (-39%)
-        
-    def predict_winner(self, home_xg, away_xg, home_finish, away_finish):
-        """Ligue 1: xG difference works well (75% accuracy)"""
-        xg_diff = home_xg - away_xg
-        
-        # Simple threshold from analysis
-        if xg_diff > 0.3:
-            confidence = 80
-            return "HOME", confidence, "XG_ADVANTAGE"
-        elif xg_diff < -0.3:
-            confidence = 80
-            return "AWAY", confidence, "XG_ADVANTAGE"
-        else:
-            confidence = 50
-            return "DRAW", confidence, "CLOSE_MATCH"
-    
-    def predict_totals(self, total_xg, home_finish, away_finish):
-        """Ligue 1: Goals = 61% of xG (from analysis)"""
-        calibrated_xg = total_xg * self.xg_calibration
-        
-        if calibrated_xg > 2.8:  # Higher threshold for low-scoring league
-            confidence = 65
-            return "OVER", confidence, "CALIBRATED_XG"
-        else:
-            confidence = 65
-            return "UNDER", confidence, "CALIBRATED_XG"
-            
-    def get_expected_improvement(self):
-        return {
-            "winner": {"current": 75.0, "expected": 77.5, "improvement": "+2.5%"},
-            "totals": {"current": 37.5, "expected": 62.5, "improvement": "+25.0%"}
-        }
-
-class BundesligaEngine:
-    """MODERATE IMPROVEMENT - 50% accuracy across board"""
-    
-    def __init__(self):
-        self.name = "Bundesliga"
-        self.winner_accuracy = 0.500
-        self.totals_accuracy = 0.500
-        self.model_type = "BALANCED_IMPROVEMENT"
-        self.version = "v2.0_bundesliga"
-        self.xg_calibration = 1.15  # Goals slightly exceed xG
-        
-    def predict_winner(self, home_xg, away_xg, home_finish, away_finish):
-        """Standard model with calibration"""
-        finish_diff = home_finish - away_finish
-        xg_diff = home_xg - away_xg
-        
-        if xg_diff > 0.5 and finish_diff > 0.1:
-            confidence = 70
-            return "HOME", confidence, "COMBINED_ADVANTAGE"
-        elif xg_diff < -0.5 and finish_diff < -0.1:
-            confidence = 70
-            return "AWAY", confidence, "COMBINED_ADVANTAGE"
-        elif xg_diff > 0.5:
-            confidence = 60
-            return "HOME", confidence, "XG_ADVANTAGE"
-        elif xg_diff < -0.5:
-            confidence = 60
-            return "AWAY", confidence, "XG_ADVANTAGE"
-        else:
-            confidence = 50
-            return "DRAW", confidence, "BALANCED"
-    
-    def predict_totals(self, total_xg, home_finish, away_finish):
-        """Bundesliga: Goals slightly exceed xG"""
-        calibrated_xg = total_xg * self.xg_calibration
-        
-        if calibrated_xg > 2.7:  # Slightly higher threshold
-            confidence = 65
-            return "OVER", confidence, "CALIBRATED_XG"
-        else:
-            confidence = 65
-            return "UNDER", confidence, "CALIBRATED_XG"
-            
-    def get_expected_improvement(self):
-        return {
-            "winner": {"current": 50.0, "expected": 57.5, "improvement": "+7.5%"},
-            "totals": {"current": 50.0, "expected": 62.5, "improvement": "+12.5%"}
-        }
-
-class LaLigaEngine:
-    """MAINTAIN WINNER STRENGTH - 62.5% winner accuracy"""
-    
-    def __init__(self):
-        self.name = "La Liga"
-        self.winner_accuracy = 0.625  # GOOD from analysis
-        self.totals_accuracy = 0.500
-        self.model_type = "WINNER_FOCUSED"
-        self.version = "v2.0_laliga"
-        self.xg_calibration = 1.1  # Slight calibration
-        
-    def predict_winner(self, home_xg, away_xg, home_finish, away_finish):
-        """La Liga: xG difference works (62.5% accuracy)"""
-        xg_diff = home_xg - away_xg
-        
-        # Lower threshold from analysis (decisive matches)
-        if xg_diff > 0.4:
-            confidence = 75
-            return "HOME", confidence, "XG_ADVANTAGE"
-        elif xg_diff < -0.4:
-            confidence = 75
-            return "AWAY", confidence, "XG_ADVANTAGE"
-        else:
-            confidence = 50
-            return "DRAW", confidence, "CLOSE_MATCH"
-    
-    def predict_totals(self, total_xg, home_finish, away_finish):
-        """Standard with slight calibration"""
-        calibrated_xg = total_xg * self.xg_calibration
-        
-        if calibrated_xg > 2.6:
-            confidence = 60
-            return "OVER", confidence, "CALIBRATED_XG"
-        else:
-            confidence = 60
-            return "UNDER", confidence, "CALIBRATED_XG"
-            
-    def get_expected_improvement(self):
-        return {
-            "winner": {"current": 62.5, "expected": 67.5, "improvement": "+5.0%"},
-            "totals": {"current": 50.0, "expected": 57.5, "improvement": "+7.5%"}
-        }
-
-class EredivisieEngine:
-    """Similar to Bundesliga (estimated)"""
-    
-    def __init__(self):
-        self.name = "Eredivisie"
-        self.winner_accuracy = 0.500  # Estimated
-        self.totals_accuracy = 0.500  # Estimated
-        self.model_type = "ESTIMATED_MODEL"
-        self.version = "v2.0_eredivisie"
-        self.xg_calibration = 1.2  # High scoring league
-        
-    def predict_winner(self, home_xg, away_xg, home_finish, away_finish):
-        """Use Bundesliga logic for now"""
-        finish_diff = home_finish - away_finish
-        xg_diff = home_xg - away_xg
-        
-        if xg_diff > 0.5 and finish_diff > 0.1:
-            confidence = 65
-            return "HOME", confidence, "COMBINED_ADVANTAGE"
-        elif xg_diff < -0.5 and finish_diff < -0.1:
-            confidence = 65
-            return "AWAY", confidence, "COMBINED_ADVANTAGE"
-        elif xg_diff > 0.5:
-            confidence = 55
-            return "HOME", confidence, "XG_ADVANTAGE"
-        elif xg_diff < -0.5:
-            confidence = 55
-            return "AWAY", confidence, "XG_ADVANTAGE"
-        else:
-            confidence = 50
-            return "DRAW", confidence, "BALANCED"
-    
-    def predict_totals(self, total_xg, home_finish, away_finish):
-        """Eredivisie: High scoring league"""
-        calibrated_xg = total_xg * self.xg_calibration
-        
-        if calibrated_xg > 2.9:  # Higher threshold for high scoring
-            confidence = 60
-            return "OVER", confidence, "CALIBRATED_XG"
-        else:
-            confidence = 60
-            return "UNDER", confidence, "CALIBRATED_XG"
-            
-    def get_expected_improvement(self):
-        return {
-            "winner": {"current": 50.0, "expected": 55.0, "improvement": "+5.0%"},
-            "totals": {"current": 50.0, "expected": 60.0, "improvement": "+10.0%"}
-        }
-
-class RFPLEngine:
-    """Similar to Bundesliga (estimated)"""
-    
-    def __init__(self):
-        self.name = "RFPL"
-        self.winner_accuracy = 0.500  # Estimated
-        self.totals_accuracy = 0.500  # Estimated
-        self.model_type = "ESTIMATED_MODEL"
-        self.version = "v2.0_rfpl"
-        self.xg_calibration = 1.0  # No calibration data
-        
-    def predict_winner(self, home_xg, away_xg, home_finish, away_finish):
-        """Use Bundesliga logic for now"""
-        finish_diff = home_finish - away_finish
-        xg_diff = home_xg - away_xg
-        
-        if xg_diff > 0.5 and finish_diff > 0.1:
-            confidence = 65
-            return "HOME", confidence, "COMBINED_ADVANTAGE"
-        elif xg_diff < -0.5 and finish_diff < -0.1:
-            confidence = 65
-            return "AWAY", confidence, "COMBINED_ADVANTAGE"
-        elif xg_diff > 0.5:
-            confidence = 55
-            return "HOME", confidence, "XG_ADVANTAGE"
-        elif xg_diff < -0.5:
-            confidence = 55
-            return "AWAY", confidence, "XG_ADVANTAGE"
-        else:
-            confidence = 50
-            return "DRAW", confidence, "BALANCED"
-    
-    def predict_totals(self, total_xg, home_finish, away_finish):
-        """Standard approach"""
-        calibrated_xg = total_xg * self.xg_calibration
-        
-        if calibrated_xg > 2.5:
-            confidence = 60
-            return "OVER", confidence, "STANDARD"
-        else:
-            confidence = 60
-            return "UNDER", confidence, "STANDARD"
-            
-    def get_expected_improvement(self):
-        return {
-            "winner": {"current": 50.0, "expected": 55.0, "improvement": "+5.0%"},
-            "totals": {"current": 50.0, "expected": 60.0, "improvement": "+10.0%"}
-        }
-
-# ========== LEAGUE ENGINE FACTORY ==========
-
-class LeagueEngineFactory:
-    """Factory to create the right engine for each league"""
-    
-    ENGINES = {
-        "Premier League": PremierLeagueEngine,
-        "Serie A": SerieAEngine,
-        "Ligue 1": Ligue1Engine,
-        "Bundesliga": BundesligaEngine,
-        "La Liga": LaLigaEngine,
-        "Eredivisie": EredivisieEngine,
-        "RFPL": RFPLEngine,
-    }
-    
-    @staticmethod
-    def create_engine(league_name):
-        """Create the appropriate engine for the league"""
-        engine_class = LeagueEngineFactory.ENGINES.get(league_name)
-        if engine_class:
-            return engine_class()
-        else:
-            # Default to Bundesliga engine
-            return BundesligaEngine()
-    
-    @staticmethod
-    def get_league_stats():
-        """Get accuracy stats from 35-match analysis"""
-        return {
-            "Premier League": {"winner": 22.2, "totals": 44.4},
-            "Serie A": {"winner": 50.0, "totals": 75.0},
-            "Ligue 1": {"winner": 75.0, "totals": 37.5},
-            "Bundesliga": {"winner": 50.0, "totals": 50.0},
-            "La Liga": {"winner": 62.5, "totals": 50.0},
-            "Eredivisie": {"winner": 50.0, "totals": 50.0},
-            "RFPL": {"winner": 50.0, "totals": 50.0},
-        }
+# League-specific adjustments
+LEAGUE_ADJUSTMENTS = {
+    "Premier League": {"over_threshold": 2.5, "under_threshold": 2.5, "avg_goals": 2.79, "very_high_threshold": 3.3},
+    "Bundesliga": {"over_threshold": 3.0, "under_threshold": 2.2, "avg_goals": 3.20, "very_high_threshold": 3.5},
+    "Serie A": {"over_threshold": 2.7, "under_threshold": 2.3, "avg_goals": 2.40, "very_high_threshold": 3.0},
+    "La Liga": {"over_threshold": 2.6, "under_threshold": 2.4, "avg_goals": 2.61, "very_high_threshold": 3.2},
+    "Ligue 1": {"over_threshold": 2.8, "under_threshold": 2.2, "avg_goals": 2.85, "very_high_threshold": 3.3},
+    "Eredivisie": {"over_threshold": 2.9, "under_threshold": 2.1, "avg_goals": 3.10, "very_high_threshold": 3.6},
+    "RFPL": {"over_threshold": 2.5, "under_threshold": 2.2, "avg_goals": 2.53, "very_high_threshold": 3.1}
+}
 
 # ========== DATA COLLECTION FUNCTIONS ==========
 
-def save_match_prediction(prediction_data, actual_score, league_name, engine):
-    """Save match prediction data to Supabase"""
+def save_match_prediction(prediction, actual_score, league_name):
+    """Save COMPLETE match prediction data to Supabase"""
     try:
         # Parse actual score
         home_goals, away_goals = map(int, actual_score.split('-'))
         total_goals = home_goals + away_goals
         
-        # Calculate actual results
-        actual_winner = 'HOME' if home_goals > away_goals else 'AWAY' if away_goals > home_goals else 'DRAW'
-        actual_over_under = 'OVER' if total_goals > 2.5 else 'UNDER'
+        # Get engine calculations
+        winner_pred = prediction['winner']
+        totals_pred = prediction['totals']
         
-        # Prepare match data
+        # Calculate all required values
+        home_xg = prediction['expected_goals']['home']
+        away_xg = prediction['expected_goals']['away']
+        delta_xg = home_xg - away_xg
+        
+        home_finish = totals_pred.get('home_finishing', 0)
+        away_finish = totals_pred.get('away_finishing', 0)
+        finishing_sum = home_finish + away_finish
+        finishing_impact = totals_pred.get('finishing_impact', finishing_sum * 0.6)
+        
+        # Get defense stats (from team data - need to pass these in)
+        home_defense = prediction.get('home_defense', 0)
+        away_defense = prediction.get('away_defense', 0)
+        
+        # Calculate adjusted xG values
+        home_adjusted_xg = home_xg + home_finish - away_defense
+        away_adjusted_xg = away_xg + away_finish - home_defense
+        
+        # Prepare complete data record
         match_data = {
-            "match_date": datetime.now().date().isoformat(),
-            "league": league_name,
-            "home_team": prediction_data.get('home_team', 'Unknown'),
-            "away_team": prediction_data.get('away_team', 'Unknown'),
-            "home_xg": float(prediction_data.get('home_xg', 0)),
-            "away_xg": float(prediction_data.get('away_xg', 0)),
-            "home_finishing_vs_xg": float(prediction_data.get('home_finish', 0)),
-            "away_finishing_vs_xg": float(prediction_data.get('away_finish', 0)),
-            "home_defense_vs_xga": float(prediction_data.get('home_defense', 0)),
-            "away_defense_vs_xga": float(prediction_data.get('away_defense', 0)),
-            "home_adjusted_xg": float(prediction_data.get('home_adjusted_xg', 0)),
-            "away_adjusted_xg": float(prediction_data.get('away_adjusted_xg', 0)),
-            "delta_xg": float(prediction_data.get('delta_xg', 0)),
-            "total_xg": float(prediction_data.get('total_xg', 0)),
-            "finishing_sum": float(prediction_data.get('finishing_sum', 0)),
-            "finishing_impact": float(prediction_data.get('finishing_impact', 0)),
-            "adjusted_total_xg": float(prediction_data.get('adjusted_total_xg', 0)),
-            "predicted_winner": prediction_data.get('predicted_winner', 'UNKNOWN'),
-            "winner_confidence": float(prediction_data.get('winner_confidence', 50)),
-            "predicted_totals_direction": prediction_data.get('predicted_totals', 'UNKNOWN'),
-            "totals_confidence": float(prediction_data.get('totals_confidence', 50)),
-            "finishing_alignment": prediction_data.get('finishing_alignment', 'NEUTRAL'),
-            "total_xg_category": prediction_data.get('total_xg_category', 'UNKNOWN'),
-            "actual_home_goals": home_goals,
-            "actual_away_goals": away_goals,
-            "actual_total_goals": total_goals,
-            "actual_winner": actual_winner,
-            "actual_over_under": actual_over_under,
-            "model_version": engine.version,
-            "notes": f"League-specific engine: {engine.model_type}"
+            # Match info
+            'league': league_name,
+            'home_team': prediction['home_team'],
+            'away_team': prediction['away_team'],
+            'match_date': datetime.now().date().isoformat(),
+            
+            # Raw inputs
+            'home_xg': float(home_xg),
+            'away_xg': float(away_xg),
+            'home_finishing_vs_xg': float(home_finish),
+            'away_finishing_vs_xg': float(away_finish),
+            'home_defense_vs_xga': float(home_defense),
+            'away_defense_vs_xga': float(away_defense),
+            
+            # Engine calculations
+            'home_adjusted_xg': float(home_adjusted_xg),
+            'away_adjusted_xg': float(away_adjusted_xg),
+            'delta_xg': float(delta_xg),
+            'total_xg': float(totals_pred['total_xg']),
+            'finishing_sum': float(finishing_sum),
+            'finishing_impact': float(finishing_impact),
+            'adjusted_total_xg': float(totals_pred.get('adjusted_xg', totals_pred['total_xg'])),
+            
+            # Predictions
+            'predicted_winner': winner_pred['original_prediction'],
+            'winner_confidence': float(winner_pred['original_confidence_score']),
+            'predicted_totals_direction': totals_pred['original_direction'],
+            'totals_confidence': float(totals_pred['original_confidence_score']),
+            
+            # Categories (for reference)
+            'finishing_alignment': totals_pred.get('original_finishing_alignment', 'UNKNOWN'),
+            'total_xg_category': totals_pred.get('original_total_category', 'UNKNOWN'),
+            
+            # Actual results
+            'actual_home_goals': home_goals,
+            'actual_away_goals': away_goals,
+            'actual_total_goals': total_goals,
+            'actual_winner': 'HOME' if home_goals > away_goals else 'AWAY' if away_goals > home_goals else 'DRAW',
+            'actual_over_under': 'OVER' if total_goals > 2.5 else 'UNDER',
+            
+            # Model info
+            'model_version': prediction.get('version', 'data_collection_v1'),
+            'notes': f"Collection match"
         }
         
         # Save to Supabase
         if supabase:
             response = supabase.table("match_predictions").insert(match_data).execute()
-            if hasattr(response, 'data') and response.data:
-                return True, "✅ Match data saved to Supabase"
-            else:
-                return False, "❌ Failed to save to Supabase"
+            return True, "✅ Complete match data saved to database"
         else:
             # Fallback: save locally
             with open("match_predictions_backup.json", "a") as f:
@@ -516,10 +180,10 @@ def get_match_stats():
     except:
         return {'total_matches': 0, 'leagues': [], 'league_counts': {}}
 
-# ========== EXPECTED GOALS CALCULATOR ==========
+# ========== CORE PREDICTION ENGINE (ORIGINAL) ==========
 
-class ExpectedGoalsCalculator:
-    """Calculate expected goals (keep your existing logic)"""
+class ExpectedGoalsPredictor:
+    """Expected goals calculation"""
     
     def __init__(self, league_metrics, league_name):
         self.league_metrics = league_metrics
@@ -527,7 +191,7 @@ class ExpectedGoalsCalculator:
         self.league_name = league_name
     
     def predict_expected_goals(self, home_stats, away_stats):
-        """Calculate expected goals - keep your existing logic"""
+        """Calculate expected goals"""
         home_adjGF = home_stats['goals_for_pm'] + 0.6 * home_stats['goals_vs_xg_pm']
         home_adjGA = home_stats['goals_against_pm'] + 0.6 * home_stats['goals_allowed_vs_xga_pm']
         
@@ -552,24 +216,233 @@ class ExpectedGoalsCalculator:
         
         return home_xg, away_xg
 
-def factorial_cache(n, cache={}):
-    if n not in cache:
-        cache[n] = math.factorial(n)
-    return cache[n]
+class WinnerPredictor:
+    """Winner determination"""
+    
+    def predict_winner(self, home_xg, away_xg, home_stats, away_stats):
+        """Predict winner"""
+        home_finishing = home_stats['goals_vs_xg_pm']
+        away_finishing = away_stats['goals_vs_xg_pm']
+        home_defense = home_stats['goals_allowed_vs_xga_pm']
+        away_defense = away_stats['goals_allowed_vs_xga_pm']
+        
+        home_adjusted_xg = home_xg + home_finishing - away_defense
+        away_adjusted_xg = away_xg + away_finishing - home_defense
+        
+        delta = home_adjusted_xg - away_adjusted_xg
+        
+        # Winner determination
+        if delta > 1.2:
+            predicted_winner = "HOME"
+            strength = "STRONG"
+        elif delta > 0.5:
+            predicted_winner = "HOME"
+            strength = "MODERATE"
+        elif delta > 0.2:
+            predicted_winner = "HOME"
+            strength = "SLIGHT"
+        elif delta < -1.2:
+            predicted_winner = "AWAY"
+            strength = "STRONG"
+        elif delta < -0.5:
+            predicted_winner = "AWAY"
+            strength = "MODERATE"
+        elif delta < -0.2:
+            predicted_winner = "AWAY"
+            strength = "SLIGHT"
+        else:
+            predicted_winner = "DRAW"
+            strength = "CLOSE"
+        
+        # Confidence calculation
+        base_confidence = min(100, abs(delta) / max(home_adjusted_xg, away_adjusted_xg, 0.5) * 150)
+        win_rate_diff = home_stats['win_rate'] - away_stats['win_rate']
+        form_bonus = min(20, max(0, win_rate_diff * 40))
+        
+        winner_confidence = min(100, max(30, base_confidence + form_bonus))
+        
+        # Confidence categorization
+        if winner_confidence >= 90:
+            confidence_category = "VERY HIGH"
+        elif winner_confidence >= 75:
+            confidence_category = "VERY HIGH"
+        elif winner_confidence >= 65:
+            confidence_category = "HIGH"
+        elif winner_confidence >= 55:
+            confidence_category = "MEDIUM"
+        elif winner_confidence >= 45:
+            confidence_category = "LOW"
+        else:
+            confidence_category = "VERY LOW"
+        
+        return {
+            'type': predicted_winner,
+            'original_prediction': predicted_winner,
+            'strength': strength,
+            'confidence_score': winner_confidence,
+            'confidence': confidence_category,
+            'original_confidence': f"{winner_confidence:.1f}",
+            'confidence_category': confidence_category,
+            'delta': delta,
+            'home_adjusted_xg': home_adjusted_xg,
+            'away_adjusted_xg': away_adjusted_xg
+        }
 
-def poisson_pmf(k, lam):
-    """Poisson probability mass function"""
-    if lam <= 0 or k < 0:
-        return 0
-    return (math.exp(-lam) * (lam ** k)) / factorial_cache(k)
+class TotalsPredictor:
+    """Totals prediction with FINISHING FIX"""
+    
+    def __init__(self, league_name):
+        self.league_name = league_name
+        self.league_adjustments = LEAGUE_ADJUSTMENTS.get(league_name, LEAGUE_ADJUSTMENTS["Premier League"])
+    
+    def categorize_finishing(self, value):
+        """Finishing categorization"""
+        if value > 0.3:
+            return "STRONG_OVERPERFORM"
+        elif value > 0.1:
+            return "MODERATE_OVERPERFORM"
+        elif value > -0.1:
+            return "NEUTRAL"
+        elif value > -0.3:
+            return "MODERATE_UNDERPERFORM"
+        else:
+            return "STRONG_UNDERPERFORM"
+    
+    def get_finishing_alignment(self, home_finish, away_finish):
+        """Finishing alignment"""
+        home_cat = self.categorize_finishing(home_finish)
+        away_cat = self.categorize_finishing(away_finish)
+        
+        alignment_matrix = {
+            "STRONG_OVERPERFORM": {
+                "STRONG_OVERPERFORM": "HIGH_OVER",
+                "MODERATE_OVERPERFORM": "MED_OVER",
+                "NEUTRAL": "MED_OVER",
+                "MODERATE_UNDERPERFORM": "RISKY",
+                "STRONG_UNDERPERFORM": "HIGH_RISK"
+            },
+            "MODERATE_OVERPERFORM": {
+                "STRONG_OVERPERFORM": "MED_OVER",
+                "MODERATE_OVERPERFORM": "MED_OVER",
+                "NEUTRAL": "LOW_OVER",
+                "MODERATE_UNDERPERFORM": "RISKY",
+                "STRONG_UNDERPERFORM": "HIGH_RISK"
+            },
+            "NEUTRAL": {
+                "STRONG_OVERPERFORM": "MED_OVER",
+                "MODERATE_OVERPERFORM": "LOW_OVER",
+                "NEUTRAL": "NEUTRAL",
+                "MODERATE_UNDERPERFORM": "LOW_UNDER",
+                "STRONG_UNDERPERFORM": "MED_UNDER"
+            },
+            "MODERATE_UNDERPERFORM": {
+                "STRONG_OVERPERFORM": "RISKY",
+                "MODERATE_OVERPERFORM": "RISKY",
+                "NEUTRAL": "LOW_UNDER",
+                "MODERATE_UNDERPERFORM": "MED_UNDER",
+                "STRONG_UNDERPERFORM": "MED_UNDER"
+            },
+            "STRONG_UNDERPERFORM": {
+                "STRONG_OVERPERFORM": "HIGH_RISK",
+                "MODERATE_OVERPERFORM": "RISKY",
+                "NEUTRAL": "MED_UNDER",
+                "MODERATE_UNDERPERFORM": "MED_UNDER",
+                "STRONG_UNDERPERFORM": "HIGH_UNDER"
+            }
+        }
+        
+        return alignment_matrix[home_cat][away_cat]
+    
+    def categorize_total_xg(self, total_xg):
+        """Total xG categories"""
+        very_high_thresh = self.league_adjustments.get('very_high_threshold', 3.3)
+        
+        if total_xg > very_high_thresh:
+            return "VERY_HIGH"
+        elif total_xg > 3.0:
+            return "HIGH"
+        elif total_xg > 2.7:
+            return "MODERATE_HIGH"
+        elif total_xg > 2.3:
+            return "MODERATE_LOW"
+        elif total_xg > 2.0:
+            return "LOW"
+        else:
+            return "VERY_LOW"
+    
+    def predict_totals(self, home_xg, away_xg, home_stats, away_stats):
+        """Predict totals with FINISHING FIX"""
+        total_xg = home_xg + away_xg
+        home_finish = home_stats['goals_vs_xg_pm']
+        away_finish = away_stats['goals_vs_xg_pm']
+        
+        # THE FIX: Apply finishing impact
+        finishing_impact = (home_finish + away_finish) * 0.6
+        adjusted_xg = total_xg * (1 + finishing_impact)
+        
+        over_threshold = self.league_adjustments['over_threshold']
+        
+        # Use ADJUSTED xG for decision
+        base_direction = "OVER" if adjusted_xg > over_threshold else "UNDER"
+        
+        # Finishing alignment
+        finishing_alignment = self.get_finishing_alignment(home_finish, away_finish)
+        total_category = self.categorize_total_xg(total_xg)
+        
+        # Base confidence
+        base_confidence = 60
+        
+        # Risk assessment
+        risk_flags = []
+        if abs(home_finish) > 0.4 or abs(away_finish) > 0.4:
+            risk_flags.append("HIGH_VARIANCE_TEAM")
+        
+        # CLOSE TO THRESHOLD with adjusted xG
+        lower_thresh = self.league_adjustments['under_threshold'] - 0.1
+        upper_thresh = self.league_adjustments['over_threshold'] + 0.1
+        if lower_thresh < adjusted_xg < upper_thresh:
+            risk_flags.append("CLOSE_TO_THRESHOLD")
+            base_confidence -= 10
+        
+        base_confidence = max(5, min(95, base_confidence))
+        
+        # Confidence category
+        if base_confidence >= 75:
+            confidence_category = "VERY HIGH"
+        elif base_confidence >= 65:
+            confidence_category = "HIGH"
+        elif base_confidence >= 55:
+            confidence_category = "MEDIUM"
+        elif base_confidence >= 45:
+            confidence_category = "LOW"
+        else:
+            confidence_category = "VERY LOW"
+        
+        return {
+            'direction': base_direction,
+            'original_direction': base_direction,
+            'total_xg': total_xg,
+            'adjusted_xg': adjusted_xg,
+            'finishing_impact': finishing_impact,
+            'confidence': confidence_category,
+            'confidence_score': base_confidence,
+            'finishing_alignment': finishing_alignment,
+            'original_finishing_alignment': finishing_alignment,
+            'total_category': total_category,
+            'original_total_category': total_category,
+            'risk_flags': risk_flags,
+            'home_finishing': home_finish,
+            'away_finishing': away_finish,
+            'league_threshold': over_threshold
+        }
 
 class PoissonProbabilityEngine:
-    """Probability engine for score probabilities"""
+    """Probability engine"""
     
     @staticmethod
-    def calculate_all_probabilities(home_xg, away_xg, max_goals=8):
+    def calculate_all_probabilities(home_xg, away_xg):
         score_probabilities = []
-        max_goals = min(max_goals, int(home_xg + away_xg) + 4)
+        max_goals = min(MAX_GOALS_CALC, int(home_xg + away_xg) + 4)
         
         for home_goals in range(max_goals + 1):
             for away_goals in range(max_goals + 1):
@@ -617,6 +490,78 @@ class PoissonProbabilityEngine:
             'expected_away_goals': away_xg,
             'total_expected_goals': home_xg + away_xg
         }
+
+def factorial_cache(n, cache={}):
+    if n not in cache:
+        cache[n] = math.factorial(n)
+    return cache[n]
+
+def poisson_pmf(k, lam):
+    """Poisson probability mass function"""
+    if lam <= 0 or k < 0:
+        return 0
+    return (math.exp(-lam) * (lam ** k)) / factorial_cache(k)
+
+class FootballEngine:
+    """Main football engine"""
+    
+    def __init__(self, league_metrics, league_name):
+        self.league_metrics = league_metrics
+        self.league_name = league_name
+        
+        self.xg_predictor = ExpectedGoalsPredictor(league_metrics, league_name)
+        self.winner_predictor = WinnerPredictor()
+        self.totals_predictor = TotalsPredictor(league_name)
+        self.probability_engine = PoissonProbabilityEngine()
+    
+    def predict_match(self, home_team, away_team, home_stats, away_stats):
+        """Generate prediction"""
+        
+        # Get predictions
+        home_xg, away_xg = self.xg_predictor.predict_expected_goals(home_stats, away_stats)
+        
+        probabilities = self.probability_engine.calculate_all_probabilities(home_xg, away_xg)
+        
+        winner_prediction = self.winner_predictor.predict_winner(
+            home_xg, away_xg, home_stats, away_stats
+        )
+        
+        totals_prediction = self.totals_predictor.predict_totals(
+            home_xg, away_xg, home_stats, away_stats
+        )
+        
+        # Calculate additional engine values for data collection
+        delta_xg = home_xg - away_xg
+        finishing_sum = totals_prediction['home_finishing'] + totals_prediction['away_finishing']
+        finishing_impact = totals_prediction['finishing_impact']
+        
+        home_defense = home_stats['goals_allowed_vs_xga_pm']
+        away_defense = away_stats['goals_allowed_vs_xga_pm']
+        home_adjusted_xg = home_xg + totals_prediction['home_finishing'] - away_defense
+        away_adjusted_xg = away_xg + totals_prediction['away_finishing'] - home_defense
+        
+        # Create prediction dictionary
+        prediction_dict = {
+            'home_team': home_team,
+            'away_team': away_team,
+            'winner': winner_prediction,
+            'totals': totals_prediction,
+            'probabilities': probabilities,
+            'expected_goals': {'home': home_xg, 'away': away_xg, 'total': home_xg + away_xg},
+            'engine_calculations': {
+                'delta_xg': delta_xg,
+                'home_adjusted_xg': home_adjusted_xg,
+                'away_adjusted_xg': away_adjusted_xg,
+                'finishing_sum': finishing_sum,
+                'finishing_impact': finishing_impact,
+                'home_defense': home_defense,
+                'away_defense': away_defense
+            },
+            'version': 'data_collection_v1',
+            'league': self.league_name
+        }
+        
+        return prediction_dict
 
 # ========== DATA LOADING FUNCTIONS ==========
 
@@ -674,18 +619,21 @@ def calculate_league_metrics(df):
     
     return {'avg_goals_per_match': avg_goals_per_match}
 
+# ========== SESSION STATES ==========
+if 'last_prediction' not in st.session_state:
+    st.session_state.last_prediction = None
+
+if 'last_teams' not in st.session_state:
+    st.session_state.last_teams = None
+
 # ========== STREAMLIT UI ==========
 
 # Sidebar
 with st.sidebar:
-    st.header("⚙️ League-Specific Settings")
+    st.header("⚙️ Match Settings")
     
     leagues = ["Premier League", "Bundesliga", "Serie A", "La Liga", "Ligue 1", "Eredivisie", "RFPL"]
     selected_league = st.selectbox("Select League", leagues)
-    
-    # Create league engine
-    engine = LeagueEngineFactory.create_engine(selected_league)
-    league_stats = LeagueEngineFactory.get_league_stats()
     
     df = load_league_data(selected_league)
     
@@ -715,25 +663,6 @@ with st.sidebar:
             st.error("Could not prepare team data")
             st.stop()
     
-    # League Engine Info
-    st.divider()
-    st.header(f"🔧 {engine.name} Engine")
-    st.write(f"**Type:** {engine.model_type}")
-    st.write(f"**Version:** {engine.version}")
-    
-    # Current accuracy from analysis
-    if selected_league in league_stats:
-        stats = league_stats[selected_league]
-        st.write(f"**Current Accuracy (from 35-match analysis):**")
-        st.write(f"- Winner: {stats['winner']}%")
-        st.write(f"- Totals: {stats['totals']}%")
-    
-    # Expected improvements
-    improvements = engine.get_expected_improvement()
-    st.write("**Expected Improvements:**")
-    st.write(f"- Winner: {improvements['winner']['current']}% → {improvements['winner']['expected']}% ({improvements['winner']['improvement']})")
-    st.write(f"- Totals: {improvements['totals']['current']}% → {improvements['totals']['expected']}% ({improvements['totals']['improvement']})")
-    
     # Data Collection Stats
     st.divider()
     st.header("📊 Data Collection Stats")
@@ -751,6 +680,38 @@ with st.sidebar:
             st.write("**By League:**")
             for league, count in stats['league_counts'].items():
                 st.write(f"- {league}: {count}")
+    
+    # Quick Analysis
+    if total_matches >= 10:
+        st.divider()
+        st.header("🔍 Quick Insights")
+        
+        if st.button("Run Quick Analysis", use_container_width=True):
+            # Simple analysis query
+            try:
+                if supabase:
+                    response = supabase.table("match_predictions").select(
+                        "predicted_winner", "actual_winner", "winner_confidence"
+                    ).execute()
+                    
+                    if response.data:
+                        df_analysis = pd.DataFrame(response.data)
+                        df_analysis['correct'] = df_analysis['predicted_winner'] == df_analysis['actual_winner']
+                        
+                        # Group by confidence
+                        if len(df_analysis) > 0:
+                            df_analysis['conf_bucket'] = pd.cut(
+                                df_analysis['winner_confidence'], 
+                                bins=[0, 40, 60, 80, 100],
+                                labels=['0-40%', '40-60%', '60-80%', '80-100%']
+                            )
+                            
+                            accuracy = df_analysis.groupby('conf_bucket')['correct'].mean()
+                            st.write("**Accuracy by Confidence:**")
+                            for bucket, acc in accuracy.items():
+                                st.write(f"{bucket}: {acc:.1%}")
+            except:
+                pass
 
 # Main content
 if df is None:
@@ -763,181 +724,79 @@ if 'calculate_btn' in locals() and calculate_btn:
         home_stats = home_stats_df.loc[home_team]
         away_stats = away_stats_df.loc[away_team]
         
-        # Calculate expected goals
-        xg_calculator = ExpectedGoalsCalculator(league_metrics, selected_league)
-        home_xg, away_xg = xg_calculator.predict_expected_goals(home_stats, away_stats)
+        # Generate prediction
+        engine = FootballEngine(league_metrics, selected_league)
+        prediction = engine.predict_match(home_team, away_team, home_stats, away_stats)
         
-        # Get finishing and defense stats
-        home_finish = home_stats['goals_vs_xg_pm']
-        away_finish = away_stats['goals_vs_xg_pm']
-        home_defense = home_stats['goals_allowed_vs_xga_pm']
-        away_defense = away_stats['goals_allowed_vs_xga_pm']
-        
-        # Calculate adjusted xG
-        home_adjusted_xg = home_xg + home_finish - away_defense
-        away_adjusted_xg = away_xg + away_finish - home_defense
-        delta_xg = home_adjusted_xg - away_adjusted_xg
-        
-        # Get predictions from league-specific engine
-        predicted_winner, winner_confidence, winner_logic = engine.predict_winner(
-            home_xg, away_xg, home_finish, away_finish
-        )
-        
-        predicted_totals, totals_confidence, totals_logic = engine.predict_totals(
-            home_xg + away_xg, home_finish, away_finish
-        )
-        
-        # Calculate probabilities
-        prob_engine = PoissonProbabilityEngine()
-        probabilities = prob_engine.calculate_all_probabilities(home_xg, away_xg)
-        
-        # Store prediction data
-        prediction_data = {
-            'home_team': home_team,
-            'away_team': away_team,
-            'home_xg': home_xg,
-            'away_xg': away_xg,
-            'total_xg': home_xg + away_xg,
-            'home_finish': home_finish,
-            'away_finish': away_finish,
-            'home_defense': home_defense,
-            'away_defense': away_defense,
-            'home_adjusted_xg': home_adjusted_xg,
-            'away_adjusted_xg': away_adjusted_xg,
-            'delta_xg': delta_xg,
-            'finishing_sum': home_finish + away_finish,
-            'finishing_impact': (home_finish + away_finish) * 0.6,
-            'adjusted_total_xg': (home_xg + away_xg) * (1 + (home_finish + away_finish) * 0.6),
-            'predicted_winner': predicted_winner,
-            'winner_confidence': winner_confidence,
-            'predicted_totals': predicted_totals,
-            'totals_confidence': totals_confidence,
-            'finishing_alignment': 'NEUTRAL',
-            'total_xg_category': 'MODERATE',
-            'probabilities': probabilities,
-            'engine_info': {
-                'name': engine.name,
-                'model_type': engine.model_type,
-                'version': engine.version,
-                'winner_logic': winner_logic,
-                'totals_logic': totals_logic
-            }
-        }
-        
-        # Store for display
-        st.session_state.prediction_data = prediction_data
-        st.session_state.selected_teams = (home_team, away_team)
-        st.session_state.engine = engine
+        # Store for next time
+        st.session_state.last_prediction = prediction
+        st.session_state.last_teams = (home_team, away_team)
         
     except KeyError as e:
         st.error(f"Team data error: {e}")
         st.stop()
-elif 'prediction_data' in st.session_state:
+elif st.session_state.last_prediction and st.session_state.last_teams:
     # Use stored prediction
-    prediction_data = st.session_state.prediction_data
-    home_team, away_team = st.session_state.selected_teams
-    engine = st.session_state.engine
+    prediction = st.session_state.last_prediction
+    home_team, away_team = st.session_state.last_teams
 else:
     st.info("👈 Select teams and click 'Generate Prediction'")
     st.stop()
 
 # ========== DISPLAY PREDICTION ==========
 st.header(f"🎯 {home_team} vs {away_team}")
-st.caption(f"League: {selected_league} | Engine: {engine.model_type} | Version: {engine.version}")
-
-# Engine info
-with st.expander("🔧 Engine Details"):
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("**Engine Configuration:**")
-        st.write(f"- Name: {engine.name}")
-        st.write(f"- Type: {engine.model_type}")
-        st.write(f"- Version: {engine.version}")
-        st.write(f"- Winner Logic: {prediction_data['engine_info']['winner_logic']}")
-        st.write(f"- Totals Logic: {prediction_data['engine_info']['totals_logic']}")
-    
-    with col2:
-        st.write("**Expected Performance:**")
-        improvements = engine.get_expected_improvement()
-        st.write(f"- Winner: {improvements['winner']['current']}% → {improvements['winner']['expected']}%")
-        st.write(f"- Totals: {improvements['totals']['current']}% → {improvements['totals']['expected']}%")
-        st.write(f"- Expected Overall: 65-70% accuracy")
+st.caption(f"League: {selected_league} | Data Collection Mode | Matches: {get_match_stats()['total_matches']}")
 
 # Prediction cards
 col1, col2 = st.columns(2)
 
 with col1:
-    winner_pred = prediction_data['predicted_winner']
-    winner_conf = prediction_data['winner_confidence']
-    winner_logic = prediction_data['engine_info']['winner_logic']
+    winner_pred = prediction['winner']
+    prob = prediction['probabilities']
     
-    prob = prediction_data['probabilities']
-    winner_prob = prob['home_win_probability'] if winner_pred == 'HOME' else \
-                  prob['away_win_probability'] if winner_pred == 'AWAY' else \
+    winner_prob = prob['home_win_probability'] if winner_pred['type'] == 'HOME' else \
+                  prob['away_win_probability'] if winner_pred['type'] == 'AWAY' else \
                   prob['draw_probability']
-    
-    # Confidence category
-    if winner_conf >= 75:
-        conf_category = "HIGH"
-    elif winner_conf >= 60:
-        conf_category = "MEDIUM"
-    else:
-        conf_category = "LOW"
     
     st.markdown(f"""
     <div style="background-color: #1E293B; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
-        <h3 style="color: white; margin: 0;">WINNER ({engine.name})</h3>
+        <h3 style="color: white; margin: 0;">WINNER</h3>
         <div style="font-size: 36px; font-weight: bold; color: #60A5FA; margin: 10px 0;">
-            {'🏠' if winner_pred == 'HOME' else '✈️' if winner_pred == 'AWAY' else '🤝'} {winner_pred}
+            {'🏠' if winner_pred['type'] == 'HOME' else '✈️' if winner_pred['type'] == 'AWAY' else '🤝'} {winner_pred['type']}
         </div>
         <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
             {winner_prob*100:.1f}%
         </div>
         <div style="font-size: 16px; color: white;">
-            {conf_category} | Confidence: {winner_conf:.0f}/100
+            {winner_pred['confidence']} | Confidence: {winner_pred['confidence_score']:.0f}/100
         </div>
         <div style="font-size: 14px; color: #D1D5DB; margin-top: 10px;">
-            Logic: {winner_logic}
-        </div>
-        <div style="font-size: 12px; color: #9CA3AF; margin-top: 5px;">
-            ΔxG: {prediction_data['delta_xg']:.2f}
+            ΔxG: {winner_pred['delta']:.2f}
         </div>
     </div>
     """, unsafe_allow_html=True)
 
 with col2:
-    totals_pred = prediction_data['predicted_totals']
-    totals_conf = prediction_data['totals_confidence']
-    totals_logic = prediction_data['engine_info']['totals_logic']
+    totals_pred = prediction['totals']
+    prob = prediction['probabilities']
     
-    totals_prob = prob['over_2_5_probability'] if totals_pred == 'OVER' else \
+    totals_prob = prob['over_2_5_probability'] if totals_pred['direction'] == 'OVER' else \
                   prob['under_2_5_probability']
-    
-    # Confidence category
-    if totals_conf >= 75:
-        conf_category = "HIGH"
-    elif totals_conf >= 60:
-        conf_category = "MEDIUM"
-    else:
-        conf_category = "LOW"
     
     st.markdown(f"""
     <div style="background-color: #1E293B; padding: 20px; border-radius: 15px; text-align: center; margin: 10px 0;">
-        <h3 style="color: white; margin: 0;">TOTAL GOALS ({engine.name})</h3>
+        <h3 style="color: white; margin: 0;">TOTAL GOALS</h3>
         <div style="font-size: 36px; font-weight: bold; color: #60A5FA; margin: 10px 0;">
-            {'📈' if totals_pred == 'OVER' else '📉'} {totals_pred} 2.5
+            {'📈' if totals_pred['direction'] == 'OVER' else '📉'} {totals_pred['direction']} 2.5
         </div>
         <div style="font-size: 42px; font-weight: bold; color: white; margin: 10px 0;">
             {totals_prob*100:.1f}%
         </div>
         <div style="font-size: 16px; color: white;">
-            {conf_category} | Confidence: {totals_conf:.0f}/100
+            {totals_pred['confidence']} | Confidence: {totals_pred['confidence_score']:.0f}/100
         </div>
         <div style="font-size: 14px; color: #D1D5DB; margin-top: 10px;">
-            Logic: {totals_logic}
-        </div>
-        <div style="font-size: 12px; color: #9CA3AF; margin-top: 5px;">
-            xG: {prediction_data['total_xg']:.2f} → Adj: {prediction_data['adjusted_total_xg']:.2f}
+            Raw xG: {totals_pred['total_xg']:.2f} | Adj. xG: {totals_pred['adjusted_xg']:.2f}
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -951,17 +810,15 @@ col1, col2 = st.columns([2, 1])
 with col1:
     score = st.text_input("Actual Final Score (e.g., 2-1)", key="score_input")
     
-    with st.expander("📊 View Calculations"):
-        st.write("**Expected Goals:**")
-        st.write(f"- Home xG: {prediction_data['home_xg']:.2f}")
-        st.write(f"- Away xG: {prediction_data['away_xg']:.2f}")
-        st.write(f"- Total xG: {prediction_data['total_xg']:.2f}")
-        st.write(f"- ΔxG: {prediction_data['delta_xg']:.2f}")
-        
-        st.write("**Finishing Stats:**")
-        st.write(f"- Home finishing: {prediction_data['home_finish']:.3f}")
-        st.write(f"- Away finishing: {prediction_data['away_finish']:.3f}")
-        st.write(f"- Finishing impact: {prediction_data['finishing_impact']:.3f}")
+    with st.expander("📊 View Engine Calculations"):
+        st.write("**For Data Collection:**")
+        st.write(f"- Home xG: {prediction['expected_goals']['home']:.2f}")
+        st.write(f"- Away xG: {prediction['expected_goals']['away']:.2f}")
+        st.write(f"- ΔxG: {prediction['engine_calculations']['delta_xg']:.2f}")
+        st.write(f"- Home finishing: {prediction['totals']['home_finishing']:.3f}")
+        st.write(f"- Away finishing: {prediction['totals']['away_finishing']:.3f}")
+        st.write(f"- Finishing impact: {prediction['totals']['finishing_impact']:.3f}")
+        st.write(f"- Raw → Adj. xG: {prediction['totals']['total_xg']:.2f} → {prediction['totals']['adjusted_xg']:.2f}")
 
 with col2:
     if st.button("💾 Save Match Data", type="primary", use_container_width=True):
@@ -969,29 +826,33 @@ with col2:
             st.error("Enter valid score like '2-1'")
         else:
             try:
-                with st.spinner("Saving match data..."):
-                    success, message = save_match_prediction(
-                        prediction_data, score, selected_league, engine
-                    )
+                with st.spinner("Saving complete match data..."):
+                    # Add defense stats to prediction for data collection
+                    prediction['home_defense'] = prediction['engine_calculations']['home_defense']
+                    prediction['away_defense'] = prediction['engine_calculations']['away_defense']
+                    
+                    success, message = save_match_prediction(prediction, score, selected_league)
                     
                     if success:
                         st.success(f"""
                         {message}
                         
-                        **Saved with:** {engine.model_type}
-                        **Engine version:** {engine.version}
-                        **Total matches:** {get_match_stats()['total_matches'] + 1}
+                        **Saved to database:**
+                        - All xG values
+                        - Finishing stats
+                        - Engine calculations
+                        - Predictions & confidence
+                        - Actual results
+                        
+                        **Total matches:** {get_match_stats()['total_matches']}
                         """)
                         
+                        # Show success animation
                         st.balloons()
                         
                         # Reset for next match
-                        if 'prediction_data' in st.session_state:
-                            del st.session_state.prediction_data
-                        if 'selected_teams' in st.session_state:
-                            del st.session_state.selected_teams
-                        if 'engine' in st.session_state:
-                            del st.session_state.engine
+                        st.session_state.last_prediction = None
+                        st.session_state.last_teams = None
                         st.rerun()
                     else:
                         st.error(f"❌ {message}")
@@ -1001,7 +862,7 @@ with col2:
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
 
-# ========== ENGINE CALCULATIONS ==========
+# ========== ENGINE CALCULATIONS DISPLAY ==========
 st.divider()
 st.subheader("🔧 ENGINE CALCULATIONS")
 
@@ -1009,29 +870,30 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     st.write("**xG Calculations:**")
-    st.write(f"- Home xG: {prediction_data['home_xg']:.2f}")
-    st.write(f"- Away xG: {prediction_data['away_xg']:.2f}")
-    st.write(f"- Total xG: {prediction_data['total_xg']:.2f}")
-    st.write(f"- ΔxG: {prediction_data['delta_xg']:.2f}")
+    st.write(f"- Home xG: {prediction['expected_goals']['home']:.2f}")
+    st.write(f"- Away xG: {prediction['expected_goals']['away']:.2f}")
+    st.write(f"- Total xG: {prediction['expected_goals']['total']:.2f}")
+    st.write(f"- ΔxG: {prediction['engine_calculations']['delta_xg']:.2f}")
 
 with col2:
     st.write("**Finishing Adjustments:**")
-    st.write(f"- Home finishing: {prediction_data['home_finish']:.3f}")
-    st.write(f"- Away finishing: {prediction_data['away_finish']:.3f}")
-    st.write(f"- Sum: {prediction_data['finishing_sum']:.3f}")
-    st.write(f"- Impact: {prediction_data['finishing_impact']:.3f}")
+    st.write(f"- Home finishing: {prediction['totals']['home_finishing']:.3f}")
+    st.write(f"- Away finishing: {prediction['totals']['away_finishing']:.3f}")
+    st.write(f"- Sum: {prediction['engine_calculations']['finishing_sum']:.3f}")
+    st.write(f"- Impact (×0.6): {prediction['totals']['finishing_impact']:.3f}")
 
 with col3:
     st.write("**Adjusted Values:**")
-    st.write(f"- Home adjusted: {prediction_data['home_adjusted_xg']:.2f}")
-    st.write(f"- Away adjusted: {prediction_data['away_adjusted_xg']:.2f}")
-    st.write(f"- Total adjusted: {prediction_data['adjusted_total_xg']:.2f}")
+    st.write(f"- Raw total: {prediction['totals']['total_xg']:.2f}")
+    st.write(f"- Adjusted: {prediction['totals']['adjusted_xg']:.2f}")
+    st.write(f"- Threshold: {prediction['totals']['league_threshold']}")
+    st.write(f"- Decision: {prediction['totals']['adjusted_xg']:.2f} {'>' if prediction['totals']['adjusted_xg'] > prediction['totals']['league_threshold'] else '<'} {prediction['totals']['league_threshold']}")
 
 # ========== PROBABILITIES ==========
 st.divider()
 st.subheader("🎲 PROBABILITIES")
 
-prob = prediction_data['probabilities']
+prob = prediction['probabilities']
 
 col1, col2, col3 = st.columns(3)
 
@@ -1050,33 +912,59 @@ with col3:
     for score, prob_val in prob['top_scores'][:3]:
         st.write(f"{score}: {prob_val*100:.1f}%")
 
-# ========== LEAGUE PERFORMANCE SUMMARY ==========
+# ========== DATA ANALYSIS QUERIES ==========
 st.divider()
-st.subheader("📈 LEAGUE PERFORMANCE SUMMARY")
+st.subheader("📈 DATA ANALYSIS (After Collection)")
 
-league_stats = LeagueEngineFactory.get_league_stats()
-
-if selected_league in league_stats:
-    stats = league_stats[selected_league]
-    improvements = engine.get_expected_improvement()
+if get_match_stats()['total_matches'] >= 10:
+    st.info(f"**{get_match_stats()['total_matches']} matches collected** - Ready for analysis")
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write(f"**{selected_league} Performance:**")
-        st.write(f"- Current Winner Accuracy: {stats['winner']}%")
-        st.write(f"- Current Totals Accuracy: {stats['totals']}%")
-        st.write(f"- Matches Analyzed: 9" if selected_league == "Premier League" else 
-                f"- Matches Analyzed: 8" if selected_league in ["Serie A", "Ligue 1"] else
-                f"- Matches Analyzed: 5")
-    
-    with col2:
-        st.write("**Expected with New Engine:**")
-        st.write(f"- Winner: {improvements['winner']['expected']}% ({improvements['winner']['improvement']})")
-        st.write(f"- Totals: {improvements['totals']['expected']}% ({improvements['totals']['improvement']})")
-        st.write(f"- Overall Target: 65-70% accuracy")
+    if st.button("Run Initial Analysis", use_container_width=True):
+        # Show sample analysis
+        st.write("**Sample Analysis Queries:**")
+        st.code("""
+        -- 1. Accuracy by confidence level
+        SELECT 
+            FLOOR(winner_confidence/10)*10 as confidence_decile,
+            COUNT(*) as matches,
+            AVG(CASE WHEN predicted_winner = actual_winner THEN 1.0 ELSE 0.0 END) as accuracy
+        FROM match_predictions
+        GROUP BY confidence_decile
+        ORDER BY confidence_decile;
+        
+        -- 2. Finishing adjustment effectiveness
+        SELECT 
+            CASE 
+                WHEN finishing_sum > 0.2 THEN 'OVERPERFORMERS'
+                WHEN finishing_sum < -0.2 THEN 'UNDERPERFORMERS'
+                ELSE 'NEUTRAL'
+            END as group,
+            COUNT(*) as matches,
+            AVG(CASE WHEN predicted_totals_direction = actual_over_under THEN 1.0 ELSE 0.0 END) as accuracy
+        FROM match_predictions
+        GROUP BY group;
+        """)
+        
+        # Try to run actual queries
+        try:
+            if supabase:
+                # Simple accuracy query
+                response = supabase.table("match_predictions").select(
+                    "predicted_winner", "actual_winner", "predicted_totals_direction", "actual_over_under"
+                ).execute()
+                
+                if response.data:
+                    df_results = pd.DataFrame(response.data)
+                    winner_accuracy = (df_results['predicted_winner'] == df_results['actual_winner']).mean()
+                    totals_accuracy = (df_results['predicted_totals_direction'] == df_results['actual_over_under']).mean()
+                    
+                    st.metric("Winner Accuracy", f"{winner_accuracy*100:.1f}%")
+                    st.metric("Totals Accuracy", f"{totals_accuracy*100:.1f}%")
+        except:
+            pass
+else:
+    st.warning(f"**{get_match_stats()['total_matches']} matches collected** - Need at least 10 for meaningful analysis")
 
 # ========== FOOTER ==========
 st.divider()
-stats = get_match_stats()
-st.caption(f"📊 League-Specific Engines | Total Matches: {stats['total_matches']} | Expected Accuracy: 65-70%")
+st.caption(f"📊 Data Collection Mode | Version: {prediction.get('version', '1.0')} | Matches in DB: {get_match_stats()['total_matches']}")
