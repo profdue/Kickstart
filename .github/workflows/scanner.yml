@@ -1,0 +1,48 @@
+name: 🎯 GrokBet Sniper System
+
+on:
+  schedule:
+    # Runs 3 times daily around match times
+    - cron: '0 10,14,18 * * 1-5'  # 10 AM, 2 PM, 6 PM Mon-Fri
+    - cron: '0 12,15,19 * * 0,6'  # Weekend times
+  workflow_dispatch:  # Manual trigger from GitHub UI
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+      
+      - name: Install dependencies
+        run: |
+          pip install requests python-dotenv
+      
+      - name: Run GrokBet Scanner
+        env:
+          FOOTBALL_API_KEY: ${{ secrets.FOOTBALL_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python grokbet_scanner.py
+      
+      - name: Upload scan results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scan-results
+          path: |
+            scan_results.json
+            sent_alerts.json
+            grokbet_locks_*.csv
